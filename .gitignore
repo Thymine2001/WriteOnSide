@@ -1,0 +1,16 @@
+.venv/
+Archive/
+build/
+dist/
+build-*/
+dist-*/
+__pycache__/
+*.py[cod]
+*.bak
+.pytest_cache/
+*.log
+素材/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
