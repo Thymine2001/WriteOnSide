@@ -67,18 +67,22 @@ class MarkdownImageTests(unittest.TestCase):
             root.update_idletasks()
             render_markdown(
                 widget,
-                '<span style="color: #ff0000">Red</span> '
+                'Plain <span style="color: #ff0000">Red</span> '
                 '<font color="blue">Blue</font> '
                 '<span style="color: rgb(12, 34, 56)">RGB</span>',
                 Path("note.md"),
             )
-            self.assertEqual("Red Blue RGB", widget.get("1.0", "end-1c").strip())
+            self.assertEqual("Plain Red Blue RGB", widget.get("1.0", "end-1c").strip())
             colors = {
                 widget.tag_cget(tag, "foreground")
                 for tag in widget.tag_names()
                 if tag.startswith("html_color_")
             }
             self.assertEqual({"#ff0000", "blue", "#0c2238"}, colors)
+            for index in ("1.6", "1.10", "1.15"):
+                tags = widget.tag_names(index)
+                self.assertIn("body", tags)
+                self.assertTrue(any(tag.startswith("html_color_") for tag in tags))
         finally:
             root.destroy()
 

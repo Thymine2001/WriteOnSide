@@ -10,7 +10,7 @@ from tkinter import colorchooser, messagebox
 from ..config import APP_NAME, save_config
 from ..frontmatter import ensure_front_matter, split_front_matter
 from ..hotkeys import format_hotkey_display
-from ..i18n import t
+from ..i18n import command_label, t
 from ..live_highlight import (
     MD_EDITOR_TAGS,
     apply_live_highlight_plan,
@@ -30,7 +30,7 @@ class EditorMixin:
     # ── Markdown tag configuration ──────────────────────────────────────────
 
     def _configure_editor_markdown_tags(self) -> None:
-        family = self.config.font_family
+        family = self.config.font_family or "Segoe UI"
         delta = self.config.font_size - 10
         g = globals()
         self.text.tag_configure("md_h1", font=(family, 18 + delta, "bold"), foreground=g["TEXT"], spacing3=6)
@@ -130,7 +130,12 @@ class EditorMixin:
         return True
 
     def _configure_editor_color_tag(self, tag: str, color: str) -> None:
-        self.text.tag_configure(tag, foreground=color)
+        family = self.config.font_family or "Segoe UI"
+        self.text.tag_configure(
+            tag,
+            foreground=color,
+            font=(family, self.config.font_size + 3),
+        )
 
     # ── Autosave & save ─────────────────────────────────────────────────────
 
@@ -537,7 +542,7 @@ class EditorMixin:
         visible = getattr(self, "_visible_format_keys", set())
         quick_anchor = anchor is getattr(self, "quick_more_btn", None)
         quick_visible = {"bold", "italic", "underline", "strike", "heading", "highlight", "code", "link"} if quick_anchor else visible
-        for key, label, tooltip, command in self._format_actions:
+        for key, _label, command in self._format_actions:
             if key in quick_visible:
                 continue
             if key == "heading":
@@ -545,7 +550,7 @@ class EditorMixin:
             else:
                 action = command
             menu.add_command(
-                label=f"{label}   {tooltip}",
+                label=command_label(key),
                 command=lambda callback=action: self._finish_popup_format(callback),
             )
         menu.add_separator()

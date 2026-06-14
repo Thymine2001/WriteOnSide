@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows" alt="Windows 10 and 11" />
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/version-0.0.44-2ea44f" alt="Version 0.0.44" />
+  <img src="https://img.shields.io/badge/version-0.0.45-2ea44f" alt="Version 0.0.45" />
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@ database and no required cloud service, so the same Vault can be opened in
 WriteOnSide, Obsidian, VS Code, or another text editor.
 
 > [!NOTE]
-> WriteOnSide `0.0.44` is a pre-release project under active development.
+> WriteOnSide `0.0.45` is a pre-release project under active development.
 > Back up important notes and review release notes before upgrading.
 
 <p align="center">
