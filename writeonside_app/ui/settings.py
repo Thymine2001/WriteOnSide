@@ -12,6 +12,7 @@ from .. import theme as theme_module
 from ..config import APP_NAME, AppConfig, normalize_relative_folder, save_config
 from ..i18n import SUPPORTED_LANGUAGES, command_label, normalize_language, set_language, t
 from ..hotkeys import format_hotkey_display, normalize_hotkey, read_hotkey_clean, validate_hotkey
+from ..layout_metrics import explorer_width_limits, panel_width_limits
 from ..platform import is_startup_enabled, set_startup_enabled
 from ..shortcuts import (
     COMMAND_SHORTCUTS,
@@ -728,6 +729,31 @@ class SettingsMixin:
 
         e_width = row(layout_page, t("settings.panel_width"), str(self.config.width))
         e_explorer = row(layout_page, t("settings.explorer_width"), str(self.config.explorer_width))
+        width_hint = tk.Label(
+            layout_page,
+            text="",
+            bg=g["BG"],
+            fg=g["MUTED"],
+            font=("Segoe UI", 9),
+            anchor="w",
+        )
+        width_hint.pack(fill="x", padx=18, pady=(0, 6))
+
+        def refresh_width_hint() -> None:
+            work_width = max(1, self.work_right - self.work_left)
+            panel_min, panel_max = panel_width_limits(work_width)
+            explorer_min, explorer_max = explorer_width_limits(work_width)
+            width_hint.config(
+                text=t(
+                    "settings.width_range_hint",
+                    panel_min=panel_min,
+                    panel_max=panel_max,
+                    explorer_min=explorer_min,
+                    explorer_max=explorer_max,
+                )
+            )
+
+        refresh_width_hint()
         e_nav = row(layout_page, t("settings.nav_width"), str(self.config.nav_width))
         width_preview_after: str | None = None
         syncing_width_entries = False
@@ -761,7 +787,10 @@ class SettingsMixin:
                 explorer_width = int(e_explorer.get().strip())
             except ValueError:
                 return
-            if not 360 <= panel_width <= 900 or not 150 <= explorer_width <= 360:
+            work_width = max(1, self.work_right - self.work_left)
+            panel_min, panel_max = panel_width_limits(work_width)
+            explorer_min, explorer_max = explorer_width_limits(work_width)
+            if not panel_min <= panel_width <= panel_max or not explorer_min <= explorer_width <= explorer_max:
                 return
             if panel_width == self.panel_w and explorer_width == self.explorer_w:
                 return
@@ -1029,11 +1058,20 @@ class SettingsMixin:
             except (tk.TclError, ValueError):
                 msg.config(text=t("settings.msg.numeric_required"), fg=_g["DANGER"])
                 return False
-            if not 360 <= panel_width <= 900:
-                msg.config(text=t("settings.msg.panel_width_range"), fg=_g["DANGER"])
+            work_width = max(1, self.work_right - self.work_left)
+            panel_min, panel_max = panel_width_limits(work_width)
+            explorer_min, explorer_max = explorer_width_limits(work_width)
+            if not panel_min <= panel_width <= panel_max:
+                msg.config(
+                    text=t("settings.msg.panel_width_range", min=panel_min, max=panel_max),
+                    fg=_g["DANGER"],
+                )
                 return False
-            if not 150 <= explorer_width <= 360:
-                msg.config(text=t("settings.msg.explorer_width_range"), fg=_g["DANGER"])
+            if not explorer_min <= explorer_width <= explorer_max:
+                msg.config(
+                    text=t("settings.msg.explorer_width_range", min=explorer_min, max=explorer_max),
+                    fg=_g["DANGER"],
+                )
                 return False
             if not 8 <= nav_width <= 32:
                 msg.config(text=t("settings.msg.nav_width_range"), fg=_g["DANGER"])

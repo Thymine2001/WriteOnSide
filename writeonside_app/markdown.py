@@ -58,7 +58,7 @@ def configure_markdown_tags(widget: tk.Text, font_family: str = "Segoe UI", font
     widget.tag_configure("task_done", lmargin1=list_margin, lmargin2=list_margin, foreground=theme.MUTED, overstrike=True)
     widget.tag_configure("table_header", font=("Consolas", max(9, body_size - 1), "bold"), foreground=theme.TEXT)
     widget.tag_configure("table", font=("Consolas", max(9, body_size - 1)), foreground=theme.TEXT_SOFT)
-    widget.tag_configure("body", font=(font_family, body_size), foreground=theme.TEXT_SOFT)
+    widget.tag_configure("body", font=(font_family, body_size), foreground=theme.TEXT)
     widget.tag_configure("hr", foreground=theme.MUTED)
     widget.tag_configure("obsidian_tag", foreground=theme.ACCENT_2)
     widget.tag_configure("footnote", foreground=theme.MUTED, font=(font_family, max(8, body_size - 1)))

@@ -68,6 +68,27 @@ def get_work_area() -> tuple[int, int, int, int]:
     return 0, 0, 0, 0
 
 
+def enable_per_monitor_dpi() -> None:
+    """Enable per-monitor DPI awareness so Tk text renders sharply on HiDPI displays."""
+    try:
+        user32 = ctypes.windll.user32
+        if hasattr(user32, "SetProcessDpiAwarenessContext"):
+            # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+            user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+            return
+    except Exception:
+        pass
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        return
+    except Exception:
+        pass
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
 def hide_window_from_taskbar(hwnd: int) -> bool:
     if not hwnd:
         return False

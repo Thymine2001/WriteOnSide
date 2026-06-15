@@ -9,7 +9,7 @@ from tkinterdnd2 import DND_FILES, DND_TEXT, TkinterDnD
 
 from .config import APP_NAME, AppConfig, load_config, save_config
 from .frontmatter import NoteMetadata
-from .platform import SingleInstanceGuard, is_startup_enabled
+from .platform import SingleInstanceGuard, enable_per_monitor_dpi, is_startup_enabled
 from .theme import *  # noqa: F401,F403
 
 from .ui.theme_utils import ThemeMixin
@@ -103,6 +103,7 @@ class WriteOnSideApp(
         self._backlinks_popup = None
 
         g = globals()
+        enable_per_monitor_dpi()
         self.root = TkinterDnD.Tk()
         self.root.title(APP_NAME)
         self.root.overrideredirect(True)

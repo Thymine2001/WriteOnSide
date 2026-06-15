@@ -5,6 +5,11 @@ from typing import Callable
 
 import tkinter as tk
 
+from ..layout_metrics import (
+    clamp_layout_widths,
+    explorer_width_limits,
+    panel_width_limits,
+)
 from ..platform import get_work_area, hide_window_from_taskbar, move_windows_atomically, set_timer_resolution
 from ..i18n import t
 from ..theme import *  # noqa: F401,F403
@@ -150,7 +155,8 @@ class WindowMixin:
         side = self.config.app_position
         if kind == "panel":
             width = pointer_x - self.work_left if side == "left" else self.work_right - pointer_x
-            next_width = max(360, min(900, int(width)))
+            panel_min, panel_max = panel_width_limits(self.work_right - self.work_left)
+            next_width = max(panel_min, min(panel_max, int(width)))
             if self._width_last_applied == (kind, next_width):
                 return
             self.panel_w = next_width
@@ -159,7 +165,8 @@ class WindowMixin:
             panel_x = self.work_left if side == "left" else self.work_right - self.panel_w
             panel_edge = panel_x + self.panel_w if side == "left" else panel_x
             width = pointer_x - panel_edge if side == "left" else panel_edge - pointer_x
-            next_width = max(150, min(360, int(width)))
+            explorer_min, explorer_max = explorer_width_limits(self.work_right - self.work_left)
+            next_width = max(explorer_min, min(explorer_max, int(width)))
             if self._width_last_applied == (kind, next_width):
                 return
             self.explorer_w = next_width
@@ -237,6 +244,10 @@ class WindowMixin:
         self.work_left, self.work_top, self.work_right, self.work_bottom = left, top, right, bottom
         self.panel_y = top
         self.panel_h = bottom - top
+        work_width = right - left
+        self.panel_w, self.explorer_w = clamp_layout_widths(self.panel_w, self.explorer_w, work_width)
+        self.config.width = self.panel_w
+        self.config.explorer_width = self.explorer_w
 
     def _panel_geometry(self, x: int, width: int | None = None) -> str:
         panel_width = self.panel_w if width is None else max(1, int(width))

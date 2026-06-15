@@ -27,6 +27,7 @@ MD_EDITOR_TAGS: tuple[str, ...] = (
     "md_image",
     "md_quote",
     "md_list",
+    "md_task",
     "md_task_done",
     "md_table",
     "md_hr",
@@ -62,6 +63,7 @@ INLINE_MD_EDIT = re.compile(
 )
 
 _TASK_LINE = re.compile(r"^\s*[-*+] \[[ xX]\] ")
+_TASK_CHECKED = re.compile(r"^\s*[-*+] \[[xX]\] ")
 _LIST_LINE = re.compile(r"^(\s*[-*+] |\s*\d+\. )")
 
 
@@ -160,7 +162,7 @@ def _structure_line_tag(line: str) -> str | None:
     if line.startswith("> "):
         return "md_quote"
     if _TASK_LINE.match(line):
-        return "md_task_done"
+        return "md_task_done" if _TASK_CHECKED.match(line) else "md_task"
     if _LIST_LINE.match(line):
         return "md_list"
     if "|" in line:

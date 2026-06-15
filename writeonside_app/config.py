@@ -5,6 +5,15 @@ import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .layout_metrics import (
+    clamp_explorer_width,
+    clamp_panel_width,
+    default_explorer_width,
+    default_panel_width,
+    explorer_width_limits,
+    panel_width_limits,
+    work_area_width,
+)
 from .shortcuts import DEFAULT_COMMAND_SHORTCUTS, normalize_command_shortcuts
 
 APP_NAME = "WriteOnSide"
@@ -35,7 +44,7 @@ class AppConfig:
     theme: str = "graphite"
     start_on_boot: bool = False
     font_family: str = "Segoe UI"
-    font_size: int = 10
+    font_size: int = 11
     attachments_folder: str = "Attachments"
     language: str = "en"
     command_shortcuts: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_COMMAND_SHORTCUTS))
@@ -103,8 +112,17 @@ def load_config() -> AppConfig:
     valid_keys = set(asdict(cfg))
     merged = asdict(cfg)
     merged.update({k: v for k, v in data.items() if k in valid_keys})
-    merged["width"] = clamp_int(merged["width"], 360, 900, cfg.width)
-    merged["explorer_width"] = clamp_int(merged["explorer_width"], 150, 360, cfg.explorer_width)
+    work_width = work_area_width()
+    panel_min, panel_max = panel_width_limits(work_width)
+    explorer_min, explorer_max = explorer_width_limits(work_width)
+    merged["width"] = clamp_panel_width(
+        clamp_int(merged["width"], panel_min, panel_max, default_panel_width(work_width)),
+        work_width,
+    )
+    merged["explorer_width"] = clamp_explorer_width(
+        clamp_int(merged["explorer_width"], explorer_min, explorer_max, default_explorer_width(work_width)),
+        work_width,
+    )
     merged["nav_width"] = clamp_int(merged["nav_width"], 8, 32, cfg.nav_width)
     if merged["nav_width"] == 10:
         merged["nav_width"] = cfg.nav_width

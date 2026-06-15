@@ -51,6 +51,7 @@ class EditorMixin:
         self.text.tag_configure("md_image", foreground=g["IMAGE_LINK"], underline=True)
         self.text.tag_configure("md_quote", foreground=g["QUOTE"], lmargin1=18, lmargin2=18)
         self.text.tag_configure("md_list", lmargin1=22, lmargin2=22)
+        self.text.tag_configure("md_task", lmargin1=22, lmargin2=22)
         self.text.tag_configure("md_task_done", lmargin1=22, lmargin2=22, foreground=g["MUTED"], overstrike=True)
         self.text.tag_configure("md_table", font=("Consolas", 11 + delta), foreground=g["TEXT_SOFT"])
         self.text.tag_configure("md_hr", foreground=g["MUTED"])
@@ -450,15 +451,19 @@ class EditorMixin:
             activeforeground=self._contrast_text(g["ACCENT"]),
             borderwidth=1,
             relief="solid",
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 11),
         )
         for level in range(1, 7):
+            title = t("cmd.heading_primary") if level == 1 else t("cmd.heading_secondary")
             menu.add_command(
-                label=f"H{level}  {'Heading' if level == 1 else 'Subheading'}",
+                label=f"H{level}  {title}",
                 command=lambda value=level: self._finish_popup_format(lambda: self._set_heading(value)),
             )
         menu.add_separator()
-        menu.add_command(label="Normal text", command=lambda: self._finish_popup_format(lambda: self._set_heading(0)))
+        menu.add_command(
+            label=f"T  {t('cmd.normal_text')}",
+            command=lambda: self._finish_popup_format(lambda: self._set_heading(0)),
+        )
         menu.tk_popup(anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height() + 3)
 
     def _apply_text_color(self, color: str) -> None:
@@ -476,7 +481,7 @@ class EditorMixin:
             activeforeground=self._contrast_text(g["ACCENT"]),
             borderwidth=1,
             relief="solid",
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 11),
         )
         for label, color in (
             ("Red", "#e05252"),
@@ -537,12 +542,12 @@ class EditorMixin:
             activeforeground=self._contrast_text(g["ACCENT"]),
             borderwidth=1,
             relief="solid",
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 11),
         )
         visible = getattr(self, "_visible_format_keys", set())
         quick_anchor = anchor is getattr(self, "quick_more_btn", None)
         quick_visible = {"bold", "italic", "underline", "strike", "heading", "highlight", "code", "link"} if quick_anchor else visible
-        for key, _label, command in self._format_actions:
+        for key, glyph, command in self._format_actions:
             if key in quick_visible:
                 continue
             if key == "heading":
@@ -550,22 +555,31 @@ class EditorMixin:
             else:
                 action = command
             menu.add_command(
-                label=command_label(key),
+                label=f"{glyph}  {command_label(key)}",
                 command=lambda callback=action: self._finish_popup_format(callback),
             )
         menu.add_separator()
         menu.add_command(
-            label="x²   Superscript",
+            label=f"x²  {t('cmd.superscript')}",
             command=lambda: self._finish_popup_format(lambda: self._wrap_selection("<sup>", "</sup>", "text")),
         )
         menu.add_command(
-            label="x₂   Subscript",
+            label=f"x₂  {t('cmd.subscript')}",
             command=lambda: self._finish_popup_format(lambda: self._wrap_selection("<sub>", "</sub>", "text")),
         )
         menu.add_separator()
-        menu.add_command(label="Attach file", command=lambda: self._finish_popup_format(self._insert_attachment_file))
-        menu.add_command(label="Paste clipboard image", command=lambda: self._finish_popup_format(self._insert_clipboard_image))
-        menu.add_command(label="Clear formatting", command=lambda: self._finish_popup_format(self._clear_selected_markdown))
+        menu.add_command(
+            label=f"📎  {t('dialog.insert_attachment')}",
+            command=lambda: self._finish_popup_format(self._insert_attachment_file),
+        )
+        menu.add_command(
+            label=f"🖼  {t('cmd.paste_clipboard_image')}",
+            command=lambda: self._finish_popup_format(self._insert_clipboard_image),
+        )
+        menu.add_command(
+            label=f"⌫  {t('cmd.clear_formatting')}",
+            command=lambda: self._finish_popup_format(self._clear_selected_markdown),
+        )
         menu.tk_popup(anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height() + 3)
 
     def _finish_popup_format(self, command: Callable[[], None]) -> None:

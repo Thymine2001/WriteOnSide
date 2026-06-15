@@ -28,6 +28,12 @@ class LiveHighlightTests(unittest.TestCase):
         self.assertTrue(plan.simplified)
         self.assertEqual((), plan.spans)
 
+    def test_task_lines_distinguish_checked_and_unchecked(self) -> None:
+        plan = plan_live_highlight("- [ ] open task\n- [x] done task")
+        tags_by_line = {line_tag.line: line_tag.tag for line_tag in plan.line_tags}
+        self.assertEqual("md_task", tags_by_line[1])
+        self.assertEqual("md_task_done", tags_by_line[2])
+
 
 class ThemePaletteTests(unittest.TestCase):
     def test_palette_round_trip(self) -> None:

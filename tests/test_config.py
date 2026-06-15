@@ -24,9 +24,9 @@ class ConfigTests(unittest.TestCase):
             )
             with patch("writeonside_app.config.APP_DATA_DIR", config_dir), patch(
                 "writeonside_app.config.CONFIG_FILE", config_file
-            ):
+            ), patch("writeonside_app.config.work_area_width", return_value=1920):
                 config = load_config()
-            self.assertEqual(900, config.width)
+            self.assertEqual(960, config.width)
             self.assertEqual("graphite", config.theme)
             self.assertEqual("Attachments", config.attachments_folder)
 
