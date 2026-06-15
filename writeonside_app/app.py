@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinterdnd2 import DND_FILES, DND_TEXT, TkinterDnD
 
 from .config import APP_NAME, AppConfig, load_config, save_config
+from .editor_images import EditorImageBlock
 from .frontmatter import NoteMetadata
 from .platform import SingleInstanceGuard, enable_per_monitor_dpi, is_startup_enabled
 from .theme import *  # noqa: F401,F403
@@ -97,6 +98,13 @@ class WriteOnSideApp(
         self._width_drag_timer_active = False
         self._font_baselines: dict[str, dict[str, object]] = {}
         self._editor_color_tags: set[str] = set()
+        self._editor_image_editing_keys: set[str] = set()
+        self._editor_image_previews: dict[str, dict] = {}
+        self._editor_preview_photos: list[object] = []
+        self._editor_image_blocks: dict[str, EditorImageBlock] = {}
+        self._editor_image_width_after: str | None = None
+        self._editor_image_last_width: int | None = None
+        self._editor_image_preview_busy = False
         self._active_theme: str = self.config.theme
         self._wiki_index_after = None
         self._wiki_completion = None
@@ -336,6 +344,7 @@ class WriteOnSideApp(
         self.text.bind("<Control-V>", self._paste_from_clipboard)
         self.text.bind("<Escape>", lambda _e: self._on_escape())
         self.text.bind("<ButtonPress-1>", lambda _e: self._hide_quick_format(), add="+")
+        self.text.bind("<ButtonRelease-1>", self._on_editor_image_click_outside, add="+")
         self.text.bind("<ButtonRelease-1>", self._schedule_quick_format, add="+")
         self.text.bind("<KeyRelease>", self._schedule_quick_format, add="+")
         self.text.bind("<MouseWheel>", lambda _e: self._hide_quick_format(), add="+")

@@ -143,6 +143,7 @@ MESSAGES = {
     "editor.no_headings": "Sem títulos",
     "editor.copy": "copiar",
     "editor.copied": "Copiado",
+    "editor.edit_image": "Editar",
     "editor.placeholder_title": "# Comece uma nota Markdown",
     "editor.placeholder_body": "Use a barra de ferramentas para formatação comum ou escreva Markdown diretamente.",
     "editor.placeholder_footer": "Ctrl+S guarda  ·  {hotkey} alterna o painel",

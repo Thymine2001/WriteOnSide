@@ -702,6 +702,8 @@ class WindowMixin:
             self.explorer.attributes("-alpha", alpha)
 
     def _on_escape(self) -> None:
+        if self._exit_editor_image_source_mode():
+            return
         if getattr(self, "quick_format_toolbar", None) is not None and self.quick_format_toolbar.winfo_viewable():
             self._hide_quick_format()
             return

@@ -143,6 +143,7 @@ MESSAGES = {
     "editor.no_headings": "无标题",
     "editor.copy": "复制",
     "editor.copied": "已复制",
+    "editor.edit_image": "编辑",
     "editor.placeholder_title": "# 开始写 Markdown 笔记",
     "editor.placeholder_body": "使用工具栏进行常用格式设置，或直接输入 Markdown。",
     "editor.placeholder_footer": "Ctrl+S 保存  ·  {hotkey} 切换面板",

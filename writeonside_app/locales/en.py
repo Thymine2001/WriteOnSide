@@ -142,6 +142,7 @@ MESSAGES = {
     "editor.no_headings": "No headings",
     "editor.copy": "copy",
     "editor.copied": "Copied",
+    "editor.edit_image": "Edit",
     "editor.placeholder_title": "# Start a Markdown note",
     "editor.placeholder_body": "Use the toolbar for common formatting, or type Markdown directly.",
     "editor.placeholder_footer": "Ctrl+S saves  ·  {hotkey} toggles the panel",

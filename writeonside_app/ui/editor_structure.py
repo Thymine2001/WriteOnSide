@@ -14,7 +14,11 @@ class EditorStructureMixin:
         self._sticky_heading_rows: list[tk.Frame] = []
         self.line_number_canvas.bind("<Button-1>", self._on_line_number_click)
         self.line_number_canvas.bind("<MouseWheel>", self._forward_gutter_wheel)
-        self.text.bind("<Configure>", lambda _event: self._schedule_editor_structure_refresh(), add="+")
+        self.text.bind(
+            "<Configure>",
+            lambda _event: (self._schedule_editor_structure_refresh(), self._schedule_editor_image_width_refresh()),
+            add="+",
+        )
         self.text.bind(
             "<KeyRelease>",
             lambda _event: self._schedule_editor_structure_refresh(reapply_folds=True),

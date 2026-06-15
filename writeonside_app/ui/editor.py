@@ -11,6 +11,12 @@ from ..config import APP_NAME, save_config
 from ..frontmatter import ensure_front_matter, split_front_matter
 from ..hotkeys import format_hotkey_display
 from ..i18n import command_label, t
+from ..editor_images import (
+    EDITOR_IMAGE_ELIDE_TAG,
+    EditorImageBlock,
+    load_preview_photo,
+    plan_editor_image_blocks,
+)
 from ..live_highlight import (
     MD_EDITOR_TAGS,
     apply_live_highlight_plan,
@@ -65,6 +71,7 @@ class EditorMixin:
         self.text.tag_configure("md_obsidian_tag", foreground=g["ACCENT_2"])
         self.text.tag_configure("md_callout", background=g["SURFACE_2"], foreground=g["TEXT"])
         self.text.tag_configure("md_comment", foreground=g["DISABLED"], overstrike=True)
+        self.text.tag_configure(EDITOR_IMAGE_ELIDE_TAG, elide=True)
         # Keep find/selection highlights above the content tags, otherwise
         # md_code / md_highlight backgrounds hide them
         for tag in ("find_match", "find_current", "outline_current", "sel"):
@@ -75,6 +82,7 @@ class EditorMixin:
         self._schedule_editor_structure_refresh()
 
     def _clear_editor_markdown_tags(self) -> None:
+        self._clear_editor_image_previews()
         # Fix #6: use module-level constant instead of a duplicated inline tuple
         for tag in (*_MD_EDITOR_TAGS, *getattr(self, "_editor_color_tags", set())):
             self.text.tag_remove(tag, "1.0", tk.END)
@@ -85,6 +93,8 @@ class EditorMixin:
 
     def _schedule_live_render(self) -> None:
         if self.view_mode != "edit":
+            return
+        if getattr(self, "_editor_image_preview_busy", False):
             return
         if self._live_render_after is not None:
             self.root.after_cancel(self._live_render_after)
@@ -121,7 +131,242 @@ class EditorMixin:
                 self.text.tag_raise(tag)
             except tk.TclError:
                 pass
+        self._apply_editor_image_previews(content)
         self._schedule_editor_structure_refresh(reapply_folds=True)
+
+    def _schedule_editor_image_width_refresh(self) -> None:
+        if self.view_mode != "edit" or self._editor_image_preview_busy:
+            return
+        if not self._editor_image_previews:
+            return
+        if self._editor_image_width_after is not None:
+            try:
+                self.root.after_cancel(self._editor_image_width_after)
+            except tk.TclError:
+                pass
+        self._editor_image_width_after = self.root.after(250, self._refresh_editor_image_widths)
+
+    def _refresh_editor_image_widths(self) -> None:
+        self._editor_image_width_after = None
+        if self.view_mode != "edit" or self._showing_placeholder:
+            return
+        try:
+            max_width = max(180, self.text.winfo_width() - 48)
+        except tk.TclError:
+            return
+        if max_width == self._editor_image_last_width:
+            return
+        self._editor_image_last_width = max_width
+        self._apply_editor_image_previews()
+
+    def _remove_editor_image_preview(self, key: str) -> None:
+        preview = self._editor_image_previews.pop(key, None)
+        if not preview:
+            return
+        window_index = preview.get("window_index")
+        block = preview.get("block")
+        if window_index:
+            try:
+                self.text.delete(window_index)
+            except tk.TclError:
+                pass
+        if block is not None:
+            try:
+                md_end = self.text.index(f"{block.start} + {len(block.markdown)}c")
+                self.text.tag_remove(EDITOR_IMAGE_ELIDE_TAG, block.start, md_end)
+            except tk.TclError:
+                pass
+
+    def _clear_editor_image_previews(self) -> None:
+        if not hasattr(self, "text"):
+            return
+        for key in list(getattr(self, "_editor_image_previews", {}).keys()):
+            self._remove_editor_image_preview(key)
+        self._editor_preview_photos = []
+        self._editor_image_last_width = None
+        self._editor_image_preview_state = None
+        try:
+            self.text.tag_remove(EDITOR_IMAGE_ELIDE_TAG, "1.0", tk.END)
+        except tk.TclError:
+            pass
+
+    def _apply_editor_image_previews(self, content: str | None = None) -> None:
+        if self.view_mode != "edit" or self._showing_placeholder:
+            self._clear_editor_image_previews()
+            return
+        if not self.current_note_path or not is_markdown_note(self.current_note_path):
+            self._clear_editor_image_previews()
+            return
+        if content is None:
+            content = self.text.get("1.0", "end-1c")
+        blocks = plan_editor_image_blocks(
+            content,
+            self.current_note_path,
+            wiki_asset_resolver=self._wiki_asset_resolver,
+        )
+        self._editor_image_blocks = {block.key: block for block in blocks}
+        self.text.update_idletasks()
+        try:
+            max_width = max(180, self.text.winfo_width() - 48)
+        except tk.TclError:
+            max_width = 180
+        editing_keys = self._editor_image_editing_keys
+        desired_keys = {block.key for block in blocks if block.key not in editing_keys}
+        signature = tuple((block.key, block.markdown, str(block.image_path)) for block in blocks)
+        preview_state = (signature, max_width, frozenset(editing_keys), frozenset(self._editor_image_previews.keys()))
+        if preview_state == getattr(self, "_editor_image_preview_state", None):
+            return
+        self._editor_image_preview_busy = True
+        try:
+            for key in list(self._editor_image_previews.keys()):
+                if key not in desired_keys:
+                    self._remove_editor_image_preview(key)
+            for block in blocks:
+                if block.key not in desired_keys:
+                    continue
+                preview = self._editor_image_previews.get(block.key)
+                if (
+                    preview
+                    and preview.get("markdown") == block.markdown
+                    and preview.get("max_width") == max_width
+                    and preview.get("image_path") == str(block.image_path)
+                ):
+                    continue
+                if preview:
+                    self._remove_editor_image_preview(block.key)
+                self._insert_editor_image_preview(block, max_width)
+            self._editor_image_last_width = max_width
+            self._editor_image_preview_state = (
+                signature,
+                max_width,
+                frozenset(editing_keys),
+                frozenset(self._editor_image_previews.keys()),
+            )
+        finally:
+            self._editor_image_preview_busy = False
+
+    def _insert_editor_image_preview(self, block: EditorImageBlock, max_width: int) -> None:
+        photo = load_preview_photo(block.image_path, max_width)
+        if photo is None:
+            return
+        self._editor_preview_photos.append(photo)
+        g = globals()
+        outer = tk.Frame(
+            self.text,
+            bg=g["BG"],
+            highlightthickness=2,
+            highlightbackground=g["BG"],
+        )
+        image_label = tk.Label(outer, image=photo, bg=g["BG"], cursor="hand2", borderwidth=0)
+        image_label.pack()
+        toolbar = tk.Frame(
+            outer,
+            bg=g["SURFACE"],
+            highlightthickness=1,
+            highlightbackground=g["BORDER"],
+        )
+        edit_btn = tk.Label(
+            toolbar,
+            text="</>",
+            bg=g["SURFACE"],
+            fg=g["MUTED"],
+            font=("Consolas", 10),
+            cursor="hand2",
+            padx=4,
+            pady=1,
+        )
+        tip_label = tk.Label(
+            toolbar,
+            text=t("editor.edit_image"),
+            bg=g["SURFACE"],
+            fg=g["TEXT"],
+            font=("Segoe UI", 9),
+            padx=4,
+            pady=1,
+        )
+        edit_btn.pack(side="left")
+        tip_label.pack(side="left", padx=(0, 4))
+        toolbar.place_forget()
+
+        def show_toolbar(_event=None) -> None:
+            outer.config(highlightbackground=g["ACCENT"])
+            if not toolbar.winfo_ismapped():
+                toolbar.place(relx=1.0, rely=0.0, anchor="ne", x=-4, y=4)
+
+        def hide_toolbar(_event=None) -> None:
+            outer.config(highlightbackground=g["BG"])
+            if toolbar.winfo_ismapped():
+                toolbar.place_forget()
+            edit_btn.config(fg=g["MUTED"])
+
+        def on_edit(_event=None) -> None:
+            self._show_editor_image_source(block)
+
+        outer.bind("<Enter>", show_toolbar, add="+")
+        outer.bind("<Leave>", hide_toolbar, add="+")
+        edit_btn.bind("<Enter>", lambda _e: edit_btn.config(fg=g["TEXT"]), add="+")
+        edit_btn.bind("<Leave>", lambda _e: edit_btn.config(fg=g["MUTED"]), add="+")
+        edit_btn.bind("<Button-1>", on_edit)
+        image_label.bind("<Button-1>", on_edit)
+
+        try:
+            if self.text.compare(block.start, ">", tk.END):
+                return
+            self.text.window_create(block.start, window=outer, stretch=True)
+            md_start = self.text.index(f"{block.start} + 1c")
+            md_end = self.text.index(f"{md_start} + {len(block.markdown)}c")
+            self.text.tag_add(EDITOR_IMAGE_ELIDE_TAG, md_start, md_end)
+            self._editor_image_previews[block.key] = {
+                "window_index": block.start,
+                "block": block,
+                "markdown": block.markdown,
+                "max_width": max_width,
+                "image_path": str(block.image_path),
+            }
+        except tk.TclError:
+            outer.destroy()
+
+    def _show_editor_image_source(self, block: EditorImageBlock) -> None:
+        self._editor_image_editing_keys.add(block.key)
+        self._remove_editor_image_preview(block.key)
+        try:
+            md_start = block.start
+            md_end = self.text.index(f"{md_start} + {len(block.markdown)}c")
+            self.text.tag_add(tk.SEL, md_start, md_end)
+            self.text.mark_set(tk.INSERT, md_end)
+            self.text.focus_set()
+        except tk.TclError:
+            pass
+
+    def _on_editor_image_click_outside(self, _event) -> None:
+        if not getattr(self, "_editor_image_editing_keys", None):
+            return
+        if not self._editor_image_editing_keys:
+            return
+        try:
+            index = self.text.index("insert")
+            insert_line = int(str(index).split(".")[0])
+        except (tk.TclError, ValueError):
+            return
+        changed = False
+        for key in list(self._editor_image_editing_keys):
+            block = self._editor_image_blocks.get(key)
+            if block is None or insert_line != block.line:
+                self._editor_image_editing_keys.discard(key)
+                changed = True
+        if changed:
+            self._apply_editor_image_previews()
+
+    def _exit_editor_image_source_mode(self) -> bool:
+        if not getattr(self, "_editor_image_editing_keys", None):
+            return False
+        if not self._editor_image_editing_keys:
+            return False
+        self._editor_image_editing_keys.clear()
+        self._editor_image_preview_state = None
+        if self.view_mode == "edit":
+            self._apply_editor_image_previews()
+        return True
 
     def _validate_editor_color(self, color: str) -> bool:
         try:
@@ -192,6 +437,8 @@ class EditorMixin:
 
     def _set_editor_content(self, content: str) -> None:
         self._showing_placeholder = False
+        self._editor_image_editing_keys.clear()
+        self._editor_image_preview_state = None
         self.text.delete("1.0", tk.END)
         self.text.insert("1.0", content)
         self.text.edit_modified(False)
@@ -1147,6 +1394,8 @@ class EditorMixin:
             self._close_file_preview(restore_note=True)
         if self.view_mode == "read":
             return
+        self._editor_image_editing_keys.clear()
+        self._clear_editor_image_previews()
         self._save_note(False)
         self.view_mode = "read"
         self.config.view_mode = "read"
