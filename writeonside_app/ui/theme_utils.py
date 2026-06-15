@@ -227,6 +227,10 @@ class ThemeMixin:
             self.read_text.tag_configure("find_match", background=new_palette["FIND_MATCH"], foreground=new_palette["TEXT"])
             self.read_text.tag_configure("find_current", background=new_palette["ACCENT"], foreground=self._contrast_text(new_palette["ACCENT"]))
             self.read_text.tag_configure("outline_current", background=new_palette["OUTLINE_CURRENT"], foreground=new_palette["TEXT"])
+        if hasattr(self, "note_split"):
+            self.note_split.configure(bg=new_palette["BORDER"])
+        if hasattr(self, "_refresh_split_note_panes"):
+            self._refresh_split_note_panes()
         if hasattr(self, "status_label"):
             self.status_label.configure(fg=new_palette["MUTED"])
         if hasattr(self, "view_toggle_btn"):

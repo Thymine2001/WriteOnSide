@@ -1040,12 +1040,6 @@ class ExplorerMixin:
             return
         if not path.is_file():
             return
-        if is_markdown_note(path):
-            self.root.after_idle(lambda p=path: self._open_note_from_tree(p))
-        elif is_editable_text_path(path):
-            self.root.after_idle(lambda p=path: self._open_text_file_from_tree(p))
-        else:
-            self.root.after_idle(lambda p=path: self._preview_explorer_file(p))
 
     def _on_tree_double_click(self, event) -> None:
         item = self.file_tree.identify_row(event.y)
@@ -1149,6 +1143,7 @@ class ExplorerMixin:
             self._explorer_set_clipboard(paths, "copy")
 
     def _note_paths_after_relocate(self, mapping: dict[Path, Path]) -> None:
+        self._note_split_paths_after_relocate(mapping)
         for old_path, new_path in mapping.items():
             if self.current_note_path and self.current_note_path.resolve() == old_path.resolve():
                 self.current_note_path = new_path
@@ -1230,6 +1225,7 @@ class ExplorerMixin:
         self._schedule_wiki_index_refresh()
 
     def _after_explorer_tree_delete(self, path: Path) -> None:
+        self._close_deleted_split_notes(path)
         if self.current_note_path:
             try:
                 self.current_note_path.resolve().relative_to(path.resolve())

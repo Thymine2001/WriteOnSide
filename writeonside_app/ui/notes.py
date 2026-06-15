@@ -9,6 +9,7 @@ from tkinter import filedialog, messagebox, simpledialog
 
 import tkinter as tk
 from PIL import Image, ImageGrab
+from tkinterdnd2 import DND_FILES, DND_TEXT
 
 from ..config import APP_NAME, save_config
 from ..dragdrop import is_image_path, is_image_url, is_url, local_path_from_drop, split_drop_data
@@ -25,6 +26,8 @@ from ..wikilinks import find_notes_linking_to, rewrite_wikilinks_after_rename
 
 
 class NotesMixin:
+    _MAX_OPEN_NOTES = 4
+
     # ── Note CRUD ────────────────────────────────────────────────────────────
 
     def _new_note_path(self, suggested: str = "Untitled.md") -> Path:
@@ -94,6 +97,7 @@ class NotesMixin:
             self._update_note_title()
         elif self.current_note_path and self.current_note_path.resolve() in {note.resolve() for note in changed_notes}:
             self._open_note_file(self.current_note_path)
+        self._note_split_paths_after_relocate({old_path: new_path})
         self._refresh_explorer()
         self._schedule_wiki_index_refresh()
         if changed_notes:
@@ -110,6 +114,7 @@ class NotesMixin:
         if self.current_note_path and self.current_note_path.resolve() == path.resolve():
             self.current_note_path = None
             self._load_initial_note()
+        self._close_deleted_split_notes(path)
         self._refresh_explorer()
         self._schedule_wiki_index_refresh()
 
@@ -126,6 +131,7 @@ class NotesMixin:
         self._open_note_file(path)
 
     def _open_text_file_from_tree(self, path: Path) -> None:
+        self._close_split_note_for_path(path)
         self._close_file_preview(restore_note=False)
         if self.current_note_path and path.resolve() == self.current_note_path.resolve():
             return
@@ -203,6 +209,7 @@ class NotesMixin:
         self._update_view_buttons()
 
     def _open_note_file(self, path: Path) -> None:
+        self._close_split_note_for_path(path)
         self._close_file_preview(restore_note=False)
         try:
             content = read_text_file(path) if path.exists() else ""
@@ -267,6 +274,7 @@ class NotesMixin:
             return
         self.current_note_path = None
         self.config.current_note_path = ""
+        self._close_all_split_notes()
         self._refresh_wiki_index()
         self._set_status_key("status.workspace_changed")
         self._load_initial_note()
@@ -285,6 +293,232 @@ class NotesMixin:
                 self.file_tree.see(iid)
         finally:
             self._ignore_tree_events = False
+
+    # ── Split note panes ─────────────────────────────────────────────────────
+
+    def _open_note_count(self) -> int:
+        return 1 + len(getattr(self, "_split_notes", []))
+
+    def _is_split_note_path(self, path: Path) -> bool:
+        target = path.resolve()
+        return any(Path(note["path"]).resolve() == target for note in getattr(self, "_split_notes", []))
+
+    def _register_note_drop_target(self, widget: tk.Misc) -> None:
+        try:
+            widget.drop_target_register(DND_FILES, DND_TEXT)
+            widget.dnd_bind("<<Drop>>", self._on_editor_drop)
+        except (AttributeError, tk.TclError):
+            pass
+
+    def _open_note_split(self, path: Path) -> bool:
+        if not path.exists() or not path.is_file() or not is_editable_text_path(path):
+            return False
+        path = path.resolve()
+        if self.current_note_path and path == self.current_note_path.resolve():
+            self._set_status(f"{path.name} is already open as the main note")
+            return True
+        if self._is_split_note_path(path):
+            self._focus_split_note(path)
+            return True
+        if self._open_note_count() >= self._MAX_OPEN_NOTES:
+            self._set_error(f"Only {self._MAX_OPEN_NOTES} notes can be open at the same time.")
+            return True
+
+        frame = tk.Frame(self.note_split, bg=globals()["BG"])
+        header = tk.Frame(frame, bg=globals()["SURFACE_2"], height=28)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        title = tk.Label(
+            header,
+            text=path.name,
+            bg=globals()["SURFACE_2"],
+            fg=globals()["TEXT"],
+            font=("Segoe UI", 9, "bold"),
+            anchor="w",
+        )
+        title.pack(side="left", fill="x", expand=True, padx=(8, 4))
+        open_btn = tk.Label(
+            header,
+            text="Open",
+            bg=globals()["SURFACE_2"],
+            fg=globals()["MUTED"],
+            font=("Segoe UI", 9),
+            cursor="hand2",
+            padx=6,
+        )
+        open_btn.pack(side="right", padx=(0, 2))
+        close_btn = tk.Label(
+            header,
+            text="x",
+            bg=globals()["SURFACE_2"],
+            fg=globals()["MUTED"],
+            font=("Segoe UI", 10, "bold"),
+            cursor="hand2",
+            padx=7,
+        )
+        close_btn.pack(side="right", padx=(0, 4))
+
+        body = tk.Frame(frame, bg=globals()["BG"])
+        body.pack(fill="both", expand=True)
+        text = tk.Text(
+            body,
+            bg=globals()["BG"],
+            fg=globals()["TEXT"],
+            selectbackground=globals()["ACCENT"],
+            selectforeground=self._contrast_text(globals()["ACCENT"]),
+            relief="flat",
+            padx=8,
+            pady=10,
+            wrap="char",
+            spacing1=2,
+            spacing3=4,
+            borderwidth=0,
+            cursor="arrow",
+            width=1,
+            height=1,
+        )
+        text.pack(side="left", fill="both", expand=True)
+        self._attach_dark_scrollbar(body, text)
+        text.bind("<Key>", self._read_text_key_filter)
+        text.bind("<Double-Button-1>", lambda _event, p=path, f=frame: self._open_split_note_as_primary(p, f))
+
+        note = {"path": path, "frame": frame, "header": header, "title": title, "body": body, "text": text}
+        self._split_notes.append(note)
+        close_btn.bind("<Button-1>", lambda _event, f=frame: self._close_split_note(f))
+        open_btn.bind("<Button-1>", lambda _event, p=path, f=frame: self._open_split_note_as_primary(p, f))
+        for button in (open_btn, close_btn):
+            button.bind("<Enter>", lambda _event, w=button: w.configure(bg=globals()["BORDER"], fg=globals()["TEXT"]))
+            button.bind("<Leave>", lambda _event, w=button: w.configure(bg=globals()["SURFACE_2"], fg=globals()["MUTED"]))
+
+        for target in (frame, header, body, text):
+            self._register_note_drop_target(target)
+        self._render_split_note(note)
+        self.note_split.add(frame, minsize=120, stretch="always")
+        self._set_status(f"Opened split note: {path.name}")
+        return True
+
+    def _render_split_note(self, note: dict[str, object]) -> None:
+        path = Path(note["path"])
+        text = note["text"]
+        if not isinstance(text, tk.Text):
+            return
+        if is_markdown_note(path):
+            try:
+                content = read_text_file(path)
+            except OSError as exc:
+                text.configure(state=tk.NORMAL)
+                text.delete("1.0", tk.END)
+                text.insert(tk.END, f"Unable to open {path.name}: {exc}")
+                return
+            render_markdown(
+                text,
+                content,
+                path,
+                self.config.font_family,
+                self.config.font_size,
+                wiki_asset_resolver=self._wiki_asset_resolver,
+                wiki_note_resolver=self._wiki_note_embed,
+            )
+            return
+        try:
+            content, _encoding, _newline = read_editable_text(path)
+        except (OSError, UnicodeError) as exc:
+            content = f"Unable to open {path.name}: {exc}"
+        text.configure(state=tk.NORMAL)
+        text.delete("1.0", tk.END)
+        text.tag_configure("plain", font=(self.config.font_family or "Segoe UI", self.config.font_size + 2))
+        text.insert(tk.END, content, "plain")
+
+    def _refresh_split_note_panes(self) -> None:
+        for note in getattr(self, "_split_notes", []):
+            for key in ("frame", "body"):
+                widget = note.get(key)
+                if isinstance(widget, tk.Misc):
+                    widget.configure(bg=globals()["BG"])
+            header = note.get("header")
+            title = note.get("title")
+            text = note.get("text")
+            if isinstance(header, tk.Misc):
+                header.configure(bg=globals()["SURFACE_2"])
+            if isinstance(title, tk.Misc):
+                title.configure(bg=globals()["SURFACE_2"], fg=globals()["TEXT"])
+            if isinstance(text, tk.Text):
+                text.configure(
+                    bg=globals()["BG"],
+                    fg=globals()["TEXT"],
+                    selectbackground=globals()["ACCENT"],
+                    selectforeground=self._contrast_text(globals()["ACCENT"]),
+                )
+            self._render_split_note(note)
+
+    def _focus_split_note(self, path: Path) -> None:
+        for note in getattr(self, "_split_notes", []):
+            if Path(note["path"]).resolve() != path.resolve():
+                continue
+            text = note.get("text")
+            if isinstance(text, tk.Text):
+                text.focus_set()
+                self._set_status(f"{path.name} is already open in split view")
+            return
+
+    def _close_split_note(self, frame: tk.Misc) -> None:
+        self._split_notes = [note for note in self._split_notes if note.get("frame") is not frame]
+        try:
+            self.note_split.forget(frame)
+        except tk.TclError:
+            pass
+        try:
+            frame.destroy()
+        except tk.TclError:
+            pass
+        self._set_status_key("status.ready")
+
+    def _close_split_note_for_path(self, path: Path) -> None:
+        target = path.resolve()
+        for note in list(getattr(self, "_split_notes", [])):
+            if Path(note["path"]).resolve() == target:
+                frame = note.get("frame")
+                if isinstance(frame, tk.Misc):
+                    self._close_split_note(frame)
+
+    def _close_deleted_split_notes(self, path: Path) -> None:
+        target = path.resolve()
+        for note in list(getattr(self, "_split_notes", [])):
+            note_path = Path(note["path"]).resolve()
+            if note_path == target or self._path_is_descendant(target, note_path):
+                frame = note.get("frame")
+                if isinstance(frame, tk.Misc):
+                    self._close_split_note(frame)
+
+    def _close_all_split_notes(self) -> None:
+        for note in list(getattr(self, "_split_notes", [])):
+            frame = note.get("frame")
+            if isinstance(frame, tk.Misc):
+                self._close_split_note(frame)
+        self._split_notes = []
+
+    def _open_split_note_as_primary(self, path: Path, frame: tk.Misc) -> str:
+        self._close_split_note(frame)
+        if is_markdown_note(path):
+            self._open_note_from_tree(path)
+        elif is_editable_text_path(path):
+            self._open_text_file_from_tree(path)
+        return "break"
+
+    def _note_split_paths_after_relocate(self, mapping: dict[Path, Path]) -> None:
+        if not mapping:
+            return
+        resolved_mapping = {old.resolve(): new.resolve() for old, new in mapping.items()}
+        for note in getattr(self, "_split_notes", []):
+            old_path = Path(note["path"]).resolve()
+            new_path = resolved_mapping.get(old_path)
+            if not new_path:
+                continue
+            note["path"] = new_path
+            title = note.get("title")
+            if isinstance(title, tk.Misc):
+                title.configure(text=new_path.name)
+            self._render_split_note(note)
 
     # ── Status bar ───────────────────────────────────────────────────────────
 
@@ -378,11 +612,34 @@ class NotesMixin:
             self._insert_text(value)
 
     def _on_editor_drop(self, event):
+        drop_widget = getattr(event, "widget", None)
+        if not hasattr(drop_widget, "tk"):
+            drop_widget = self.text
+        values = split_drop_data(drop_widget, event.data)
+        note_paths: list[Path] = []
+        for value in values:
+            source = local_path_from_drop(value)
+            if source and source.is_file() and is_editable_text_path(source) and self._is_in_workspace(source):
+                note_paths.append(source)
+        if note_paths:
+            limit_hit = False
+            for path in note_paths:
+                resolved = path.resolve()
+                already_open = (
+                    bool(self.current_note_path and resolved == self.current_note_path.resolve())
+                    or self._is_split_note_path(resolved)
+                )
+                if already_open or self._open_note_count() < self._MAX_OPEN_NOTES:
+                    self._open_note_split(path)
+                else:
+                    limit_hit = True
+            if limit_hit:
+                self._set_error(f"Only {self._MAX_OPEN_NOTES} notes can be open at the same time.")
+            return getattr(event, "action", None)
         if self.view_mode != "edit":
             return getattr(event, "action", None)
         self._clear_placeholder()
         self.text.mark_set(tk.INSERT, self._editor_drop_index())
-        values = split_drop_data(self.text, event.data)
         if not any(
             (path := local_path_from_drop(value)) is not None and path.exists()
             for value in values

@@ -56,6 +56,7 @@ class WriteOnSideApp(
         self.view_mode = self.config.view_mode
         self.current_note_path: Path | None = None
         self.preview_path: Path | None = None
+        self._split_notes: list[dict[str, object]] = []
         self._document_encoding = "utf-8"
         self._document_newline = "\n"
         self._preview_previous_mode: str | None = None
@@ -264,8 +265,21 @@ class WriteOnSideApp(
         self._build_explorer()
 
         self.editor_container = tk.Frame(self.main_body, bg=g["BG"])
+        self.note_split = tk.PanedWindow(
+            self.editor_container,
+            orient=tk.VERTICAL,
+            bg=g["BORDER"],
+            sashwidth=3,
+            sashpad=0,
+            sashrelief="flat",
+            borderwidth=0,
+            relief="flat",
+            showhandle=False,
+            opaqueresize=True,
+        )
         self.content_frame = tk.Frame(self.editor_container, bg=g["BG"])
-        self.content_frame.pack(fill="both", expand=True, padx=2)
+        self.note_split.pack(fill="both", expand=True, padx=2)
+        self.note_split.add(self.content_frame, minsize=160, stretch="always")
 
         self.edit_frame = tk.Frame(self.content_frame, bg=g["BG"])
         self.read_frame = tk.Frame(self.content_frame, bg=g["BG"])
@@ -350,6 +364,12 @@ class WriteOnSideApp(
         self.text.bind("<MouseWheel>", lambda _e: self._hide_quick_format(), add="+")
         self.text.drop_target_register(DND_FILES, DND_TEXT)
         self.text.dnd_bind("<<Drop>>", self._on_editor_drop)
+        for drop_target in (self.note_split, self.content_frame, self.edit_frame, self.read_frame, self.read_text):
+            try:
+                drop_target.drop_target_register(DND_FILES, DND_TEXT)
+                drop_target.dnd_bind("<<Drop>>", self._on_editor_drop)
+            except (AttributeError, tk.TclError):
+                pass
         self._build_quick_format_toolbar()
         self._setup_editor_structure()
         self._setup_wikilinks()
