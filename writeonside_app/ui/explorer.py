@@ -4,12 +4,12 @@ import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
 from tkinter import messagebox, ttk
-from tkinterdnd2 import DND_FILES
+from tkinterdnd2 import COPY, DND_FILES
 
 from PIL import Image, ImageDraw, ImageTk
 
 from ..config import APP_NAME, save_config
-from ..dragdrop import local_path_from_drop, split_drop_data
+from ..dragdrop import compact_paths, format_paths_for_drag, local_path_from_drop, split_drop_data
 from ..frontmatter import ensure_front_matter
 from ..i18n import t
 from ..note_index import NoteIndexState, build_note_index, filter_workspace_files
@@ -121,7 +121,7 @@ class ExplorerMixin:
             self.explorer_tree_wrap,
             columns=("format",),
             show="tree",
-            selectmode="browse",
+            selectmode="extended",
             style="Explorer.Treeview",
         )
         self.file_tree.column("#0", width=180, minwidth=100, stretch=True)
@@ -144,6 +144,8 @@ class ExplorerMixin:
         self.file_tree.bind("<Shift-MouseWheel>", lambda _e: "break")
         self.file_tree.drop_target_register(DND_FILES)
         self.file_tree.dnd_bind("<<Drop>>", self._on_explorer_drop)
+        self.file_tree.drag_source_register(1, DND_FILES)
+        self.file_tree.dnd_bind("<<DragInitCmd>>", self._on_explorer_drag_init)
         self.file_tree.tag_configure("folder", foreground=g["SIDEBAR_TEXT"])
         self.file_tree.tag_configure("note", foreground=g["SIDEBAR_TEXT"])
         self.file_tree.tag_configure("attachment", foreground=g["SIDEBAR_MUTED"])
@@ -1005,6 +1007,8 @@ class ExplorerMixin:
         path = Path(item)
         if not path.is_dir():
             return None
+        if event.state & 0x4 or event.state & 0x1:
+            return None
         self.file_tree.selection_set(item)
         self.file_tree.focus(item)
         opened = bool(self.file_tree.item(item, "open"))
@@ -1019,6 +1023,8 @@ class ExplorerMixin:
             return
         selected = self.file_tree.selection()
         if not selected:
+            return
+        if len(selected) > 1:
             return
         if selected[0] == "|empty-filter|" or self._is_dummy_id(selected[0]):
             return
@@ -1059,15 +1065,31 @@ class ExplorerMixin:
     # ── Explorer clipboard & file actions ────────────────────────────────────
 
     def _explorer_selected_paths(self) -> list[Path]:
-        selected = self.file_tree.selection()
-        if not selected or selected[0] == "|empty-filter|" or self._is_dummy_id(selected[0]):
-            return []
-        path = Path(selected[0])
-        if not path.exists() or not self._is_in_workspace(path):
-            return []
-        if path.resolve() == self._workspace_dir().resolve():
-            return []
-        return [path]
+        root = self._workspace_dir().resolve()
+        paths: list[Path] = []
+        for item in self.file_tree.selection():
+            if item == "|empty-filter|" or self._is_dummy_id(item):
+                continue
+            path = Path(item)
+            if not path.exists() or not self._is_in_workspace(path):
+                continue
+            if path.resolve() == root:
+                continue
+            paths.append(path)
+        return compact_paths(paths)
+
+    def _on_explorer_drag_init(self, event):
+        paths = self._explorer_selected_paths()
+        if not paths:
+            item = self.file_tree.identify_row(event.y)
+            if item and item != "|empty-filter|" and not self._is_dummy_id(item):
+                path = Path(item)
+                if path.exists() and self._is_in_workspace(path) and path.resolve() != self._workspace_dir().resolve():
+                    paths = [path]
+        data = format_paths_for_drag(paths)
+        if not data:
+            return "break"
+        return (COPY, DND_FILES, data)
 
     def _explorer_paste_destination(self, item: str | None = None) -> Path:
         if item and item != "|empty-filter|" and not self._is_dummy_id(item):
@@ -1085,16 +1107,28 @@ class ExplorerMixin:
         except ValueError:
             return False
 
-    def _copy_path_to_clipboard(self, path: Path) -> None:
+    def _copy_paths_to_clipboard(self, paths: list[Path]) -> None:
+        if not paths:
+            return
         self.root.clipboard_clear()
-        self.root.clipboard_append(str(path.resolve()))
-        self._set_status_key("status.path_copied")
+        self.root.clipboard_append("\n".join(str(path.resolve()) for path in paths))
+        if len(paths) == 1:
+            self._set_status_key("status.path_copied")
+        else:
+            self._set_status_key("status.paths_copied", count=len(paths))
+
+    def _copy_path_to_clipboard(self, path: Path) -> None:
+        self._copy_paths_to_clipboard([path])
 
     def _explorer_reveal(self, path: Path) -> None:
         try:
             reveal_in_file_explorer(path)
         except OSError as exc:
             self._set_error(t("error.reveal_failed", exc=exc))
+
+    def _explorer_reveal_selection(self, paths: list[Path]) -> None:
+        for path in paths:
+            self._explorer_reveal(path)
 
     def _explorer_set_clipboard(self, paths: list[Path], mode: str) -> None:
         self._explorer_clipboard_paths = [path.resolve() for path in paths]
@@ -1191,6 +1225,11 @@ class ExplorerMixin:
         else:
             self._delete_note(path)
             return
+        self._after_explorer_tree_delete(path)
+        self._refresh_explorer()
+        self._schedule_wiki_index_refresh()
+
+    def _after_explorer_tree_delete(self, path: Path) -> None:
         if self.current_note_path:
             try:
                 self.current_note_path.resolve().relative_to(path.resolve())
@@ -1204,8 +1243,36 @@ class ExplorerMixin:
                 self._close_file_preview(restore_note=True)
             except ValueError:
                 pass
-        self._refresh_explorer()
-        self._schedule_wiki_index_refresh()
+
+    def _delete_explorer_selection(self) -> None:
+        paths = self._explorer_selected_paths()
+        if not paths:
+            return
+        if len(paths) == 1:
+            self._delete_explorer_item(paths[0])
+            return
+        if not messagebox.askyesno(APP_NAME, t("dialog.delete_items", count=len(paths))):
+            return
+        deleted = 0
+        for path in paths:
+            try:
+                if path.is_dir():
+                    import shutil
+
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                self._after_explorer_tree_delete(path)
+                deleted += 1
+            except OSError as exc:
+                self._set_error(t("error.delete_failed", exc=exc))
+                break
+        if deleted:
+            if self.current_note_path and not self.current_note_path.exists():
+                self.current_note_path = None
+                self._load_initial_note()
+            self._refresh_explorer()
+            self._schedule_wiki_index_refresh()
 
     def _on_explorer_copy_key(self, _event) -> str | None:
         if self.file_tree.focus_get() is not self.file_tree:
@@ -1222,21 +1289,22 @@ class ExplorerMixin:
     def _on_explorer_paste_key(self, _event) -> str | None:
         if self.file_tree.focus_get() is not self.file_tree:
             return None
-        item = self.file_tree.selection()[0] if self.file_tree.selection() else None
+        item = self.file_tree.focus() or (self.file_tree.selection()[0] if self.file_tree.selection() else None)
         self._explorer_paste(item)
         return "break"
 
     def _on_tree_context(self, event) -> None:
         g = globals()
         item = self.file_tree.identify_row(event.y)
-        if item:
-            self.file_tree.selection_set(item)
+        if item and item != "|empty-filter|" and not self._is_dummy_id(item):
+            if item not in self.file_tree.selection():
+                self.file_tree.selection_set(item)
             self.file_tree.focus(item)
-        path = Path(item) if item and not self._is_dummy_id(item) and item != "|empty-filter|" else None
-        has_item = bool(path and path.exists() and self._is_in_workspace(path))
-        is_file = bool(has_item and path.is_file())
-        is_workspace_root = bool(has_item and path.resolve() == self._workspace_dir().resolve())
-        can_clipboard = bool(has_item and not is_workspace_root)
+        paths = self._explorer_selected_paths()
+        single_path = paths[0] if len(paths) == 1 else None
+        has_selection = bool(paths)
+        is_file = bool(single_path and single_path.is_file())
+        can_rename = len(paths) == 1
         paste_state = tk.NORMAL if self._explorer_clipboard_paths else tk.DISABLED
         menu = tk.Menu(
             self.root,
@@ -1252,12 +1320,12 @@ class ExplorerMixin:
         menu.add_command(
             label=t("explorer.menu.cut"),
             command=self._explorer_cut,
-            state=tk.NORMAL if can_clipboard else tk.DISABLED,
+            state=tk.NORMAL if has_selection else tk.DISABLED,
         )
         menu.add_command(
             label=t("explorer.menu.copy"),
             command=self._explorer_copy,
-            state=tk.NORMAL if can_clipboard else tk.DISABLED,
+            state=tk.NORMAL if has_selection else tk.DISABLED,
         )
         menu.add_command(
             label=t("explorer.menu.paste"),
@@ -1267,40 +1335,40 @@ class ExplorerMixin:
         menu.add_separator()
         menu.add_command(
             label=t("explorer.menu.copy_path"),
-            command=lambda: self._copy_path_to_clipboard(path),
-            state=tk.NORMAL if has_item else tk.DISABLED,
+            command=lambda: self._copy_paths_to_clipboard(paths),
+            state=tk.NORMAL if has_selection else tk.DISABLED,
         )
         menu.add_command(
             label=t("explorer.menu.reveal"),
-            command=lambda: self._explorer_reveal(path),
-            state=tk.NORMAL if has_item else tk.DISABLED,
+            command=lambda: self._explorer_reveal_selection(paths),
+            state=tk.NORMAL if has_selection else tk.DISABLED,
         )
-        if has_item:
+        if has_selection:
             menu.add_separator()
-            if is_file:
-                if is_editable_text_path(path) and not is_markdown_note(path):
+            if is_file and single_path is not None:
+                if is_editable_text_path(single_path) and not is_markdown_note(single_path):
                     menu.add_command(
                         label=t("explorer.menu.edit"),
-                        command=lambda: self._open_text_file_from_tree(path),
+                        command=lambda: self._open_text_file_from_tree(single_path),
                     )
-                elif not is_markdown_note(path):
+                elif not is_markdown_note(single_path):
                     menu.add_command(
                         label=t("explorer.menu.preview"),
-                        command=lambda: self._preview_explorer_file(path),
+                        command=lambda: self._preview_explorer_file(single_path),
                     )
                 menu.add_command(
                     label=t("explorer.menu.open_external"),
-                    command=lambda: self._open_external_file(path),
+                    command=lambda: self._open_external_file(single_path),
                 )
-            if not is_workspace_root:
+            if can_rename and single_path is not None:
                 menu.add_command(
                     label=t("explorer.menu.rename"),
-                    command=lambda: self._rename_note(path),
+                    command=lambda: self._rename_note(single_path),
                 )
-                menu.add_command(
-                    label=t("explorer.menu.delete"),
-                    command=lambda: self._delete_explorer_item(path),
-                )
+            menu.add_command(
+                label=t("explorer.menu.delete"),
+                command=self._delete_explorer_selection,
+            )
         menu.add_separator()
         menu.add_command(label=t("explorer.menu.refresh"), command=self._refresh_explorer)
         menu.tk_popup(event.x_root, event.y_root)

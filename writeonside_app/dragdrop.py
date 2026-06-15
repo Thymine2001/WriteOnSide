@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Iterable
 from urllib.parse import unquote, urlparse
 
 
@@ -16,6 +17,21 @@ def split_drop_data(widget, data: str) -> list[str]:
     except Exception:
         values = (data,)
     return [str(value).strip() for value in values if str(value).strip()]
+
+
+def compact_paths(paths: Iterable[Path]) -> list[Path]:
+    """Drop selected paths that live inside another selected folder."""
+    resolved = sorted({Path(path).resolve() for path in paths}, key=lambda item: len(item.parts))
+    compact: list[Path] = []
+    for path in resolved:
+        if any(path != other and path.is_relative_to(other) for other in compact):
+            continue
+        compact.append(path)
+    return compact
+
+
+def format_paths_for_drag(paths: Iterable[Path]) -> tuple[str, ...]:
+    return tuple(str(path.resolve()) for path in compact_paths(paths))
 
 
 def local_path_from_drop(value: str) -> Path | None:
