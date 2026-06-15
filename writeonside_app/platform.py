@@ -89,6 +89,19 @@ def enable_per_monitor_dpi() -> None:
         pass
 
 
+def reveal_in_file_explorer(path: Path) -> None:
+    """Open the system file manager and select the given path."""
+    import subprocess
+
+    target = path.resolve()
+    if not target.exists():
+        raise FileNotFoundError(target)
+    if target.is_dir():
+        subprocess.Popen(["explorer", str(target)])
+        return
+    subprocess.Popen(["explorer", "/select,", str(target)])
+
+
 def hide_window_from_taskbar(hwnd: int) -> bool:
     if not hwnd:
         return False

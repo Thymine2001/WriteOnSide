@@ -8,14 +8,14 @@ from tkinterdnd2 import DND_FILES
 
 from PIL import Image, ImageDraw, ImageTk
 
-from ..config import save_config
+from ..config import APP_NAME, save_config
 from ..dragdrop import local_path_from_drop, split_drop_data
 from ..frontmatter import ensure_front_matter
 from ..i18n import t
 from ..note_index import NoteIndexState, build_note_index, filter_workspace_files
 from ..storage import safe_note_name
 from ..text_files import is_editable_text_path, is_markdown_note
-from ..theme import *  # noqa: F401,F403
+from ..platform import reveal_in_file_explorer
 
 
 class ExplorerMixin:
@@ -132,9 +132,15 @@ class ExplorerMixin:
         self.file_tree.bind("<<TreeviewClose>>", self._on_tree_close)
         self.file_tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.file_tree.bind("<Button-1>", self._on_tree_click, add="+")
+        self.file_tree.bind("<Button-1>", lambda _e: self.file_tree.focus_set(), add="+")
         self.file_tree.bind("<Double-Button-1>", self._on_tree_double_click)
         self.file_tree.bind("<Button-3>", self._on_tree_context)
+        self.file_tree.bind("<Control-c>", self._on_explorer_copy_key, add="+")
+        self.file_tree.bind("<Control-x>", self._on_explorer_cut_key, add="+")
+        self.file_tree.bind("<Control-v>", self._on_explorer_paste_key, add="+")
         self.file_tree.bind("<Configure>", self._on_file_tree_resize)
+        self._explorer_clipboard_paths: list[Path] = []
+        self._explorer_clipboard_mode: str | None = None
         self.file_tree.bind("<Shift-MouseWheel>", lambda _e: "break")
         self.file_tree.drop_target_register(DND_FILES)
         self.file_tree.dnd_bind("<<Drop>>", self._on_explorer_drop)
@@ -1050,11 +1056,188 @@ class ExplorerMixin:
             else:
                 self._open_external_file(path)
 
+    # ── Explorer clipboard & file actions ────────────────────────────────────
+
+    def _explorer_selected_paths(self) -> list[Path]:
+        selected = self.file_tree.selection()
+        if not selected or selected[0] == "|empty-filter|" or self._is_dummy_id(selected[0]):
+            return []
+        path = Path(selected[0])
+        if not path.exists() or not self._is_in_workspace(path):
+            return []
+        if path.resolve() == self._workspace_dir().resolve():
+            return []
+        return [path]
+
+    def _explorer_paste_destination(self, item: str | None = None) -> Path:
+        if item and item != "|empty-filter|" and not self._is_dummy_id(item):
+            path = Path(item)
+            if path.is_dir():
+                return path
+            if path.is_file():
+                return path.parent
+        return self._workspace_dir()
+
+    def _path_is_descendant(self, ancestor: Path, descendant: Path) -> bool:
+        try:
+            descendant.resolve().relative_to(ancestor.resolve())
+            return True
+        except ValueError:
+            return False
+
+    def _copy_path_to_clipboard(self, path: Path) -> None:
+        self.root.clipboard_clear()
+        self.root.clipboard_append(str(path.resolve()))
+        self._set_status_key("status.path_copied")
+
+    def _explorer_reveal(self, path: Path) -> None:
+        try:
+            reveal_in_file_explorer(path)
+        except OSError as exc:
+            self._set_error(t("error.reveal_failed", exc=exc))
+
+    def _explorer_set_clipboard(self, paths: list[Path], mode: str) -> None:
+        self._explorer_clipboard_paths = [path.resolve() for path in paths]
+        self._explorer_clipboard_mode = mode
+        if mode == "cut":
+            self._set_status_key("status.explorer_cut", count=len(paths))
+        else:
+            self._set_status_key("status.explorer_copied", count=len(paths))
+
+    def _explorer_cut(self) -> None:
+        paths = self._explorer_selected_paths()
+        if paths:
+            self._explorer_set_clipboard(paths, "cut")
+
+    def _explorer_copy(self) -> None:
+        paths = self._explorer_selected_paths()
+        if paths:
+            self._explorer_set_clipboard(paths, "copy")
+
+    def _note_paths_after_relocate(self, mapping: dict[Path, Path]) -> None:
+        for old_path, new_path in mapping.items():
+            if self.current_note_path and self.current_note_path.resolve() == old_path.resolve():
+                self.current_note_path = new_path
+                self.config.current_note_path = str(new_path) if is_markdown_note(new_path) else ""
+                self._update_note_title()
+            if getattr(self, "preview_path", None) and self.preview_path.resolve() == old_path.resolve():
+                self.preview_path = new_path
+
+    def _move_into_explorer(self, source: Path, destination: Path) -> Path:
+        import shutil
+
+        source = source.resolve()
+        destination = destination.resolve()
+        if source == destination:
+            return source
+        if source.parent == destination:
+            return source
+        if source.is_dir():
+            if source == destination or self._path_is_descendant(source, destination):
+                raise OSError("A folder cannot be moved into itself.")
+        target = destination / source.name
+        if target.exists():
+            raise OSError(f"{source.name} already exists in this folder.")
+        shutil.move(str(source), str(target))
+        return target
+
+    def _explorer_paste(self, item: str | None = None) -> None:
+        if not self._explorer_clipboard_paths or not self._explorer_clipboard_mode:
+            return
+        destination = self._explorer_paste_destination(item)
+        if not self._is_in_workspace(destination):
+            self._set_error(t("error.explorer_paste_failed", exc=t("error.explorer_outside_workspace")))
+            return
+        relocated: dict[Path, Path] = {}
+        pasted = 0
+        errors: list[str] = []
+        mode = self._explorer_clipboard_mode
+        sources = list(self._explorer_clipboard_paths)
+        for source in sources:
+            if not source.exists():
+                continue
+            try:
+                if mode == "cut":
+                    target = self._move_into_explorer(source, destination)
+                else:
+                    target = self._copy_into_explorer(source, destination)
+                relocated[source.resolve()] = target.resolve()
+                pasted += 1
+            except OSError as exc:
+                errors.append(str(exc))
+        if relocated:
+            self._note_paths_after_relocate(relocated)
+        if mode == "cut" and pasted:
+            self._explorer_clipboard_paths = []
+            self._explorer_clipboard_mode = None
+        if pasted:
+            self._refresh_explorer()
+            self._schedule_wiki_index_refresh()
+            self._set_status_key("status.explorer_pasted", count=pasted)
+        elif errors:
+            self._set_error(t("error.explorer_paste_failed", exc=errors[0]))
+
+    def _delete_explorer_item(self, path: Path) -> None:
+        import shutil
+
+        if path.is_dir():
+            if not messagebox.askyesno(APP_NAME, t("dialog.delete_folder", name=path.name)):
+                return
+            try:
+                shutil.rmtree(path)
+            except OSError as exc:
+                self._set_error(t("error.delete_failed", exc=exc))
+                return
+        else:
+            self._delete_note(path)
+            return
+        if self.current_note_path:
+            try:
+                self.current_note_path.resolve().relative_to(path.resolve())
+                self.current_note_path = None
+                self._load_initial_note()
+            except ValueError:
+                pass
+        if getattr(self, "preview_path", None):
+            try:
+                self.preview_path.resolve().relative_to(path.resolve())
+                self._close_file_preview(restore_note=True)
+            except ValueError:
+                pass
+        self._refresh_explorer()
+        self._schedule_wiki_index_refresh()
+
+    def _on_explorer_copy_key(self, _event) -> str | None:
+        if self.file_tree.focus_get() is not self.file_tree:
+            return None
+        self._explorer_copy()
+        return "break"
+
+    def _on_explorer_cut_key(self, _event) -> str | None:
+        if self.file_tree.focus_get() is not self.file_tree:
+            return None
+        self._explorer_cut()
+        return "break"
+
+    def _on_explorer_paste_key(self, _event) -> str | None:
+        if self.file_tree.focus_get() is not self.file_tree:
+            return None
+        item = self.file_tree.selection()[0] if self.file_tree.selection() else None
+        self._explorer_paste(item)
+        return "break"
+
     def _on_tree_context(self, event) -> None:
         g = globals()
         item = self.file_tree.identify_row(event.y)
         if item:
             self.file_tree.selection_set(item)
+            self.file_tree.focus(item)
+        path = Path(item) if item and not self._is_dummy_id(item) and item != "|empty-filter|" else None
+        has_item = bool(path and path.exists() and self._is_in_workspace(path))
+        is_file = bool(has_item and path.is_file())
+        is_workspace_root = bool(has_item and path.resolve() == self._workspace_dir().resolve())
+        can_clipboard = bool(has_item and not is_workspace_root)
+        paste_state = tk.NORMAL if self._explorer_clipboard_paths else tk.DISABLED
         menu = tk.Menu(
             self.root,
             tearoff=False,
@@ -1062,19 +1245,64 @@ class ExplorerMixin:
             fg=g["SIDEBAR_TEXT"],
             activebackground=g["SIDEBAR_HOVER"],
             activeforeground=g["TEXT"],
+            font=("Segoe UI", 10),
         )
-        menu.add_command(label="New note", command=self._create_new_note)
-        if item and Path(item).is_file():
-            path = Path(item)
-            if is_editable_text_path(path) and not is_markdown_note(path):
-                menu.add_command(label="Edit", command=lambda: self._open_text_file_from_tree(path))
-            elif not is_markdown_note(path):
-                menu.add_command(label="Preview", command=lambda: self._preview_explorer_file(path))
-            menu.add_command(label="Open externally", command=lambda: self._open_external_file(path))
-            menu.add_command(label="Rename", command=lambda: self._rename_note(path))
-            menu.add_command(label="Delete", command=lambda: self._delete_note(path))
+        menu.add_command(label=t("explorer.menu.new_note"), command=self._create_new_note)
         menu.add_separator()
-        menu.add_command(label="Refresh", command=self._refresh_explorer)
+        menu.add_command(
+            label=t("explorer.menu.cut"),
+            command=self._explorer_cut,
+            state=tk.NORMAL if can_clipboard else tk.DISABLED,
+        )
+        menu.add_command(
+            label=t("explorer.menu.copy"),
+            command=self._explorer_copy,
+            state=tk.NORMAL if can_clipboard else tk.DISABLED,
+        )
+        menu.add_command(
+            label=t("explorer.menu.paste"),
+            command=lambda: self._explorer_paste(item),
+            state=paste_state,
+        )
+        menu.add_separator()
+        menu.add_command(
+            label=t("explorer.menu.copy_path"),
+            command=lambda: self._copy_path_to_clipboard(path),
+            state=tk.NORMAL if has_item else tk.DISABLED,
+        )
+        menu.add_command(
+            label=t("explorer.menu.reveal"),
+            command=lambda: self._explorer_reveal(path),
+            state=tk.NORMAL if has_item else tk.DISABLED,
+        )
+        if has_item:
+            menu.add_separator()
+            if is_file:
+                if is_editable_text_path(path) and not is_markdown_note(path):
+                    menu.add_command(
+                        label=t("explorer.menu.edit"),
+                        command=lambda: self._open_text_file_from_tree(path),
+                    )
+                elif not is_markdown_note(path):
+                    menu.add_command(
+                        label=t("explorer.menu.preview"),
+                        command=lambda: self._preview_explorer_file(path),
+                    )
+                menu.add_command(
+                    label=t("explorer.menu.open_external"),
+                    command=lambda: self._open_external_file(path),
+                )
+            if not is_workspace_root:
+                menu.add_command(
+                    label=t("explorer.menu.rename"),
+                    command=lambda: self._rename_note(path),
+                )
+                menu.add_command(
+                    label=t("explorer.menu.delete"),
+                    command=lambda: self._delete_explorer_item(path),
+                )
+        menu.add_separator()
+        menu.add_command(label=t("explorer.menu.refresh"), command=self._refresh_explorer)
         menu.tk_popup(event.x_root, event.y_root)
 
     # ── Drop into explorer ───────────────────────────────────────────────────
