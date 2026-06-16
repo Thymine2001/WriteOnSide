@@ -1,0 +1,10 @@
+Plain text sample for WriteOnSide.
+
+Use this file to verify editable non-Markdown text files.
+
+Expected behavior:
+- Double-click opens the text editor.
+- Read mode is disabled for non-Markdown files.
+- Save should preserve plain text content.
+- Search in Files should find this file by name.
+

@@ -1040,6 +1040,15 @@ class ExplorerMixin:
             return
         if not path.is_file():
             return
+        if is_markdown_note(path):
+            self.root.after_idle(lambda p=path: self._open_note_from_tree(p))
+        elif is_editable_text_path(path):
+            self.root.after_idle(lambda p=path: self._open_text_file_from_tree(p))
+        else:
+            self.root.after_idle(lambda p=path: self._preview_explorer_file(p))
+
+    def _clear_tree_context_ignore(self) -> None:
+        self._ignore_tree_events = False
 
     def _on_tree_double_click(self, event) -> None:
         item = self.file_tree.identify_row(event.y)
@@ -1289,13 +1298,16 @@ class ExplorerMixin:
         self._explorer_paste(item)
         return "break"
 
-    def _on_tree_context(self, event) -> None:
+    def _on_tree_context(self, event) -> str:
         g = globals()
+        self._ignore_tree_events = True
         item = self.file_tree.identify_row(event.y)
         if item and item != "|empty-filter|" and not self._is_dummy_id(item):
             if item not in self.file_tree.selection():
                 self.file_tree.selection_set(item)
-            self.file_tree.focus(item)
+                self.file_tree.focus(item)
+            else:
+                self.file_tree.focus(item)
         paths = self._explorer_selected_paths()
         single_path = paths[0] if len(paths) == 1 else None
         has_selection = bool(paths)
@@ -1342,6 +1354,11 @@ class ExplorerMixin:
         if has_selection:
             menu.add_separator()
             if is_file and single_path is not None:
+                if is_editable_text_path(single_path):
+                    menu.add_command(
+                        label=t("explorer.menu.open_split"),
+                        command=lambda: self._open_note_split(single_path),
+                    )
                 if is_editable_text_path(single_path) and not is_markdown_note(single_path):
                     menu.add_command(
                         label=t("explorer.menu.edit"),
@@ -1367,7 +1384,12 @@ class ExplorerMixin:
             )
         menu.add_separator()
         menu.add_command(label=t("explorer.menu.refresh"), command=self._refresh_explorer)
-        menu.tk_popup(event.x_root, event.y_root)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+            self.root.after_idle(self._clear_tree_context_ignore)
+        return "break"
 
     # ── Drop into explorer ───────────────────────────────────────────────────
 

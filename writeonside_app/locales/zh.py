@@ -75,6 +75,7 @@ MESSAGES = {
     "explorer.menu.copy_path": "复制路径",
     "explorer.menu.reveal": "在文件资源管理器中显示",
     "explorer.menu.open_external": "用外部程序打开",
+    "explorer.menu.open_split": "在分屏中打开",
     "explorer.menu.edit": "编辑",
     "explorer.menu.preview": "预览",
     "explorer.menu.rename": "重命名",

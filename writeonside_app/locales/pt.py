@@ -75,6 +75,7 @@ MESSAGES = {
     "explorer.menu.copy_path": "Copiar caminho",
     "explorer.menu.reveal": "Mostrar no Explorador de Ficheiros",
     "explorer.menu.open_external": "Abrir externamente",
+    "explorer.menu.open_split": "Abrir em divisão",
     "explorer.menu.edit": "Editar",
     "explorer.menu.preview": "Pré-visualizar",
     "explorer.menu.rename": "Renomear",

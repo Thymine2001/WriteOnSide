@@ -1173,26 +1173,6 @@ class NotesMixin:
         if not hasattr(drop_widget, "tk"):
             drop_widget = self.text
         values = split_drop_data(drop_widget, event.data)
-        note_paths: list[Path] = []
-        for value in values:
-            source = local_path_from_drop(value)
-            if source and source.is_file() and is_editable_text_path(source) and self._is_in_workspace(source):
-                note_paths.append(source)
-        if note_paths:
-            limit_hit = False
-            for path in note_paths:
-                resolved = path.resolve()
-                already_open = (
-                    bool(self.current_note_path and resolved == self.current_note_path.resolve())
-                    or self._is_split_note_path(resolved)
-                )
-                if already_open or self._open_note_count() < self._MAX_OPEN_NOTES:
-                    self._open_note_split(path)
-                else:
-                    limit_hit = True
-            if limit_hit:
-                self._set_error(f"Only {self._MAX_OPEN_NOTES} notes can be open at the same time.")
-            return getattr(event, "action", None)
         if self.view_mode != "edit":
             return getattr(event, "action", None)
         self._clear_placeholder()
