@@ -24,6 +24,8 @@ MESSAGES = {
     "tooltip.find_next": "Próxima ocorrência",
     "tooltip.find_replace_toggle": "Substituir",
     "tooltip.find_close": "Fechar",
+    "tooltip.split_save": "Guardar nota dividida",
+    "tooltip.split_main": "Trocar com a nota principal",
     "tooltip.replace_current": "Substituir atual",
     "tooltip.replace_all": "Substituir tudo",
     "cmd.new_note": "Nova nota",

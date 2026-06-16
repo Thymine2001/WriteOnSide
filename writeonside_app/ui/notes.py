@@ -13,9 +13,11 @@ from tkinterdnd2 import DND_FILES, DND_TEXT
 
 from ..config import APP_NAME, save_config
 from ..dragdrop import is_image_path, is_image_url, is_url, local_path_from_drop, split_drop_data
+from ..editor_images import EDITOR_IMAGE_ELIDE_TAG, load_preview_photo, plan_editor_image_blocks
 from ..frontmatter import note_template, parse_front_matter
 from ..hotkeys import format_hotkey_display
 from ..i18n import t
+from ..live_highlight import MD_EDITOR_TAGS, apply_live_highlight_plan, plan_live_highlight
 from ..markdown import render_markdown
 from ..preview import render_file_preview
 from ..notes.service import rename_target, unique_note_path
@@ -267,6 +269,7 @@ class NotesMixin:
     def _switch_workspace(self, new_notes_dir: str) -> None:
         old_root = self._workspace_dir().resolve()
         self._save_note(False)
+        self._save_all_split_notes()
         self.config.notes_directory = new_notes_dir
         new_root = self._workspace_dir().resolve()
         if new_root == old_root:
@@ -337,12 +340,22 @@ class NotesMixin:
             anchor="w",
         )
         title.pack(side="left", fill="x", expand=True, padx=(8, 4))
-        open_btn = tk.Label(
+        save_btn = tk.Label(
             header,
-            text="Open",
+            text="💾",
             bg=globals()["SURFACE_2"],
             fg=globals()["MUTED"],
-            font=("Segoe UI", 9),
+            font=("Segoe UI Emoji", 9),
+            cursor="hand2",
+            padx=6,
+        )
+        save_btn.pack(side="right", padx=(0, 2))
+        open_btn = tk.Label(
+            header,
+            text="↕",
+            bg=globals()["SURFACE_2"],
+            fg=globals()["MUTED"],
+            font=("Segoe UI", 11, "bold"),
             cursor="hand2",
             padx=6,
         )
@@ -364,31 +377,81 @@ class NotesMixin:
             body,
             bg=globals()["BG"],
             fg=globals()["TEXT"],
+            insertbackground=globals()["ACCENT"],
             selectbackground=globals()["ACCENT"],
             selectforeground=self._contrast_text(globals()["ACCENT"]),
+            font=(self.config.font_family or "Segoe UI", self.config.font_size + 3),
             relief="flat",
             padx=8,
             pady=10,
-            wrap="char",
+            wrap="word",
+            undo=True,
+            exportselection=False,
             spacing1=2,
             spacing3=4,
             borderwidth=0,
-            cursor="arrow",
             width=1,
             height=1,
         )
         text.pack(side="left", fill="both", expand=True)
         self._attach_dark_scrollbar(body, text)
-        text.bind("<Key>", self._read_text_key_filter)
-        text.bind("<Double-Button-1>", lambda _event, p=path, f=frame: self._open_split_note_as_primary(p, f))
+        text.bind("<FocusIn>", lambda _event: self._activate_split_note(note))
+        text.bind("<<Modified>>", lambda _event: self._on_split_text_modified(note))
+        text.bind("<Control-s>", lambda _event: self._save_split_note(note, show_indicator=True) or "break")
+        text.bind("<Control-S>", lambda _event: self._save_split_note(note, show_indicator=True) or "break")
+        text.bind("<Escape>", lambda _event: self._on_escape())
+        text.bind("<Configure>", lambda _event: self._schedule_split_live_render(note), add="+")
+        text.bind("<ButtonRelease-1>", lambda _event: self._on_split_image_click_outside(note), add="+")
 
-        note = {"path": path, "frame": frame, "header": header, "title": title, "body": body, "text": text}
+        note = {
+            "path": path,
+            "frame": frame,
+            "header": header,
+            "title": title,
+            "body": body,
+            "text": text,
+            "save_btn": save_btn,
+            "open_btn": open_btn,
+            "close_btn": close_btn,
+            "encoding": "utf-8",
+            "newline": "\n",
+            "dirty": False,
+            "loading": False,
+            "autosave_after": None,
+            "live_render_after": None,
+            "color_tags": set(),
+            "image_previews": {},
+            "preview_photos": [],
+            "image_blocks": {},
+            "image_preview_state": None,
+            "image_last_width": None,
+            "image_editing_keys": set(),
+            "image_preview_busy": False,
+        }
         self._split_notes.append(note)
+        save_btn.bind("<Button-1>", lambda _event, n=note: self._save_split_note(n, show_indicator=True))
         close_btn.bind("<Button-1>", lambda _event, f=frame: self._close_split_note(f))
-        open_btn.bind("<Button-1>", lambda _event, p=path, f=frame: self._open_split_note_as_primary(p, f))
-        for button in (open_btn, close_btn):
-            button.bind("<Enter>", lambda _event, w=button: w.configure(bg=globals()["BORDER"], fg=globals()["TEXT"]))
-            button.bind("<Leave>", lambda _event, w=button: w.configure(bg=globals()["SURFACE_2"], fg=globals()["MUTED"]))
+        open_btn.bind("<Button-1>", lambda _event, n=note: self._open_split_note_as_primary(n))
+        tooltips = {
+            save_btn: "tooltip.split_save",
+            open_btn: "tooltip.split_main",
+            close_btn: "tooltip.close",
+        }
+        for button in (save_btn, open_btn, close_btn):
+            button.bind(
+                "<Enter>",
+                lambda _event, w=button, key=tooltips[button]: (
+                    w.configure(bg=globals()["BORDER"], fg=globals()["TEXT"]),
+                    self._show_tooltip(w, t(key)),
+                ),
+            )
+            button.bind(
+                "<Leave>",
+                lambda _event, w=button: (
+                    w.configure(bg=globals()["SURFACE_2"], fg=globals()["MUTED"]),
+                    self._hide_tooltip(),
+                ),
+            )
 
         for target in (frame, header, body, text):
             self._register_note_drop_target(target)
@@ -402,32 +465,22 @@ class NotesMixin:
         text = note["text"]
         if not isinstance(text, tk.Text):
             return
-        if is_markdown_note(path):
-            try:
-                content = read_text_file(path)
-            except OSError as exc:
-                text.configure(state=tk.NORMAL)
-                text.delete("1.0", tk.END)
-                text.insert(tk.END, f"Unable to open {path.name}: {exc}")
-                return
-            render_markdown(
-                text,
-                content,
-                path,
-                self.config.font_family,
-                self.config.font_size,
-                wiki_asset_resolver=self._wiki_asset_resolver,
-                wiki_note_resolver=self._wiki_note_embed,
-            )
-            return
         try:
-            content, _encoding, _newline = read_editable_text(path)
+            content, encoding, newline = read_editable_text(path)
         except (OSError, UnicodeError) as exc:
             content = f"Unable to open {path.name}: {exc}"
-        text.configure(state=tk.NORMAL)
+            encoding = "utf-8"
+            newline = "\n"
+        note["loading"] = True
+        note["encoding"] = encoding
+        note["newline"] = newline
+        note["dirty"] = False
         text.delete("1.0", tk.END)
-        text.tag_configure("plain", font=(self.config.font_family or "Segoe UI", self.config.font_size + 2))
-        text.insert(tk.END, content, "plain")
+        text.insert("1.0", content)
+        text.edit_modified(False)
+        note["loading"] = False
+        self._update_split_note_title(note)
+        self._apply_split_live_render(note)
 
     def _refresh_split_note_panes(self) -> None:
         for note in getattr(self, "_split_notes", []):
@@ -446,10 +499,472 @@ class NotesMixin:
                 text.configure(
                     bg=globals()["BG"],
                     fg=globals()["TEXT"],
+                    insertbackground=globals()["ACCENT"],
                     selectbackground=globals()["ACCENT"],
                     selectforeground=self._contrast_text(globals()["ACCENT"]),
+                    font=(self.config.font_family or "Segoe UI", self.config.font_size + 3),
                 )
-            self._render_split_note(note)
+            self._update_split_note_title(note, active=note is getattr(self, "_last_focused_split_note", None))
+            self._apply_split_live_render(note)
+
+    def _configure_split_markdown_tags(self, text: tk.Text) -> None:
+        family = self.config.font_family or "Segoe UI"
+        delta = self.config.font_size - 10
+        g = globals()
+        text.tag_configure("md_h1", font=(family, 18 + delta, "bold"), foreground=g["TEXT"], spacing3=6)
+        text.tag_configure("md_h2", font=(family, 16 + delta, "bold"), foreground=g["TEXT"], spacing3=5)
+        text.tag_configure("md_h3", font=(family, 14 + delta, "bold"), foreground=g["TEXT"], spacing3=4)
+        text.tag_configure("md_h4", font=(family, 13 + delta, "bold"), foreground=g["TEXT"], spacing3=3)
+        text.tag_configure("md_h5", font=(family, 12 + delta, "bold"), foreground=g["TEXT_SOFT"], spacing3=3)
+        text.tag_configure("md_h6", font=(family, 11 + delta, "bold"), foreground=g["MUTED"], spacing3=2)
+        text.tag_configure("md_bold", font=(family, 13 + delta, "bold"), foreground=g["TEXT"])
+        text.tag_configure("md_italic", font=(family, 13 + delta, "italic"), foreground=g["TEXT_SOFT"])
+        text.tag_configure("md_underline", underline=True, foreground=g["TEXT"])
+        text.tag_configure("md_strike", overstrike=True, foreground=g["TEXT_SOFT"])
+        text.tag_configure("md_highlight", background=g["HIGHLIGHT_BG"], foreground=g["HIGHLIGHT_FG"])
+        text.tag_configure("md_sup", font=(family, 10 + delta), offset=4, foreground=g["TEXT"])
+        text.tag_configure("md_sub", font=(family, 10 + delta), offset=-3, foreground=g["TEXT"])
+        text.tag_configure("md_code", font=("Consolas", 12 + delta), background=g["CODE_BG"], foreground=g["CODE_TEXT"])
+        text.tag_configure("md_link", foreground=g["LINK"], underline=True)
+        text.tag_configure("md_image", foreground=g["IMAGE_LINK"], underline=True)
+        text.tag_configure("md_quote", foreground=g["QUOTE"], lmargin1=18, lmargin2=18)
+        text.tag_configure("md_list", lmargin1=22, lmargin2=22)
+        text.tag_configure("md_task", lmargin1=22, lmargin2=22)
+        text.tag_configure("md_task_done", lmargin1=22, lmargin2=22, foreground=g["MUTED"], overstrike=True)
+        text.tag_configure("md_table", font=("Consolas", 11 + delta), foreground=g["TEXT_SOFT"])
+        text.tag_configure("md_hr", foreground=g["MUTED"])
+        text.tag_configure(
+            "md_frontmatter",
+            font=("Consolas", 10 + delta),
+            foreground=g["MUTED"],
+            background=g["SURFACE_2"],
+            lmargin1=8,
+            lmargin2=8,
+        )
+        text.tag_configure("md_obsidian_tag", foreground=g["ACCENT_2"])
+        text.tag_configure("md_callout", background=g["SURFACE_2"], foreground=g["TEXT"])
+        text.tag_configure("md_comment", foreground=g["DISABLED"], overstrike=True)
+        try:
+            text.tag_raise("sel")
+        except tk.TclError:
+            pass
+
+    def _clear_split_markdown_tags(self, note: dict[str, object]) -> None:
+        text = note.get("text")
+        if not isinstance(text, tk.Text):
+            return
+        color_tags = note.setdefault("color_tags", set())
+        for tag in (*MD_EDITOR_TAGS, *color_tags):
+            try:
+                text.tag_remove(tag, "1.0", tk.END)
+            except tk.TclError:
+                pass
+        if isinstance(color_tags, set):
+            color_tags.clear()
+
+    def _schedule_split_live_render(self, note: dict[str, object]) -> None:
+        previous = note.get("live_render_after")
+        if previous is not None:
+            try:
+                self.root.after_cancel(previous)
+            except tk.TclError:
+                pass
+        note["live_render_after"] = self.root.after(80, lambda n=note: self._apply_split_live_render(n))
+
+    def _apply_split_live_render(self, note: dict[str, object]) -> None:
+        note["live_render_after"] = None
+        if note not in getattr(self, "_split_notes", []):
+            return
+        text = note.get("text")
+        path = Path(note["path"])
+        if not isinstance(text, tk.Text):
+            return
+        if not is_markdown_note(path):
+            self._clear_split_markdown_tags(note)
+            self._clear_split_image_previews(note)
+            return
+        self._configure_split_markdown_tags(text)
+        content = text.get("1.0", "end-1c")
+        try:
+            focus_line = int(str(text.index("insert")).split(".")[0])
+        except (tk.TclError, ValueError):
+            focus_line = None
+        plan = plan_live_highlight(content, focus_line=focus_line)
+        color_tags = note.setdefault("color_tags", set())
+        if not isinstance(color_tags, set):
+            color_tags = set()
+            note["color_tags"] = color_tags
+        apply_live_highlight_plan(
+            text,
+            plan,
+            clear_tags=MD_EDITOR_TAGS,
+            clear_line_range=plan.line_range if plan.partial else None,
+            validate_color=lambda color, widget=text: self._validate_split_color(widget, color),
+            configure_color_tag=lambda tag, color, widget=text: self._configure_split_color_tag(widget, tag, color),
+            editor_color_tags=color_tags,
+        )
+        try:
+            text.tag_raise("sel")
+        except tk.TclError:
+            pass
+        self._apply_split_image_previews(note, content)
+
+    def _validate_split_color(self, widget: tk.Text, color: str) -> bool:
+        try:
+            widget.winfo_rgb(color)
+        except tk.TclError:
+            return False
+        return True
+
+    def _configure_split_color_tag(self, widget: tk.Text, tag: str, color: str) -> None:
+        family = self.config.font_family or "Segoe UI"
+        widget.tag_configure(tag, foreground=color, font=(family, self.config.font_size + 3))
+
+    def _remove_split_image_preview(self, note: dict[str, object], key: str) -> None:
+        text = note.get("text")
+        previews = note.get("image_previews")
+        if not isinstance(text, tk.Text) or not isinstance(previews, dict):
+            return
+        preview = previews.pop(key, None)
+        if not preview:
+            return
+        window_index = preview.get("window_index")
+        block = preview.get("block")
+        if window_index:
+            try:
+                text.delete(window_index)
+            except tk.TclError:
+                pass
+        if block is not None:
+            try:
+                md_end = text.index(f"{block.start} + {len(block.markdown)}c")
+                text.tag_remove(EDITOR_IMAGE_ELIDE_TAG, block.start, md_end)
+            except tk.TclError:
+                pass
+
+    def _clear_split_image_previews(self, note: dict[str, object]) -> None:
+        previews = note.get("image_previews")
+        if isinstance(previews, dict):
+            for key in list(previews.keys()):
+                self._remove_split_image_preview(note, key)
+        note["preview_photos"] = []
+        note["image_blocks"] = {}
+        note["image_preview_state"] = None
+        note["image_last_width"] = None
+        text = note.get("text")
+        if isinstance(text, tk.Text):
+            try:
+                text.tag_remove(EDITOR_IMAGE_ELIDE_TAG, "1.0", tk.END)
+            except tk.TclError:
+                pass
+
+    def _apply_split_image_previews(self, note: dict[str, object], content: str | None = None) -> None:
+        text = note.get("text")
+        path = Path(note["path"])
+        if not isinstance(text, tk.Text) or not is_markdown_note(path):
+            self._clear_split_image_previews(note)
+            return
+        if content is None:
+            content = text.get("1.0", "end-1c")
+        blocks = plan_editor_image_blocks(
+            content,
+            path,
+            wiki_asset_resolver=self._wiki_asset_resolver,
+        )
+        note["image_blocks"] = {block.key: block for block in blocks}
+        text.update_idletasks()
+        try:
+            max_width = max(160, text.winfo_width() - 48)
+        except tk.TclError:
+            max_width = 160
+        editing_keys = note.setdefault("image_editing_keys", set())
+        if not isinstance(editing_keys, set):
+            editing_keys = set()
+            note["image_editing_keys"] = editing_keys
+        previews = note.setdefault("image_previews", {})
+        if not isinstance(previews, dict):
+            previews = {}
+            note["image_previews"] = previews
+        desired_keys = {block.key for block in blocks if block.key not in editing_keys}
+        signature = tuple((block.key, block.markdown, str(block.image_path)) for block in blocks)
+        preview_state = (signature, max_width, frozenset(editing_keys), frozenset(previews.keys()))
+        if preview_state == note.get("image_preview_state"):
+            return
+        note["image_preview_busy"] = True
+        try:
+            for key in list(previews.keys()):
+                if key not in desired_keys:
+                    self._remove_split_image_preview(note, key)
+            for block in blocks:
+                if block.key not in desired_keys:
+                    continue
+                preview = previews.get(block.key)
+                if (
+                    preview
+                    and preview.get("markdown") == block.markdown
+                    and preview.get("max_width") == max_width
+                    and preview.get("image_path") == str(block.image_path)
+                ):
+                    continue
+                if preview:
+                    self._remove_split_image_preview(note, block.key)
+                self._insert_split_image_preview(note, block, max_width)
+            note["image_last_width"] = max_width
+            note["image_preview_state"] = (
+                signature,
+                max_width,
+                frozenset(editing_keys),
+                frozenset(previews.keys()),
+            )
+        finally:
+            note["image_preview_busy"] = False
+
+    def _insert_split_image_preview(self, note: dict[str, object], block, max_width: int) -> None:
+        text = note.get("text")
+        if not isinstance(text, tk.Text):
+            return
+        photo = load_preview_photo(block.image_path, max_width)
+        if photo is None:
+            return
+        photos = note.setdefault("preview_photos", [])
+        if isinstance(photos, list):
+            photos.append(photo)
+        g = globals()
+        outer = tk.Frame(text, bg=g["BG"], highlightthickness=2, highlightbackground=g["BG"])
+        image_label = tk.Label(outer, image=photo, bg=g["BG"], cursor="hand2", borderwidth=0)
+        image_label.pack()
+        toolbar = tk.Frame(outer, bg=g["SURFACE"], highlightthickness=1, highlightbackground=g["BORDER"])
+        edit_btn = tk.Label(
+            toolbar,
+            text="</>",
+            bg=g["SURFACE"],
+            fg=g["MUTED"],
+            font=("Consolas", 10),
+            cursor="hand2",
+            padx=4,
+            pady=1,
+        )
+        tip_label = tk.Label(
+            toolbar,
+            text=t("editor.edit_image"),
+            bg=g["SURFACE"],
+            fg=g["TEXT"],
+            font=("Segoe UI", 9),
+            padx=4,
+            pady=1,
+        )
+        edit_btn.pack(side="left")
+        tip_label.pack(side="left", padx=(0, 4))
+        toolbar.place_forget()
+
+        def show_toolbar(_event=None) -> None:
+            outer.config(highlightbackground=globals()["ACCENT"])
+            if not toolbar.winfo_ismapped():
+                toolbar.place(relx=1.0, rely=0.0, anchor="ne", x=-4, y=4)
+
+        def hide_toolbar(_event=None) -> None:
+            outer.config(highlightbackground=globals()["BG"])
+            if toolbar.winfo_ismapped():
+                toolbar.place_forget()
+            edit_btn.config(fg=globals()["MUTED"])
+
+        def on_edit(_event=None) -> None:
+            self._show_split_image_source(note, block)
+
+        outer.bind("<Enter>", show_toolbar, add="+")
+        outer.bind("<Leave>", hide_toolbar, add="+")
+        edit_btn.bind("<Enter>", lambda _e: edit_btn.config(fg=globals()["TEXT"]), add="+")
+        edit_btn.bind("<Leave>", lambda _e: edit_btn.config(fg=globals()["MUTED"]), add="+")
+        edit_btn.bind("<Button-1>", on_edit)
+        image_label.bind("<Button-1>", on_edit)
+
+        try:
+            if text.compare(block.start, ">", tk.END):
+                return
+            text.window_create(block.start, window=outer, stretch=True)
+            md_start = text.index(f"{block.start} + 1c")
+            md_end = text.index(f"{md_start} + {len(block.markdown)}c")
+            text.tag_add(EDITOR_IMAGE_ELIDE_TAG, md_start, md_end)
+            previews = note.setdefault("image_previews", {})
+            if isinstance(previews, dict):
+                previews[block.key] = {
+                    "window_index": block.start,
+                    "block": block,
+                    "markdown": block.markdown,
+                    "max_width": max_width,
+                    "image_path": str(block.image_path),
+                }
+        except tk.TclError:
+            outer.destroy()
+
+    def _show_split_image_source(self, note: dict[str, object], block) -> None:
+        editing_keys = note.setdefault("image_editing_keys", set())
+        if isinstance(editing_keys, set):
+            editing_keys.add(block.key)
+        self._remove_split_image_preview(note, block.key)
+        text = note.get("text")
+        if not isinstance(text, tk.Text):
+            return
+        try:
+            md_start = block.start
+            md_end = text.index(f"{md_start} + {len(block.markdown)}c")
+            text.tag_add(tk.SEL, md_start, md_end)
+            text.mark_set(tk.INSERT, md_end)
+            text.focus_set()
+        except tk.TclError:
+            pass
+
+    def _on_split_image_click_outside(self, note: dict[str, object]) -> None:
+        editing_keys = note.get("image_editing_keys")
+        image_blocks = note.get("image_blocks")
+        text = note.get("text")
+        if not isinstance(editing_keys, set) or not editing_keys:
+            return
+        if not isinstance(image_blocks, dict) or not isinstance(text, tk.Text):
+            return
+        try:
+            index = text.index("insert")
+            insert_line = int(str(index).split(".")[0])
+        except (tk.TclError, ValueError):
+            return
+        changed = False
+        for key in list(editing_keys):
+            block = image_blocks.get(key)
+            if block is None or insert_line != block.line:
+                editing_keys.discard(key)
+                changed = True
+        if changed:
+            note["image_preview_state"] = None
+            self._apply_split_image_previews(note)
+
+    def _activate_split_note(self, note: dict[str, object]) -> None:
+        previous = getattr(self, "_last_focused_split_note", None)
+        if previous is not None and previous is not note:
+            self._update_split_note_title(previous, active=False)
+        self._last_focused_split_note = note
+        self._update_split_note_title(note, active=True)
+        path = Path(note["path"])
+        self._set_status(f"Editing split note: {path.name}")
+
+    def _update_split_note_title(self, note: dict[str, object], active: bool = False) -> None:
+        title = note.get("title")
+        if not isinstance(title, tk.Misc):
+            return
+        path = Path(note["path"])
+        marker = "*" if note.get("dirty") else ""
+        prefix = "> " if active else ""
+        title.configure(text=f"{prefix}{path.name}{marker}")
+
+    def _on_split_text_modified(self, note: dict[str, object]) -> None:
+        text = note.get("text")
+        if not isinstance(text, tk.Text):
+            return
+        if not text.edit_modified():
+            return
+        text.edit_modified(False)
+        if note.get("loading"):
+            return
+        note["dirty"] = True
+        self._update_split_note_title(note, active=note is getattr(self, "_last_focused_split_note", None))
+        self._set_status(f"Unsaved split note: {Path(note['path']).name}")
+        self._schedule_split_live_render(note)
+        self._schedule_split_note_autosave(note)
+
+    def _schedule_split_note_autosave(self, note: dict[str, object]) -> None:
+        if not self.config.auto_save:
+            return
+        previous = note.get("autosave_after")
+        if previous is not None:
+            try:
+                self.root.after_cancel(previous)
+            except tk.TclError:
+                pass
+        note["autosave_after"] = self.root.after(
+            self.config.auto_save_delay_ms,
+            lambda n=note: self._save_split_note(n, show_indicator=False),
+        )
+
+    def _save_split_note(self, note: dict[str, object], show_indicator: bool = False) -> None:
+        text = note.get("text")
+        path = Path(note["path"])
+        if not isinstance(text, tk.Text) or not path.exists():
+            return
+        if not show_indicator and not note.get("dirty"):
+            return
+        content = text.get("1.0", "end-1c")
+        try:
+            safe_write_text(
+                path,
+                content,
+                encoding=str(note.get("encoding") or "utf-8"),
+                newline=str(note.get("newline") or "\n"),
+                workspace_root=self._workspace_dir(),
+            )
+        except OSError as exc:
+            self._set_error(t("error.save_failed", exc=exc))
+            return
+        note["dirty"] = False
+        previous = note.get("autosave_after")
+        if previous is not None:
+            try:
+                self.root.after_cancel(previous)
+            except tk.TclError:
+                pass
+            note["autosave_after"] = None
+        self._update_split_note_title(note, active=note is getattr(self, "_last_focused_split_note", None))
+        if show_indicator:
+            self.save_indicator.config(text=t("status.saved"))
+            self.root.after(1400, lambda: self.save_indicator.config(text=""))
+        self._set_status_key("status.saved")
+        if is_markdown_note(path):
+            self._schedule_tag_refresh()
+            self._schedule_wiki_index_refresh()
+
+    def _save_all_split_notes(self) -> None:
+        for note in list(getattr(self, "_split_notes", [])):
+            self._save_split_note(note, show_indicator=False)
+
+    def _focused_split_note(self) -> dict[str, object] | None:
+        focused = self.root.focus_get()
+        for note in getattr(self, "_split_notes", []):
+            if note.get("text") is focused:
+                return note
+        return None
+
+    def _active_split_note(self) -> dict[str, object] | None:
+        focused = self._focused_split_note()
+        if focused is not None:
+            return focused
+        last = getattr(self, "_last_focused_split_note", None)
+        if last in getattr(self, "_split_notes", []):
+            return last
+        return None
+
+    def _note_for_text_widget(self, widget: tk.Text) -> dict[str, object] | None:
+        for note in getattr(self, "_split_notes", []):
+            if note.get("text") is widget:
+                return note
+        return None
+
+    def _split_text_widgets(self) -> tuple[tk.Text, ...]:
+        widgets: list[tk.Text] = []
+        for note in getattr(self, "_split_notes", []):
+            text = note.get("text")
+            if isinstance(text, tk.Text):
+                widgets.append(text)
+        return tuple(widgets)
+
+    def _apply_split_note_typography(self) -> None:
+        family = self.config.font_family or "Segoe UI"
+        font = (family, self.config.font_size + 3)
+        for note in getattr(self, "_split_notes", []):
+            text = note.get("text")
+            if isinstance(text, tk.Text):
+                try:
+                    text.configure(font=font)
+                except tk.TclError:
+                    pass
+            self._apply_split_live_render(note)
 
     def _focus_split_note(self, path: Path) -> None:
         for note in getattr(self, "_split_notes", []):
@@ -462,7 +977,20 @@ class NotesMixin:
             return
 
     def _close_split_note(self, frame: tk.Misc) -> None:
+        closing = next((note for note in self._split_notes if note.get("frame") is frame), None)
+        if closing is not None:
+            self._save_split_note(closing, show_indicator=False)
+            for key in ("autosave_after", "live_render_after"):
+                previous = closing.get(key)
+                if previous is not None:
+                    try:
+                        self.root.after_cancel(previous)
+                    except tk.TclError:
+                        pass
+                    closing[key] = None
         self._split_notes = [note for note in self._split_notes if note.get("frame") is not frame]
+        if getattr(self, "_last_focused_split_note", None) is closing:
+            self._last_focused_split_note = None
         try:
             self.note_split.forget(frame)
         except tk.TclError:
@@ -497,12 +1025,41 @@ class NotesMixin:
                 self._close_split_note(frame)
         self._split_notes = []
 
-    def _open_split_note_as_primary(self, path: Path, frame: tk.Misc) -> str:
-        self._close_split_note(frame)
-        if is_markdown_note(path):
-            self._open_note_from_tree(path)
-        elif is_editable_text_path(path):
-            self._open_text_file_from_tree(path)
+    def _open_split_note_as_primary(self, note: dict[str, object]) -> str:
+        split_path = Path(note["path"]).resolve()
+        self._save_split_note(note, show_indicator=False)
+        if self.preview_path is not None:
+            self._close_file_preview(restore_note=True)
+        if not self.current_note_path:
+            frame = note.get("frame")
+            if isinstance(frame, tk.Misc):
+                self._close_split_note(frame)
+            if is_markdown_note(split_path):
+                self._open_note_from_tree(split_path)
+            elif is_editable_text_path(split_path):
+                self._open_text_file_from_tree(split_path)
+            return "break"
+
+        main_path = self.current_note_path.resolve()
+        if main_path == split_path:
+            return "break"
+
+        self._save_note(False)
+        main_encoding = self._document_encoding
+        main_newline = self._document_newline
+
+        note["path"] = main_path
+        note["encoding"] = main_encoding
+        note["newline"] = main_newline
+        note["dirty"] = False
+        note["autosave_after"] = None
+
+        if is_markdown_note(split_path):
+            self._open_note_from_tree(split_path)
+        elif is_editable_text_path(split_path):
+            self._open_text_file_from_tree(split_path)
+        self._render_split_note(note)
+        self._set_status(f"Swapped main note with {main_path.name}")
         return "break"
 
     def _note_split_paths_after_relocate(self, mapping: dict[Path, Path]) -> None:

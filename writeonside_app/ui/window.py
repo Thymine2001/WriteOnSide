@@ -658,6 +658,8 @@ class WindowMixin:
         self._hide_code_copy_btn()
         self._hide_tooltip()
         self._save_note(False)
+        if hasattr(self, "_save_all_split_notes"):
+            self._save_all_split_notes()
         self.is_open = False
 
         def done() -> None:

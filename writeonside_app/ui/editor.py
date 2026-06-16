@@ -1018,6 +1018,12 @@ class EditorMixin:
             return self.read_text
         return self.text if self.view_mode == "edit" else self.read_text
 
+    def _toggle_find_panel(self, replace: bool = False) -> None:
+        if self.find_panel.winfo_ismapped():
+            self._hide_find_panel()
+            return
+        self._open_find_panel(replace)
+
     def _open_find_panel(self, replace: bool = False) -> None:
         if not self.find_panel.winfo_ismapped():
             self.find_panel.pack(fill="x", after=self.toolbar)

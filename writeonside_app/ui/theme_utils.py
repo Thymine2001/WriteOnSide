@@ -111,6 +111,8 @@ class ThemeMixin:
             self.text.configure(font=(family, self.config.font_size + 3))
             self._configure_editor_markdown_tags()
             self._schedule_live_render()
+        if hasattr(self, "_apply_split_note_typography"):
+            self._apply_split_note_typography()
         if hasattr(self, "read_text") and self.current_note_path:
             self._render_read_content()
         if hasattr(self, "file_tree"):

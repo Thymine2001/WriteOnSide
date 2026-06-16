@@ -233,7 +233,7 @@ class WriteOnSideApp(
 
         self.outline_btn = self._toolbar_btn(self.toolbar_top, "☷", self._show_outline_popup)
         self.outline_btn.pack(side="right", padx=2, pady=6)
-        self.find_btn = self._toolbar_btn(self.toolbar_top, "", lambda: self._open_find_panel(False))
+        self.find_btn = self._toolbar_btn(self.toolbar_top, "", lambda: self._toggle_find_panel(False))
         self.backlinks_btn = self._toolbar_btn(
             self.toolbar_top,
             "\u21c4",

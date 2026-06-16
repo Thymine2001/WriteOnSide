@@ -24,6 +24,8 @@ MESSAGES = {
     "tooltip.find_next": "下一个匹配",
     "tooltip.find_replace_toggle": "替换",
     "tooltip.find_close": "关闭",
+    "tooltip.split_save": "保存分屏笔记",
+    "tooltip.split_main": "与主笔记互换",
     "tooltip.replace_current": "替换当前",
     "tooltip.replace_all": "全部替换",
     "cmd.new_note": "新建笔记",

@@ -24,6 +24,8 @@ MESSAGES = {
     "tooltip.find_next": "Next match",
     "tooltip.find_replace_toggle": "Replace",
     "tooltip.find_close": "Close",
+    "tooltip.split_save": "Save split note",
+    "tooltip.split_main": "Swap with main note",
     "tooltip.replace_current": "Replace current",
     "tooltip.replace_all": "Replace all",
     "cmd.new_note": "New note",
