@@ -1,4 +1,4 @@
-# WriteOnSide Windows 打包说明
+# 随边记（WriteOnSide）Windows 打包说明
 
 ## 环境准备
 

@@ -5,7 +5,7 @@
 <h1 align="center">WriteOnSide</h1>
 
 <p align="center">
-  <strong>A lightweight Windows side-panel Markdown notes app.</strong><br />
+  <strong>随边记 · A lightweight Windows side-panel Markdown notes app.</strong><br />
   Plain files on disk. Obsidian-friendly. Always one screen edge away.
 </p>
 
@@ -22,7 +22,7 @@
   <a href="README.pt.md">Português</a>
 </p>
 
-WriteOnSide keeps Markdown notes in a folder you choose. There is no private
+WriteOnSide (随边记) keeps Markdown notes in a folder you choose. There is no private
 database and no required cloud service, so the same Vault can be opened in
 WriteOnSide, Obsidian, VS Code, or another text editor.
 

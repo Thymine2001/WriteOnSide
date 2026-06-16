@@ -5,7 +5,7 @@
 <h1 align="center">WriteOnSide</h1>
 
 <p align="center">
-  <strong>Uma aplicação leve de notas Markdown num painel lateral para Windows.</strong><br />
+  <strong>随边记 · Uma aplicação leve de notas Markdown num painel lateral para Windows.</strong><br />
   Ficheiros simples no disco. Compatível com Obsidian. Sempre à beira do ecrã.
 </p>
 
@@ -22,7 +22,7 @@
   <a href="README.pt.md">Português</a>
 </p>
 
-O WriteOnSide guarda notas Markdown numa pasta escolhida por si. Não há base de
+O WriteOnSide (随边记) guarda notas Markdown numa pasta escolhida por si. Não há base de
 dados privada nem serviço na nuvem obrigatório, pelo que o mesmo Vault pode ser
 aberto no WriteOnSide, Obsidian, VS Code ou noutro editor.
 
