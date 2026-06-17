@@ -435,6 +435,7 @@ class EditorMixin:
             return  # nothing changed — skip disk writes (keeps close animation smooth)
         content = self._get_editor_content()
         try:
+            self._mark_vault_internal_write(self.current_note_path)
             # Fix #7: safe_write_text is now imported at the top of the module
             safe_write_text(
                 self.current_note_path,

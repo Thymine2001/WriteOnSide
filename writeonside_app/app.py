@@ -25,6 +25,7 @@ from .ui.explorer import ExplorerMixin
 from .ui.notes import NotesMixin
 from .ui.settings import SettingsMixin
 from .ui.i18n_ui import I18nMixin
+from .ui.vault_watcher import VaultWatcherMixin
 
 
 class WriteOnSideApp(
@@ -40,6 +41,7 @@ class WriteOnSideApp(
     NotesMixin,
     SettingsMixin,
     I18nMixin,
+    VaultWatcherMixin,
 ):
     def __init__(self, instance_guard: SingleInstanceGuard | None = None) -> None:
         self.config = load_config()
@@ -110,6 +112,12 @@ class WriteOnSideApp(
         self._wiki_index_after = None
         self._wiki_completion = None
         self._backlinks_popup = None
+        self._vault_observer = None
+        self._vault_watch_path: Path | None = None
+        self._vault_refresh_after: str | None = None
+        self._vault_pending_paths: set[Path] = set()
+        self._vault_pending_moves: dict[Path, Path] = {}
+        self._vault_internal_writes: dict[Path, float] = {}
 
         g = globals()
         enable_per_monitor_dpi()
@@ -137,6 +145,7 @@ class WriteOnSideApp(
         self._apply_no_taskbar_styles()
         self._apply_typography()
         self._load_initial_note()
+        self._start_vault_watcher()
         self._register_hotkey()
         self._setup_tray()
         self._poll_system_icon()

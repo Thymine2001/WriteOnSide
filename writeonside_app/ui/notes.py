@@ -144,6 +144,7 @@ class NotesMixin:
             return
         path = self._new_note_path(name)
         try:
+            self._mark_vault_internal_write(path)
             safe_write_text(path, note_template(path))
         except OSError as exc:
             self._set_error(t("error.create_failed", exc=exc))
@@ -383,6 +384,7 @@ class NotesMixin:
         self._refresh_wiki_index()
         self._set_status_key("status.workspace_changed")
         self._load_initial_note()
+        self._restart_vault_watcher()
         if self.explorer_visible:
             self._position_explorer()
             self._position_nav_bar()
@@ -1032,6 +1034,7 @@ class NotesMixin:
             return
         content = text.get("1.0", "end-1c")
         try:
+            self._mark_vault_internal_write(path)
             safe_write_text(
                 path,
                 content,

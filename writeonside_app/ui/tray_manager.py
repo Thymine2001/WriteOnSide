@@ -161,6 +161,7 @@ class TrayMixin:
 
     def _quit(self) -> None:
         self._save_note(False)
+        self._stop_vault_watcher()
         self._unregister_command_shortcuts()
         self._unregister_hotkey()
         if self._instance_poll_after is not None:

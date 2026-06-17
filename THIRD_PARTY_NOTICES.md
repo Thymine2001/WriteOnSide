@@ -19,6 +19,7 @@ executables produced from that source using `WriteOnSide.spec`.
 | six | 1.17.0 | Compatibility dependency used by pystray | [`six-MIT.txt`](licenses/six-MIT.txt) |
 | tkinterdnd2 | 0.5.0 | Tkinter drag-and-drop wrapper | [`tkinterdnd2-MIT.txt`](licenses/tkinterdnd2-MIT.txt) |
 | tkDnD | 2.9.x | Native drag-and-drop extension bundled by tkinterdnd2 | [`tkdnd-license.txt`](licenses/tkdnd-license.txt) |
+| watchdog | 6.0.0 | File-system change monitoring for note vault refreshes | [`watchdog-Apache-2.0.txt`](licenses/watchdog-Apache-2.0.txt) |
 
 pystray is licensed under GNU LGPL version 3. The LGPL incorporates terms from
 GNU GPL version 3, whose full text is included at
