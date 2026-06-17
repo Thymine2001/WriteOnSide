@@ -95,7 +95,7 @@ class VaultWatcherTests(unittest.TestCase):
                 app._process_vault_filesystem_changes()
 
             self.assertEqual([], app.reloaded)
-            self.assertEqual(1, app.explorer_refreshes)
+            self.assertEqual(0, app.explorer_refreshes)
 
 
 if __name__ == "__main__":

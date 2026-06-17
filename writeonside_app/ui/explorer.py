@@ -735,10 +735,89 @@ class ExplorerMixin:
 
     # ── Refresh explorer ─────────────────────────────────────────────────────
 
+    def _explorer_is_filtered(self) -> bool:
+        query = self.search_var.get().strip() if hasattr(self, "search_var") else ""
+        return bool(query or getattr(self, "_selected_tags", set()))
+
+    def _capture_explorer_tree_state(self) -> set[str]:
+        expanded: set[str] = set()
+        root_id = str(self._workspace_dir().resolve())
+
+        def visit(parent: str) -> None:
+            for item in self.file_tree.get_children(parent):
+                if item == "|empty-filter|" or self._is_dummy_id(item):
+                    continue
+                try:
+                    if bool(self.file_tree.item(item, "open")):
+                        expanded.add(item)
+                except tk.TclError:
+                    pass
+                visit(item)
+
+        visit("")
+        expanded.add(root_id)
+        return expanded
+
+    def _restore_explorer_tree_state(self, expanded_ids: set[str]) -> None:
+        root = self._workspace_dir().resolve()
+
+        def depth(iid: str) -> int:
+            try:
+                return len(Path(iid).resolve().relative_to(root).parts)
+            except ValueError:
+                return 0
+
+        for iid in sorted(expanded_ids, key=depth):
+            if iid == "|empty-filter|":
+                continue
+            path = Path(iid)
+            if not path.exists() or not path.is_dir():
+                continue
+            parent_id = str(path.parent.resolve())
+            if not self.file_tree.exists(parent_id):
+                continue
+            if not self.file_tree.exists(iid):
+                self._load_dir_children(parent_id, path.parent)
+            if not self.file_tree.exists(iid):
+                continue
+            self.file_tree.item(iid, open=True)
+            self._load_dir_children(iid, path)
+            self._update_tree_dir_label(iid, True)
+
+    def _reveal_path_in_tree(self, path: Path) -> None:
+        if self._explorer_is_filtered():
+            return
+        target = path.resolve()
+        root = self._workspace_dir().resolve()
+        try:
+            relative = target.relative_to(root)
+        except ValueError:
+            return
+        parts = list(relative.parts)
+        if target.is_file():
+            parts = parts[:-1]
+        current_id = str(root)
+        current_dir = root
+        for part in parts:
+            current_dir = current_dir / part
+            iid = str(current_dir.resolve())
+            if not self.file_tree.exists(iid):
+                if self.file_tree.exists(current_id):
+                    self._load_dir_children(current_id, Path(current_id))
+            if not self.file_tree.exists(iid):
+                return
+            if not bool(self.file_tree.item(iid, "open")):
+                self.file_tree.item(iid, open=True)
+                self._load_dir_children(iid, current_dir)
+                self._update_tree_dir_label(iid, True)
+            current_id = iid
+
     def _refresh_explorer(self, rebuild_index: bool = True) -> None:
         if not hasattr(self, "file_tree"):
             return
         self._explorer_refresh_after = None
+        filtered = self._explorer_is_filtered()
+        expanded_ids = self._capture_explorer_tree_state() if not filtered else set()
         self._ignore_tree_events = True
         try:
             for item in self.file_tree.get_children(""):
@@ -761,10 +840,15 @@ class ExplorerMixin:
                 values=("",),
             )
             query = self.search_var.get().strip().casefold() if hasattr(self, "search_var") else ""
-            if query or self._selected_tags:
+            if filtered:
                 self._load_filtered_results(root_id, root, scope, query)
             else:
                 self._load_dir_children(root_id, root, force=True)
+                if expanded_ids:
+                    self._restore_explorer_tree_state(expanded_ids)
+            current = getattr(self, "current_note_path", None)
+            if current is not None:
+                self._reveal_path_in_tree(Path(current))
             self._highlight_current_note()
             self.root.after_idle(self._fit_file_tree_width)
         finally:

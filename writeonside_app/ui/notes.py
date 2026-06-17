@@ -392,9 +392,11 @@ class NotesMixin:
     def _highlight_current_note(self) -> None:
         if not self.current_note_path or not hasattr(self, "file_tree"):
             return
-        iid = str(self.current_note_path)
+        path = self.current_note_path.resolve()
         self._ignore_tree_events = True
         try:
+            self._reveal_path_in_tree(path)
+            iid = str(path)
             if self.file_tree.exists(iid):
                 self.file_tree.selection_set(iid)
                 self.file_tree.see(iid)

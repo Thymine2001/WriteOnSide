@@ -107,6 +107,14 @@ class VaultWatcherMixin:
             writes.pop(item, None)
         return now - writes.get(_resolve_event_path(path), 0.0) <= 1.5
 
+    def _changes_require_explorer_refresh(self, paths: set[Path], moves: dict[Path, Path]) -> bool:
+        if moves:
+            return True
+        for path in paths:
+            if not self._is_recent_vault_internal_write(path):
+                return True
+        return False
+
     def _queue_vault_filesystem_event(
         self,
         paths: Iterable[Path],
@@ -143,7 +151,8 @@ class VaultWatcherMixin:
         if not paths and not moves:
             return
 
-        self._schedule_explorer_refresh()
+        if self._changes_require_explorer_refresh(paths, moves):
+            self._schedule_explorer_refresh()
         self._schedule_tag_refresh()
         self._schedule_wiki_index_refresh()
         self._reload_current_note_after_external_change(paths, moves)
