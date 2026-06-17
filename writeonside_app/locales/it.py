@@ -121,6 +121,7 @@ MESSAGES = {
     "error.delete_failed": "Eliminazione non riuscita: {exc}",
     "error.open_failed": "Apertura non riuscita: {exc}",
     "error.file_not_found": "Il file selezionato non esiste.",
+    "error.open_file_limit": "È possibile aprire contemporaneamente solo {count} note o file.",
     "error.reveal_failed": "Mostra in Esplora file non riuscito: {exc}",
     "error.explorer_paste_failed": "Incolla non riuscito: {exc}",
     "error.explorer_outside_workspace": "La destinazione deve essere nella cartella note.",

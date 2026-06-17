@@ -121,6 +121,7 @@ MESSAGES = {
     "error.delete_failed": "Falha ao eliminar: {exc}",
     "error.open_failed": "Falha ao abrir: {exc}",
     "error.file_not_found": "O ficheiro selecionado não existe.",
+    "error.open_file_limit": "Só podem estar abertas {count} notas ou ficheiros ao mesmo tempo.",
     "error.reveal_failed": "Falha ao mostrar no Explorador de Ficheiros: {exc}",
     "error.explorer_paste_failed": "Falha ao colar: {exc}",
     "error.explorer_outside_workspace": "O destino deve estar dentro da pasta de notas.",

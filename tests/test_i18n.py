@@ -54,6 +54,7 @@ class I18nTests(unittest.TestCase):
             "dialog.text_and_code_files",
             "dialog.all_files",
             "error.file_not_found",
+            "error.open_file_limit",
         }
         for code, catalog in TRANSLATIONS.items():
             self.assertFalse(required - catalog.keys(), code)

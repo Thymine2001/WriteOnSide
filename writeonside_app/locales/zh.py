@@ -121,6 +121,7 @@ MESSAGES = {
     "error.delete_failed": "删除失败：{exc}",
     "error.open_failed": "打开失败：{exc}",
     "error.file_not_found": "所选文件不存在。",
+    "error.open_file_limit": "最多只能同时打开 {count} 个笔记或文件。",
     "error.reveal_failed": "在文件资源管理器中显示失败：{exc}",
     "error.explorer_paste_failed": "粘贴失败：{exc}",
     "error.explorer_outside_workspace": "目标必须在笔记文件夹内。",

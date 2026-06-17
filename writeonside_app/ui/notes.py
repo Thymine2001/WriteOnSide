@@ -252,11 +252,28 @@ class NotesMixin:
         if path:
             self._open_file_in_editor(Path(path), reveal_panel=True)
 
-    def _open_file_in_editor(self, path: Path, reveal_panel: bool = True) -> None:
+    def _open_file_in_editor(
+        self,
+        path: Path,
+        reveal_panel: bool = True,
+        prefer_split: bool = True,
+    ) -> None:
         path = path.expanduser().resolve()
         if not path.exists() or not path.is_file():
             self._set_error(t("error.open_failed", exc=t("error.file_not_found")))
             return
+        if getattr(self, "preview_path", None) is not None:
+            self._close_file_preview(restore_note=True)
+        if prefer_split and self.current_note_path is not None and path != self.current_note_path.resolve():
+            if self._open_note_split(path):
+                if reveal_panel:
+                    if not self.is_open:
+                        self.open_panel()
+                    else:
+                        self.root.deiconify()
+                        self.root.lift()
+                        self.root.focus_force()
+                return
         if is_markdown_note(path):
             if not self.current_note_path or path != self.current_note_path.resolve():
                 self._save_note(False)
@@ -466,8 +483,13 @@ class NotesMixin:
             pass
 
     def _open_note_split(self, path: Path) -> bool:
-        if not path.exists() or not path.is_file() or not is_editable_text_path(path):
+        if not path.exists() or not path.is_file():
             return False
+        if not is_editable_text_path(path):
+            try:
+                read_editable_text(path)
+            except (OSError, UnicodeError):
+                return False
         path = path.resolve()
         if self.current_note_path and path == self.current_note_path.resolve():
             self._set_status(f"{path.name} is already open as the main note")
@@ -476,7 +498,7 @@ class NotesMixin:
             self._focus_split_note(path)
             return True
         if self._open_note_count() >= self._MAX_OPEN_NOTES:
-            self._set_error(f"Only {self._MAX_OPEN_NOTES} notes can be open at the same time.")
+            self._set_error(t("error.open_file_limit", count=self._MAX_OPEN_NOTES))
             return True
 
         frame = tk.Frame(self.note_split, bg=globals()["BG"])
@@ -1098,6 +1120,8 @@ class NotesMixin:
         if not show_indicator and not note.get("dirty"):
             return
         content = text.get("1.0", "end-1c")
+        in_workspace = self._is_in_workspace(path)
+        backup_root = self._workspace_dir() if in_workspace else path.parent
         try:
             self._mark_vault_internal_write(path)
             safe_write_text(
@@ -1105,7 +1129,7 @@ class NotesMixin:
                 content,
                 encoding=str(note.get("encoding") or "utf-8"),
                 newline=str(note.get("newline") or "\n"),
-                workspace_root=self._workspace_dir(),
+                workspace_root=backup_root,
             )
         except OSError as exc:
             self._set_error(t("error.save_failed", exc=exc))
@@ -1123,7 +1147,7 @@ class NotesMixin:
             self.save_indicator.config(text=t("status.saved"))
             self.root.after(1400, lambda: self.save_indicator.config(text=""))
         self._set_status_key("status.saved")
-        if is_markdown_note(path):
+        if is_markdown_note(path) and in_workspace:
             self._schedule_tag_refresh()
             self._schedule_wiki_index_refresh()
 
@@ -1243,7 +1267,7 @@ class NotesMixin:
                 self._close_split_note(frame)
             if is_markdown_note(split_path):
                 self._open_note_from_tree(split_path)
-            elif is_editable_text_path(split_path):
+            else:
                 self._open_text_file_from_tree(split_path)
             return "break"
 
@@ -1263,7 +1287,7 @@ class NotesMixin:
 
         if is_markdown_note(split_path):
             self._open_note_from_tree(split_path)
-        elif is_editable_text_path(split_path):
+        else:
             self._open_text_file_from_tree(split_path)
         self._render_split_note(note)
         self._set_status(f"Swapped main note with {main_path.name}")

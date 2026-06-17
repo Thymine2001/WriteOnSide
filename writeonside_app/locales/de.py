@@ -121,6 +121,7 @@ MESSAGES = {
     "error.delete_failed": "Löschen fehlgeschlagen: {exc}",
     "error.open_failed": "Öffnen fehlgeschlagen: {exc}",
     "error.file_not_found": "Die ausgewählte Datei ist nicht vorhanden.",
+    "error.open_file_limit": "Es können höchstens {count} Notizen oder Dateien gleichzeitig geöffnet sein.",
     "error.reveal_failed": "Anzeigen im Datei-Explorer fehlgeschlagen: {exc}",
     "error.explorer_paste_failed": "Einfügen fehlgeschlagen: {exc}",
     "error.explorer_outside_workspace": "Das Ziel muss sich im Notizenordner befinden.",

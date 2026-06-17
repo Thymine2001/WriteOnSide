@@ -13,6 +13,7 @@ from writeonside_app.text_files import (
     requested_file_from_args,
 )
 from writeonside_app.ui.editor import EditorMixin
+from writeonside_app.ui.notes import NotesMixin
 from writeonside_app.platform import SingleInstanceGuard, file_open_command, normalize_file_association_extensions
 
 
@@ -101,6 +102,61 @@ class TextFileTests(unittest.TestCase):
 
             self.assertEqual(b"value = 2\r\n", external.read_bytes())
             self.assertFalse((root / "Vault" / "external.py").exists())
+
+    def test_additional_external_file_prefers_split_but_initial_file_uses_main(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            main = root / "main.md"
+            external = root / "external.cpp"
+            main.write_text("# Main", encoding="utf-8")
+            external.write_text("int main() {}", encoding="utf-8")
+
+            class OpenHarness(NotesMixin):
+                current_note_path = main
+
+                def __init__(self) -> None:
+                    self.split_paths: list[Path] = []
+                    self.main_paths: list[Path] = []
+
+                def _open_note_split(self, path: Path) -> bool:
+                    self.split_paths.append(path)
+                    return True
+
+                def _open_text_file_from_tree(self, path: Path) -> None:
+                    self.main_paths.append(path)
+
+                def _set_error(self, _message: str) -> None:
+                    self.fail("Opening unexpectedly failed")
+
+            app = OpenHarness()
+            app._open_file_in_editor(external, reveal_panel=False)
+            self.assertEqual([external.resolve()], app.split_paths)
+            self.assertEqual([], app.main_paths)
+
+            app._open_file_in_editor(external, reveal_panel=False, prefer_split=False)
+            self.assertEqual([external.resolve()], app.main_paths)
+
+    def test_four_file_limit_rejects_fifth_external_file_before_creating_ui(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            main = root / "main.md"
+            fifth = root / "fifth.py"
+            main.write_text("# Main", encoding="utf-8")
+            fifth.write_text("print('fifth')", encoding="utf-8")
+
+            class LimitHarness(NotesMixin):
+                current_note_path = main
+
+                def __init__(self) -> None:
+                    self._split_notes = [{"path": root / f"split-{index}.py"} for index in range(3)]
+                    self.error = ""
+
+                def _set_error(self, message: str) -> None:
+                    self.error = message
+
+            app = LimitHarness()
+            self.assertTrue(app._open_note_split(fifth))
+            self.assertIn("4", app.error)
 
 
 if __name__ == "__main__":

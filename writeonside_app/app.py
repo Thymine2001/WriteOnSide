@@ -159,7 +159,13 @@ class WriteOnSideApp(
         self._show_nav_bar()
         self._poll_ui_queue()
         if self._initial_file is not None:
-            self.root.after_idle(lambda path=self._initial_file: self._open_file_in_editor(path, reveal_panel=True))
+            self.root.after_idle(
+                lambda path=self._initial_file: self._open_file_in_editor(
+                    path,
+                    reveal_panel=True,
+                    prefer_split=False,
+                )
+            )
 
     def _build_ui(self) -> None:
         g = globals()

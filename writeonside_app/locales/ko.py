@@ -121,6 +121,7 @@ MESSAGES = {
     "error.delete_failed": "삭제 실패: {exc}",
     "error.open_failed": "열기 실패: {exc}",
     "error.file_not_found": "선택한 파일이 없습니다.",
+    "error.open_file_limit": "노트 또는 파일은 동시에 최대 {count}개까지 열 수 있습니다.",
     "error.reveal_failed": "파일 탐색기에서 표시 실패: {exc}",
     "error.explorer_paste_failed": "붙여넣기 실패: {exc}",
     "error.explorer_outside_workspace": "대상은 노트 폴더 안에 있어야 합니다.",

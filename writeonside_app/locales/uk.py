@@ -121,6 +121,7 @@ MESSAGES = {
     "error.delete_failed": "Не вдалося видалити: {exc}",
     "error.open_failed": "Не вдалося відкрити: {exc}",
     "error.file_not_found": "Вибраного файлу не існує.",
+    "error.open_file_limit": "Одночасно можна відкрити не більше {count} нотаток або файлів.",
     "error.reveal_failed": "Не вдалося показати в Провіднику: {exc}",
     "error.explorer_paste_failed": "Не вдалося вставити: {exc}",
     "error.explorer_outside_workspace": "Місце призначення має бути в теці нотаток.",

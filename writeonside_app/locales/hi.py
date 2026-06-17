@@ -121,6 +121,7 @@ MESSAGES = {
     "error.delete_failed": "हटाना विफल: {exc}",
     "error.open_failed": "खोलना विफल: {exc}",
     "error.file_not_found": "चुनी गई फ़ाइल मौजूद नहीं है।",
+    "error.open_file_limit": "एक समय में केवल {count} नोट या फ़ाइलें खोली जा सकती हैं।",
     "error.reveal_failed": "फ़ाइल एक्सप्लोरर में दिखाना विफल: {exc}",
     "error.explorer_paste_failed": "चिपकाना विफल: {exc}",
     "error.explorer_outside_workspace": "गंतव्य नोट फ़ोल्डर के अंदर होना चाहिए।",

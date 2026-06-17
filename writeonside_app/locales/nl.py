@@ -121,6 +121,7 @@ MESSAGES = {
     "error.delete_failed": "Verwijderen mislukt: {exc}",
     "error.open_failed": "Openen mislukt: {exc}",
     "error.file_not_found": "Het geselecteerde bestand bestaat niet.",
+    "error.open_file_limit": "Er kunnen maximaal {count} notities of bestanden tegelijk geopend zijn.",
     "error.reveal_failed": "Tonen in Verkenner mislukt: {exc}",
     "error.explorer_paste_failed": "Plakken mislukt: {exc}",
     "error.explorer_outside_workspace": "Bestemming moet binnen de notitiemap liggen.",

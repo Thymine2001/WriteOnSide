@@ -121,6 +121,7 @@ MESSAGES = {
     "error.delete_failed": "Échec de la suppression : {exc}",
     "error.open_failed": "Échec de l'ouverture : {exc}",
     "error.file_not_found": "Le fichier sélectionné n'existe pas.",
+    "error.open_file_limit": "Seuls {count} notes ou fichiers peuvent être ouverts simultanément.",
     "error.reveal_failed": "Échec de l'affichage dans l'Explorateur de fichiers : {exc}",
     "error.explorer_paste_failed": "Échec du collage : {exc}",
     "error.explorer_outside_workspace": "La destination doit se trouver dans le dossier des notes.",

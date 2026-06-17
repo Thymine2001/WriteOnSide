@@ -121,6 +121,7 @@ MESSAGES = {
     "error.delete_failed": "Delete failed: {exc}",
     "error.open_failed": "Open failed: {exc}",
     "error.file_not_found": "The selected file does not exist.",
+    "error.open_file_limit": "Only {count} notes or files can be open at the same time.",
     "error.reveal_failed": "Reveal in File Explorer failed: {exc}",
     "error.explorer_paste_failed": "Paste failed: {exc}",
     "error.explorer_outside_workspace": "Destination must be inside the notes folder.",
