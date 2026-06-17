@@ -9,6 +9,7 @@ from tkinterdnd2 import DND_FILES, DND_TEXT, TkinterDnD
 
 from .config import APP_NAME, AppConfig, load_config, save_config
 from .editor_images import EditorImageBlock
+from .format_icons import FORMAT_MDL2_FONT, FORMAT_MDL2_KEYS, format_action_glyph
 from .frontmatter import NoteMetadata
 from .platform import SingleInstanceGuard, enable_per_monitor_dpi, is_startup_enabled
 from .theme import *  # noqa: F401,F403
@@ -209,14 +210,14 @@ class WriteOnSideApp(
             ("highlight", "==", lambda: self._wrap_selection("==", "==", "text")),
             ("color", "A", lambda: self._show_text_color_popup(self._format_buttons["color"])),
             ("code", "<>", self._smart_code_format),
-            ("quote", "“", lambda: self._line_prefix("> ")),
+            ("quote", format_action_glyph("quote", "“"), lambda: self._line_prefix("> ")),
             ("link", "🔗", lambda: self._wrap_selection("[", "](url)", "text")),
-            ("image", "▧", self._insert_image_file),
-            ("table", "▦", self._insert_markdown_table),
+            ("image", format_action_glyph("image", "▧"), self._insert_image_file),
+            ("table", format_action_glyph("table", "▦"), self._insert_markdown_table),
             ("bullet", "•", lambda: self._apply_list_format("bullet")),
             ("ordered", "1.", lambda: self._apply_list_format("ordered")),
-            ("task", "☑", lambda: self._apply_list_format("task")),
-            ("divider", "—", lambda: self._insert_text("\n---\n")),
+            ("task", format_action_glyph("task", "☑"), lambda: self._apply_list_format("task")),
+            ("divider", format_action_glyph("divider", "—"), lambda: self._insert_text("\n---\n")),
         ]
         self._format_buttons: dict[str, tk.Label] = {}
         self._md_tool_buttons = []
@@ -228,6 +229,8 @@ class WriteOnSideApp(
                 btn.configure(font=("Segoe UI", 10, "italic"))
             elif key == "link":
                 btn.configure(font=("Segoe UI Emoji", 10))
+            elif key in FORMAT_MDL2_KEYS:
+                btn.configure(font=FORMAT_MDL2_FONT)
             elif key == "color":
                 btn.configure(font=("Segoe UI", 10, "bold"), fg=g["ACCENT"])
             btn.pack(side="left", padx=1, pady=(0, 6))

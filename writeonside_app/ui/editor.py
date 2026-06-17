@@ -8,8 +8,8 @@ import tkinter as tk
 from tkinter import colorchooser, messagebox
 
 from ..config import APP_NAME, save_config
+from ..format_icons import FORMAT_MDL2_ICONS, format_menu_label
 from ..frontmatter import ensure_front_matter, split_front_matter
-from ..hotkeys import format_hotkey_display
 from ..i18n import command_label, t
 from ..editor_images import (
     EDITOR_IMAGE_ELIDE_TAG,
@@ -517,7 +517,7 @@ class EditorMixin:
             + "\n\n"
             + t("editor.placeholder_body")
             + "\n\n"
-            + t("editor.placeholder_footer", hotkey=format_hotkey_display(self.config.hotkey))
+            + t("editor.placeholder_footer")
         )
         if hasattr(self, "status_label"):
             self._set_status_key("status.ready")
@@ -839,29 +839,29 @@ class EditorMixin:
             else:
                 action = command
             menu.add_command(
-                label=f"{glyph}  {command_label(key)}",
+                label=format_menu_label(glyph, command_label(key)),
                 command=lambda callback=action: self._finish_popup_format(callback),
             )
         menu.add_separator()
         menu.add_command(
-            label=f"x²  {t('cmd.superscript')}",
+            label=format_menu_label("x²", t("cmd.superscript")),
             command=lambda: self._finish_popup_format(lambda: self._wrap_selection("<sup>", "</sup>", "text")),
         )
         menu.add_command(
-            label=f"x₂  {t('cmd.subscript')}",
+            label=format_menu_label("x₂", t("cmd.subscript")),
             command=lambda: self._finish_popup_format(lambda: self._wrap_selection("<sub>", "</sub>", "text")),
         )
         menu.add_separator()
         menu.add_command(
-            label=f"📎  {t('dialog.insert_attachment')}",
+            label=format_menu_label(FORMAT_MDL2_ICONS["attachment"], t("dialog.insert_attachment")),
             command=lambda: self._finish_popup_format(self._insert_attachment_file),
         )
         menu.add_command(
-            label=f"🖼  {t('cmd.paste_clipboard_image')}",
+            label=format_menu_label(FORMAT_MDL2_ICONS["paste_clipboard_image"], t("cmd.paste_clipboard_image")),
             command=lambda: self._finish_popup_format(self._insert_clipboard_image),
         )
         menu.add_command(
-            label=f"⌫  {t('cmd.clear_formatting')}",
+            label=format_menu_label(FORMAT_MDL2_ICONS["clear_formatting"], t("cmd.clear_formatting")),
             command=lambda: self._finish_popup_format(self._clear_selected_markdown),
         )
         menu.tk_popup(anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height() + 3)

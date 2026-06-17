@@ -15,7 +15,6 @@ from ..config import APP_NAME, save_config
 from ..dragdrop import is_image_path, is_image_url, is_url, local_path_from_drop, split_drop_data
 from ..editor_images import EDITOR_IMAGE_ELIDE_TAG, load_preview_photo, plan_editor_image_blocks
 from ..frontmatter import note_template, parse_front_matter
-from ..hotkeys import format_hotkey_display
 from ..i18n import t
 from ..live_highlight import MD_EDITOR_TAGS, apply_live_highlight_plan, plan_live_highlight
 from ..markdown import render_markdown
@@ -1230,10 +1229,9 @@ class NotesMixin:
         self._update_hotkey_hints()
 
     def _set_status(self, text: str) -> None:
-        hotkey = format_hotkey_display(self.config.hotkey)
         active_path = self.preview_path or self.current_note_path
         note = active_path.name if active_path else t("note.no_note")
-        self.status_label.config(text=t("status.bar", note=note, message=text, hotkey=hotkey))
+        self.status_label.config(text=t("status.bar", note=note, message=text))
 
     def _set_error(self, text: str) -> None:
         self.status_label.config(text=text, fg=globals()["DANGER"])
