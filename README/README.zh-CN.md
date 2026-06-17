@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/writeonside_logo_light.svg" alt="随边记 标志" width="96" />
+  <img src="../assets/writeonside_logo_light.svg" alt="随边记 标志" width="96" />
 </p>
 
 <h1 align="center">随边记</h1>
@@ -17,9 +17,16 @@
 
 <p align="center">
   <strong>语言：</strong>
-  <a href="README.md">English</a> |
+  <a href="../README.md">English</a> |
   <a href="README.zh-CN.md">中文</a> |
-  <a href="README.pt.md">Português</a>
+  <a href="README.pt.md">Português</a> |
+  <a href="README.de.md">Deutsch</a> |
+  <a href="README.fr.md">Français</a> |
+  <a href="README.nl.md">Nederlands</a> |
+  <a href="README.ko.md">한국어</a> |
+  <a href="README.it.md">Italiano</a> |
+  <a href="README.hi.md">हिन्दी</a> |
+  <a href="README.uk.md">Українська</a>
 </p>
 
 **随边记**（WriteOnSide）将 Markdown 笔记保存在你指定的文件夹中。没有私有数据库，也不强制使用云服务，因此同一 Vault 可在随边记、Obsidian、VS Code 或其他编辑器中打开。
@@ -66,7 +73,7 @@
 
 ### 界面语言
 
-应用内置 **English**、**中文**、**Português**。在 **设置 → 常规 → 语言** 中切换。
+应用内置 **English**、**中文**、**Português**、**Deutsch**、**Français**、**Nederlands**、**한국어**、**Italiano**、**हिन्दी**、**Українська**。在 **设置 → 常规 → 语言** 中切换。
 
 ### Obsidian 兼容性
 
@@ -103,7 +110,7 @@
 **从源码开发：**
 
 - Python 3.12
-- [`requirements.txt`](requirements.txt) 中列出的依赖
+- [`requirements.txt`](../requirements.txt) 中列出的依赖
 
 ## 从源码运行
 
@@ -154,7 +161,7 @@ py -3.12 -m venv .venv
 4. 输出到 `dist-native-tree-vX.Y.Z\WriteOnSide.exe`。
 5. 保留最近三个发行目录。
 
-详见 [`BUILDING.md`](BUILDING.md)。
+详见 [`BUILDING.md`](../BUILDING.md)。
 
 ## 数据位置
 
@@ -184,9 +191,9 @@ LICENSE                 随边记（WriteOnSide）源码 MIT 许可证
 
 ## 许可证
 
-随边记原创源码采用 [MIT 许可证](LICENSE)。
+随边记原创源码采用 [MIT 许可证](../LICENSE)。
 
-第三方组件仍受其各自许可证约束，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+第三方组件仍受其各自许可证约束，见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
 
 <p align="center">
   <sub>随边记 · Python | Tkinter | Markdown | 兼容 Obsidian 的纯文本笔记</sub>

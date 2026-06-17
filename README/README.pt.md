@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/writeonside_logo_light.svg" alt="Logótipo WriteOnSide" width="96" />
+  <img src="../assets/writeonside_logo_light.svg" alt="Logótipo WriteOnSide" width="96" />
 </p>
 
 <h1 align="center">WriteOnSide</h1>
@@ -16,10 +16,17 @@
 </p>
 
 <p align="center">
-  <strong>Idiomas:</strong>
-  <a href="README.md">English</a> |
+  <strong>Languages:</strong>
+  <a href="../README.md">English</a> |
   <a href="README.zh-CN.md">中文</a> |
-  <a href="README.pt.md">Português</a>
+  <a href="README.pt.md">Português</a> |
+  <a href="README.de.md">Deutsch</a> |
+  <a href="README.fr.md">Français</a> |
+  <a href="README.nl.md">Nederlands</a> |
+  <a href="README.ko.md">한국어</a> |
+  <a href="README.it.md">Italiano</a> |
+  <a href="README.hi.md">हिन्दी</a> |
+  <a href="README.uk.md">Українська</a>
 </p>
 
 O WriteOnSide (随边记) guarda notas Markdown numa pasta escolhida por si. Não há base de
@@ -76,7 +83,8 @@ executar.
 
 ### Idioma da interface
 
-A aplicação inclui **English**, **中文** e **Português**. Altere em
+A aplicação inclui **English**, **中文**, **Português**, **Deutsch**, **Français**,
+**Nederlands**, **한국어**, **Italiano**, **हिन्दी** e **Українська**. Altere em
 **Definições → Geral → Idioma**.
 
 ### Compatibilidade com Obsidian
@@ -116,7 +124,7 @@ de edição. A ferramenta Backlinks lista notas que ligam à nota atual.
 **Para desenvolvimento a partir do código-fonte:**
 
 - Python 3.12
-- Os pacotes listados em [`requirements.txt`](requirements.txt)
+- Os pacotes listados em [`requirements.txt`](../requirements.txt)
 
 ## Executar a partir do código-fonte
 
@@ -173,7 +181,7 @@ O script:
 4. Grava-o em `dist-native-tree-vX.Y.Z\WriteOnSide.exe`.
 5. Mantém os três diretórios de lançamento mais recentes.
 
-Consulte [`BUILDING.md`](BUILDING.md) para comandos adicionais e resolução de
+Consulte [`BUILDING.md`](../BUILDING.md) para comandos adicionais e resolução de
 problemas.
 
 ## Localização dos dados
@@ -207,10 +215,10 @@ LICENSE                 Licença MIT do código-fonte WriteOnSide
 ## Licenciamento
 
 O código-fonte original do WriteOnSide está licenciado sob a
-[Licença MIT](LICENSE).
+[Licença MIT](../LICENSE).
 
 Os componentes de terceiros continuam sujeitos às respetivas licenças listadas
-em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+em [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
 <p align="center">
   <sub>Python | Tkinter | Markdown | Ficheiros simples compatíveis com Obsidian</sub>

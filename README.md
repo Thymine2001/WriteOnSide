@@ -18,8 +18,15 @@
 <p align="center">
   <strong>Languages:</strong>
   <a href="README.md">English</a> |
-  <a href="README.zh-CN.md">中文</a> |
-  <a href="README.pt.md">Português</a>
+  <a href="README/README.zh-CN.md">中文</a> |
+  <a href="README/README.pt.md">Português</a> |
+  <a href="README/README.de.md">Deutsch</a> |
+  <a href="README/README.fr.md">Français</a> |
+  <a href="README/README.nl.md">Nederlands</a> |
+  <a href="README/README.ko.md">한국어</a> |
+  <a href="README/README.it.md">Italiano</a> |
+  <a href="README/README.hi.md">हिन्दी</a> |
+  <a href="README/README.uk.md">Українська</a>
 </p>
 
 WriteOnSide (随边记) keeps Markdown notes in a folder you choose. There is no private
@@ -77,7 +84,8 @@ Verify that the file came from this repository before running it.
 
 ### Interface languages
 
-The app ships with **English**, **中文**, and **Português**. Change it in
+The app ships with **English**, **中文**, **Português**, **Deutsch**, **Français**,
+**Nederlands**, **한국어**, **Italiano**, **हिन्दी**, and **Українська**. Change it in
 **Settings → General → Language**.
 
 ### Obsidian compatibility

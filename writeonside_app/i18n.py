@@ -6,6 +6,13 @@ SUPPORTED_LANGUAGES = {
     "en": "English",
     "zh": "中文",
     "pt": "Português",
+    "de": "Deutsch",
+    "fr": "Français",
+    "nl": "Nederlands",
+    "ko": "한국어",
+    "it": "Italiano",
+    "hi": "हिन्दी",
+    "uk": "Українська",
 }
 
 _current = "en"
@@ -17,6 +24,20 @@ def normalize_language(code: object) -> str:
         return "zh"
     if text.startswith("pt"):
         return "pt"
+    if text.startswith("de"):
+        return "de"
+    if text.startswith("fr"):
+        return "fr"
+    if text.startswith("nl"):
+        return "nl"
+    if text.startswith("ko"):
+        return "ko"
+    if text.startswith("it"):
+        return "it"
+    if text.startswith("hi"):
+        return "hi"
+    if text.startswith("uk") or text.startswith("ua"):
+        return "uk"
     if text in SUPPORTED_LANGUAGES:
         return text
     return "en"
