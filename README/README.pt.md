@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img src="../assets/writeonside_logo_light.svg" alt="Logótipo WriteOnSide" width="96" />
 </p>
 
@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows" alt="Windows 10 e 11" />
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/version-0.0.50-2ea44f" alt="Versão 0.0.50" />
+  <img src="https://img.shields.io/badge/version-0.1.0-2ea44f" alt="Versão 0.1.0" />
 </p>
 
 <p align="center">
@@ -34,7 +34,7 @@ dados privada nem serviço na nuvem obrigatório, pelo que o mesmo Vault pode se
 aberto no WriteOnSide, Obsidian, VS Code ou noutro editor.
 
 > [!NOTE]
-> O WriteOnSide `0.0.50` é um projeto em desenvolvimento ativo, ainda em
+> O WriteOnSide `0.1.0` é um projeto em desenvolvimento ativo, ainda em
 > pré-lançamento. Faça cópias de segurança das notas importantes e reveja as
 > notas de versão antes de atualizar.
 

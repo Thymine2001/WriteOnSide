@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [string]$Version = ""
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -20,14 +22,25 @@ $currentText = if (Test-Path -LiteralPath $versionFile) {
 } else {
     "0.0.0"
 }
-if ($currentText -notmatch '^(\d+)\.(\d+)\.(\d+)$') {
-    throw "VERSION must use semantic version format such as 0.0.1."
+
+if ($Version) {
+    if ($Version -notmatch '^(\d+)\.(\d+)\.(\d+)$') {
+        throw "Version must use semantic version format such as 0.1.0."
+    }
+    $nextVersion = $Version
+} else {
+    if ($currentText -notmatch '^(\d+)\.(\d+)\.(\d+)$') {
+        throw "VERSION must use semantic version format such as 0.0.1."
+    }
+    $nextVersion = "$($Matches[1]).$($Matches[2]).$([int]$Matches[3] + 1)"
 }
 
+if ($nextVersion -notmatch '^(\d+)\.(\d+)\.(\d+)$') {
+    throw "Resolved version must use semantic version format such as 0.1.0."
+}
 $major = [int]$Matches[1]
 $minor = [int]$Matches[2]
-$patch = [int]$Matches[3] + 1
-$nextVersion = "$major.$minor.$patch"
+$patch = [int]$Matches[3]
 $releaseName = "dist-native-tree-v$nextVersion"
 $releaseDir = Join-Path $projectRoot $releaseName
 $workDir = Join-Path $projectRoot "build-release-v$nextVersion"

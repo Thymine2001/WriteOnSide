@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img src="../assets/writeonside_logo_light.svg" alt="Logo WriteOnSide" width="96" />
 </p>
 
@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows" alt="Windows 10 et 11" />
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/version-0.0.50-2ea44f" alt="Version 0.0.50" />
+  <img src="https://img.shields.io/badge/version-0.1.0-2ea44f" alt="Version 0.1.0" />
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@
 WriteOnSide (随边记) conserve vos notes Markdown dans un dossier de votre choix. Il n'y a pas de base de données privée ni de service cloud obligatoire : le même Vault peut être ouvert dans WriteOnSide, Obsidian, VS Code ou un autre éditeur.
 
 > [!NOTE]
-> WriteOnSide `0.0.50` est un projet en développement actif, encore en préversion. Sauvegardez vos notes importantes et consultez les notes de version avant une mise à jour.
+> WriteOnSide `0.1.0` est un projet en développement actif, encore en préversion. Sauvegardez vos notes importantes et consultez les notes de version avant une mise à jour.
 
 <p align="center">
   <img src="../assets/screenshots/writeonside-screenshot.png" alt="Panneau latéral WriteOnSide sur Windows" width="720" />
