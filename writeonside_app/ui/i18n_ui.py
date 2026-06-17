@@ -57,6 +57,8 @@ class I18nMixin:
             self._track_tooltip(self.save_now_btn, "cmd.save_note")
         if hasattr(self, "new_btn"):
             self._track_tooltip(self.new_btn, "cmd.new_note")
+        if hasattr(self, "open_file_btn"):
+            self._track_tooltip(self.open_file_btn, "cmd.open_file")
         if hasattr(self, "more_format_btn"):
             self._track_tooltip(self.more_format_btn, "tooltip.more_formatting")
         for command_id, button in getattr(self, "_format_buttons", {}).items():

@@ -4,11 +4,18 @@ from pathlib import Path
 
 
 EDITABLE_TEXT_SUFFIXES = {
-    ".bat", ".c", ".cfg", ".cmd", ".conf", ".cpp", ".cs", ".css", ".csv",
-    ".go", ".h", ".hpp", ".htm", ".html", ".ini", ".java", ".js", ".json",
-    ".jsx", ".log", ".lua", ".md", ".php", ".ps1", ".py", ".pyw", ".r",
-    ".rb", ".rmd", ".rs", ".scss", ".sh", ".sql", ".tex", ".toml", ".ts",
-    ".tsx", ".tsv", ".txt", ".xml", ".yaml", ".yml",
+    ".asm", ".bat", ".c", ".cc", ".cfg", ".clj", ".cljs", ".cmd", ".conf",
+    ".cpp", ".cs", ".css", ".csv", ".cxx", ".dart", ".ex", ".exs", ".fs",
+    ".fsx", ".go", ".groovy", ".h", ".hh", ".hpp", ".htm", ".html", ".hxx",
+    ".ini", ".java", ".js", ".json", ".jsx", ".kt", ".kts", ".less", ".log",
+    ".lua", ".m", ".md", ".mm", ".pas", ".php", ".pl", ".pm", ".ps1", ".py",
+    ".pyw", ".r", ".rb", ".rmd", ".rs", ".sass", ".scala", ".scss", ".sh",
+    ".sql", ".svelte", ".swift", ".tex", ".toml", ".ts", ".tsx", ".tsv",
+    ".txt", ".vb", ".vue", ".xml", ".yaml", ".yml", ".zig",
+}
+
+EDITABLE_TEXT_FILENAMES = {
+    "cmakelists.txt", "dockerfile", "gemfile", "jenkinsfile", "makefile", "procfile",
 }
 
 
@@ -17,7 +24,17 @@ def is_markdown_note(path: Path) -> bool:
 
 
 def is_editable_text_path(path: Path) -> bool:
-    return path.suffix.lower() in EDITABLE_TEXT_SUFFIXES
+    return path.suffix.lower() in EDITABLE_TEXT_SUFFIXES or path.name.casefold() in EDITABLE_TEXT_FILENAMES
+
+
+def requested_file_from_args(args: list[str] | tuple[str, ...]) -> Path | None:
+    for value in args:
+        if not value or value.startswith("-"):
+            continue
+        path = Path(value).expanduser()
+        if path.exists() and path.is_file():
+            return path.resolve()
+    return None
 
 
 def read_editable_text(path: Path) -> tuple[str, str, str]:

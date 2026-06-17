@@ -15,6 +15,7 @@ class CommandShortcutsMixin:
     }
     def _command_actions(self):
         return {
+            "open_file": self._open_file_dialog,
             "new_note": self._create_new_note,
             "save_note": lambda: self._save_note(True),
             "toggle_mode": self._toggle_view_mode,
@@ -43,6 +44,7 @@ class CommandShortcutsMixin:
 
     def _shortcut_widgets(self) -> dict[str, tk.Widget]:
         widgets = {
+            "open_file": self.open_file_btn,
             "new_note": self.new_btn,
             "save_note": self.save_now_btn,
             "toggle_mode": self.view_toggle_btn,

@@ -3,7 +3,9 @@ from __future__ import annotations
 import unittest
 
 from writeonside_app.live_highlight import plan_live_highlight
-from writeonside_app.syntax_highlight import code_token_spans, normalize_code_language
+from pathlib import Path
+
+from writeonside_app.syntax_highlight import code_token_spans, normalize_code_language, source_token_spans
 
 
 class SyntaxHighlightTests(unittest.TestCase):
@@ -39,6 +41,19 @@ class SyntaxHighlightTests(unittest.TestCase):
 
         self.assertTrue(any(tag.tag == "md_code" and tag.line == 2 for tag in plan.line_tags))
         self.assertFalse(plan.color_spans)
+
+    def test_source_files_use_filename_lexer_highlighting(self) -> None:
+        samples = {
+            "page.html": "<main class=\"page\">Hello</main>\n",
+            "script.py": "def demo():\n    return 1\n",
+            "report.rmd": "value <- function(x) x + 1\n",
+            "main.rs": "fn main() { println!(\"hello\"); }\n",
+            "main.cpp": "int main() { return 0; }\n",
+            "main.c": "int main(void) { return 0; }\n",
+        }
+        for filename, content in samples.items():
+            with self.subTest(filename=filename):
+                self.assertTrue(source_token_spans(content, Path(filename), background="#15161a"))
 
 
 if __name__ == "__main__":

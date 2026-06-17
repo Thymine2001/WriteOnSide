@@ -52,7 +52,11 @@ class TrayMixin:
     def _poll_instance_activation(self) -> None:
         guard = self._instance_guard
         if guard is not None and guard.consume_activation():
-            self._activate_existing_window()
+            requested_file = guard.consume_open_request()
+            if requested_file is not None:
+                self._open_file_in_editor(requested_file, reveal_panel=True)
+            else:
+                self._activate_existing_window()
         try:
             self._instance_poll_after = self.root.after(200, self._poll_instance_activation)
         except tk.TclError:

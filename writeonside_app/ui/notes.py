@@ -22,6 +22,7 @@ from ..markdown import render_markdown
 from ..preview import render_file_preview
 from ..notes.service import rename_target, unique_note_path
 from ..storage import read_text_file, safe_write_text
+from ..syntax_highlight import source_token_spans, syntax_tag_name
 from ..text_files import is_editable_text_path, is_markdown_note, read_editable_text
 from ..theme import *  # noqa: F401,F403
 from ..wikilinks import find_notes_linking_to, rewrite_wikilinks_after_rename
@@ -239,6 +240,37 @@ class NotesMixin:
 
     # ── Open / load notes ────────────────────────────────────────────────────
 
+    def _open_file_dialog(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self.root,
+            title=t("dialog.open_file"),
+            filetypes=[
+                (t("dialog.text_and_code_files"), "*.*"),
+                (t("dialog.all_files"), "*.*"),
+            ],
+        )
+        if path:
+            self._open_file_in_editor(Path(path), reveal_panel=True)
+
+    def _open_file_in_editor(self, path: Path, reveal_panel: bool = True) -> None:
+        path = path.expanduser().resolve()
+        if not path.exists() or not path.is_file():
+            self._set_error(t("error.open_failed", exc=t("error.file_not_found")))
+            return
+        if is_markdown_note(path):
+            if not self.current_note_path or path != self.current_note_path.resolve():
+                self._save_note(False)
+                self._open_note_file(path)
+        else:
+            self._open_text_file_from_tree(path)
+        if reveal_panel:
+            if not self.is_open:
+                self.open_panel()
+            else:
+                self.root.deiconify()
+                self.root.lift()
+                self.root.focus_force()
+
     def _open_note_from_tree(self, path: Path) -> None:
         was_previewing = self.preview_path is not None
         self._close_file_preview(restore_note=True)
@@ -331,14 +363,14 @@ class NotesMixin:
         self._close_split_note_for_path(path)
         self._close_file_preview(restore_note=False)
         try:
-            content = read_text_file(path) if path.exists() else ""
-        except OSError as exc:
+            content, encoding, newline = read_editable_text(path)
+        except (OSError, UnicodeError) as exc:
             self._set_error(t("error.open_failed", exc=exc))
             return
         self.current_note_path = path.resolve()
-        self._document_encoding = "utf-8"
-        self._document_newline = "\n"
-        self.config.current_note_path = str(self.current_note_path)
+        self._document_encoding = encoding
+        self._document_newline = newline
+        self.config.current_note_path = str(self.current_note_path) if self._is_in_workspace(path) else ""
         self._reset_editor_structure()
         self._set_editor_content(content)
         self._dirty = False
@@ -675,7 +707,7 @@ class NotesMixin:
         if not isinstance(text, tk.Text):
             return
         color_tags = note.setdefault("color_tags", set())
-        for tag in (*MD_EDITOR_TAGS, *color_tags):
+        for tag in ("source_code", *MD_EDITOR_TAGS, *color_tags):
             try:
                 text.tag_remove(tag, "1.0", tk.END)
             except tk.TclError:
@@ -703,6 +735,22 @@ class NotesMixin:
         if not is_markdown_note(path):
             self._clear_split_markdown_tags(note)
             self._clear_split_image_previews(note)
+            content = text.get("1.0", "end-1c")
+            spans = source_token_spans(content, path, background=globals()["BG"])
+            if spans:
+                code_font = ("Consolas", max(9, self.config.font_size + 2))
+                text.tag_configure("source_code", font=code_font, foreground=globals()["TEXT"])
+                text.tag_add("source_code", "1.0", tk.END)
+                color_tags = note.setdefault("color_tags", set())
+                if not isinstance(color_tags, set):
+                    color_tags = set()
+                    note["color_tags"] = color_tags
+                for span in spans:
+                    tag = syntax_tag_name("source_syntax", span.color)
+                    text.tag_configure(tag, foreground=span.color, font=code_font)
+                    color_tags.add(tag)
+                    text.tag_add(tag, f"1.0+{span.start}c", f"1.0+{span.end}c")
+                text.tag_raise("sel")
             return
         self._configure_split_markdown_tags(text)
         content = text.get("1.0", "end-1c")

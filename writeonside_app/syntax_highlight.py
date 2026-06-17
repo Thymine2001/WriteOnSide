@@ -6,12 +6,13 @@ from typing import Iterable
 
 try:
     from pygments import lex
-    from pygments.lexers import get_lexer_by_name
+    from pygments.lexers import get_lexer_by_name, get_lexer_for_filename
     from pygments.styles import get_style_by_name
     from pygments.util import ClassNotFound
 except Exception:  # pragma: no cover - Pygments is optional at import time.
     lex = None  # type: ignore[assignment]
     get_lexer_by_name = None  # type: ignore[assignment]
+    get_lexer_for_filename = None  # type: ignore[assignment]
     get_style_by_name = None  # type: ignore[assignment]
 
     class ClassNotFound(Exception):
@@ -36,6 +37,24 @@ _LANGUAGE_ALIASES = {
     "ts": "typescript",
     "yml": "yaml",
     "md": "markdown",
+}
+
+_SOURCE_LANGUAGE_BY_SUFFIX = {
+    ".c": "c",
+    ".cc": "cpp",
+    ".cpp": "cpp",
+    ".cxx": "cpp",
+    ".h": "c",
+    ".hh": "cpp",
+    ".hpp": "cpp",
+    ".hxx": "cpp",
+    ".htm": "html",
+    ".html": "html",
+    ".py": "python",
+    ".pyw": "python",
+    ".r": "r",
+    ".rmd": "r",
+    ".rs": "rust",
 }
 
 
@@ -93,6 +112,40 @@ def code_token_spans(
         if value.strip():
             token_style = style.style_for_token(token_type)
             color = token_style.get("color")
+            if color:
+                spans.append(SyntaxSpan(position, end, f"#{color}"))
+        position = end
+    return tuple(spans)
+
+
+def source_token_spans(
+    code: str,
+    path,
+    *,
+    background: str = "#1e1e1e",
+    max_chars: int = 250_000,
+) -> tuple[SyntaxSpan, ...]:
+    if lex is None or get_style_by_name is None or not code or len(code) > max_chars:
+        return ()
+    suffix = getattr(path, "suffix", "").casefold()
+    explicit_language = _SOURCE_LANGUAGE_BY_SUFFIX.get(suffix)
+    try:
+        if explicit_language and get_lexer_by_name is not None:
+            lexer = get_lexer_by_name(explicit_language, stripnl=False, ensurenl=False)
+        elif get_lexer_for_filename is not None:
+            lexer = get_lexer_for_filename(getattr(path, "name", str(path)), code, stripnl=False, ensurenl=False)
+        else:
+            return ()
+        style = get_style_by_name(style_for_background(background))
+    except ClassNotFound:
+        return ()
+
+    spans: list[SyntaxSpan] = []
+    position = 0
+    for token_type, value in lex(code, lexer):
+        end = position + len(value)
+        if value.strip():
+            color = style.style_for_token(token_type).get("color")
             if color:
                 spans.append(SyntaxSpan(position, end, f"#{color}"))
         position = end

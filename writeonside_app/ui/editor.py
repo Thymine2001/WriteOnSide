@@ -25,6 +25,7 @@ from ..live_highlight import (
 from ..markdown import render_markdown
 from ..preview import render_file_preview
 from ..storage import safe_write_text  # Fix #7: moved from lazy import inside _save_note
+from ..syntax_highlight import source_token_spans, syntax_tag_name
 from ..text_files import is_markdown_note
 from ..theme import *  # noqa: F401,F403
 
@@ -84,9 +85,31 @@ class EditorMixin:
     def _clear_editor_markdown_tags(self) -> None:
         self._clear_editor_image_previews()
         # Fix #6: use module-level constant instead of a duplicated inline tuple
-        for tag in (*_MD_EDITOR_TAGS, *getattr(self, "_editor_color_tags", set())):
+        for tag in ("source_code", *_MD_EDITOR_TAGS, *getattr(self, "_editor_color_tags", set())):
             self.text.tag_remove(tag, "1.0", tk.END)
         self._editor_color_tags.clear()
+
+    def _apply_source_file_highlight(self, content: str) -> None:
+        if self.current_note_path is None:
+            return
+        spans = source_token_spans(content, self.current_note_path, background=globals()["BG"])
+        if not spans:
+            return
+        self.text.tag_configure(
+            "source_code",
+            font=("Consolas", max(9, self.config.font_size + 2)),
+            foreground=globals()["TEXT"],
+        )
+        self.text.tag_add("source_code", "1.0", tk.END)
+        for span in spans:
+            tag = syntax_tag_name("source_syntax", span.color)
+            self.text.tag_configure(
+                tag,
+                foreground=span.color,
+                font=("Consolas", max(9, self.config.font_size + 2)),
+            )
+            self._editor_color_tags.add(tag)
+            self.text.tag_add(tag, f"1.0+{span.start}c", f"1.0+{span.end}c")
 
     def _is_markdown_document(self) -> bool:
         return bool(self.current_note_path and is_markdown_note(self.current_note_path))
@@ -106,6 +129,13 @@ class EditorMixin:
             return
         if not self.current_note_path or not is_markdown_note(self.current_note_path):
             self._clear_editor_markdown_tags()
+            content = self.text.get("1.0", "end-1c")
+            self._apply_source_file_highlight(content)
+            for tag in ("find_match", "find_current", "outline_current", "sel"):
+                try:
+                    self.text.tag_raise(tag)
+                except tk.TclError:
+                    pass
             self._schedule_editor_structure_refresh(reapply_folds=True)
             return
         self._configure_editor_markdown_tags()
@@ -434,6 +464,8 @@ class EditorMixin:
         if not show_indicator and not self._dirty:
             return  # nothing changed — skip disk writes (keeps close animation smooth)
         content = self._get_editor_content()
+        in_workspace = self._is_in_workspace(self.current_note_path)
+        backup_root = self._workspace_dir() if in_workspace else self.current_note_path.parent
         try:
             self._mark_vault_internal_write(self.current_note_path)
             # Fix #7: safe_write_text is now imported at the top of the module
@@ -442,7 +474,7 @@ class EditorMixin:
                 content,
                 encoding=self._document_encoding,
                 newline=self._document_newline,
-                workspace_root=self._workspace_dir(),
+                workspace_root=backup_root,
             )
         except OSError as exc:
             self._set_error(t("error.save_failed", exc=exc))
@@ -459,9 +491,9 @@ class EditorMixin:
             self.save_indicator.config(text=t("status.saved"))
             self.root.after(1400, lambda: self.save_indicator.config(text=""))
         markdown_note = is_markdown_note(self.current_note_path)
-        self.config.current_note_path = str(self.current_note_path) if markdown_note else ""
+        self.config.current_note_path = str(self.current_note_path) if markdown_note and in_workspace else ""
         save_config(self.config)
-        if markdown_note:
+        if markdown_note and in_workspace:
             self._schedule_tag_refresh()
             self._schedule_wiki_index_refresh()
 

@@ -41,6 +41,7 @@ class I18nTests(unittest.TestCase):
         from writeonside_app.locales import TRANSLATIONS
 
         required = {
+            "cmd.open_file",
             "explorer.menu.new_folder",
             "status.folder_created",
             "error.attachment_cleanup_failed",
@@ -49,6 +50,10 @@ class I18nTests(unittest.TestCase):
             "error.create_folder_failed",
             "dialog.new_folder_title",
             "dialog.new_folder_prompt",
+            "dialog.open_file",
+            "dialog.text_and_code_files",
+            "dialog.all_files",
+            "error.file_not_found",
         }
         for code, catalog in TRANSLATIONS.items():
             self.assertFalse(required - catalog.keys(), code)

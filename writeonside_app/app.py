@@ -44,7 +44,11 @@ class WriteOnSideApp(
     I18nMixin,
     VaultWatcherMixin,
 ):
-    def __init__(self, instance_guard: SingleInstanceGuard | None = None) -> None:
+    def __init__(
+        self,
+        instance_guard: SingleInstanceGuard | None = None,
+        initial_file: Path | None = None,
+    ) -> None:
         self.config = load_config()
         self.config.start_on_boot = is_startup_enabled()
         self._init_i18n()
@@ -119,6 +123,7 @@ class WriteOnSideApp(
         self._vault_pending_paths: set[Path] = set()
         self._vault_pending_moves: dict[Path, Path] = {}
         self._vault_internal_writes: dict[Path, float] = {}
+        self._initial_file = initial_file
 
         g = globals()
         enable_per_monitor_dpi()
@@ -153,6 +158,8 @@ class WriteOnSideApp(
         self._poll_instance_activation()
         self._show_nav_bar()
         self._poll_ui_queue()
+        if self._initial_file is not None:
+            self.root.after_idle(lambda path=self._initial_file: self._open_file_in_editor(path, reveal_panel=True))
 
     def _build_ui(self) -> None:
         g = globals()
@@ -258,6 +265,9 @@ class WriteOnSideApp(
         self.save_now_btn.pack(side="right", padx=(2, 10), pady=6)
         self.new_btn = self._toolbar_btn(self.toolbar_top, "+", self._create_new_note)
         self.new_btn.pack(side="right", padx=2, pady=6)
+        self.open_file_btn = self._toolbar_btn(self.toolbar_top, "\uE8E5", self._open_file_dialog)
+        self.open_file_btn.configure(font=("Segoe MDL2 Assets", 11))
+        self.open_file_btn.pack(side="right", padx=2, pady=6)
 
         tk.Frame(self.root, bg=g["BORDER"], height=1).pack(fill="x")
         self._build_find_panel()
@@ -547,6 +557,7 @@ class WriteOnSideApp(
             self.find_btn,
             self.save_now_btn,
             self.new_btn,
+            self.open_file_btn,
         ]
         for widget in widgets:
             try:
@@ -567,6 +578,7 @@ class WriteOnSideApp(
             self.outline_btn,
             self.backlinks_btn,
             self.find_btn,
+            self.open_file_btn,
             self.new_btn,
             self.save_now_btn,
         ]
@@ -620,4 +632,7 @@ class WriteOnSideApp(
     # ── Entry point ───────────────────────────────────────────────────────────
 
     def run(self) -> None:
-        self.root.mainloop()
+        try:
+            self.root.mainloop()
+        except KeyboardInterrupt:
+            self._quit()

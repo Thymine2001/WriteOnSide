@@ -6,6 +6,7 @@ from .hotkeys import normalize_hotkey, validate_hotkey
 
 
 COMMAND_SHORTCUTS = {
+    "open_file": ("Open file", "ctrl+o"),
     "new_note": ("New note", "ctrl+n"),
     "save_note": ("Save note", "ctrl+s"),
     "toggle_mode": ("Toggle read/edit mode", "ctrl+e"),

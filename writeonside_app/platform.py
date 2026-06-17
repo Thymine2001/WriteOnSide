@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import ctypes
+import json
+import os
 import sys
+import tempfile
 from ctypes import wintypes
 from pathlib import Path
 
 APP_REGISTRY_NAME = "WriteOnSide"
+FILE_PROG_ID = "WriteOnSide.TextFile"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 MUTEX_NAME = r"Local\WriteOnSide.SingleInstance"
 ACTIVATE_EVENT_NAME = r"Local\WriteOnSide.Activate"
+OPEN_REQUEST_PATH = Path(tempfile.gettempdir()) / "WriteOnSide-open-request.json"
 ERROR_ALREADY_EXISTS = 183
 WAIT_OBJECT_0 = 0
 GWL_EXSTYLE = -20
@@ -39,10 +44,34 @@ class SingleInstanceGuard:
         self._mutex = kernel32.CreateMutexW(None, False, MUTEX_NAME)
         self.is_primary = bool(self._mutex) and kernel32.GetLastError() != ERROR_ALREADY_EXISTS
         self._event = kernel32.CreateEventW(None, True, False, ACTIVATE_EVENT_NAME)
+        if self.is_primary:
+            try:
+                OPEN_REQUEST_PATH.unlink(missing_ok=True)
+            except OSError:
+                pass
 
-    def signal_existing(self) -> None:
+    def signal_existing(self, file_path: Path | None = None) -> None:
+        if file_path is not None:
+            temporary = OPEN_REQUEST_PATH.with_suffix(".tmp")
+            try:
+                temporary.write_text(json.dumps(str(file_path.resolve())), encoding="utf-8")
+                os.replace(temporary, OPEN_REQUEST_PATH)
+            except OSError:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
         if self._event:
             self._kernel32.SetEvent(self._event)
+
+    def consume_open_request(self) -> Path | None:
+        try:
+            value = json.loads(OPEN_REQUEST_PATH.read_text(encoding="utf-8"))
+            OPEN_REQUEST_PATH.unlink(missing_ok=True)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return None
+        path = Path(str(value)).expanduser()
+        return path.resolve() if path.exists() and path.is_file() else None
 
     def consume_activation(self) -> bool:
         if not self._event:
@@ -143,6 +172,80 @@ def startup_command() -> str:
     pythonw = python.with_name("pythonw.exe")
     launcher = pythonw if pythonw.exists() else python
     return f'"{launcher}" "{entry}"'
+
+
+def file_open_command() -> str:
+    return f'{startup_command()} "%1"'
+
+
+def normalize_file_association_extensions(extensions) -> tuple[str, ...]:
+    normalized: set[str] = set()
+    for value in extensions:
+        text = str(value).strip().casefold()
+        if text:
+            normalized.add(text if text.startswith(".") else f".{text}")
+    return tuple(sorted(normalized))
+
+
+def register_file_open_support(extensions) -> bool:
+    try:
+        import winreg
+
+        supported = normalize_file_association_extensions(extensions)
+        command = file_open_command()
+        if getattr(sys, "frozen", False):
+            icon_path = Path(sys.executable).resolve()
+        else:
+            icon_path = Path(__file__).resolve().parents[1] / "assets" / "WriteOnSide.ico"
+        icon_value = f'"{icon_path}",0'
+
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{FILE_PROG_ID}") as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "WriteOnSide text or code file")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{FILE_PROG_ID}\DefaultIcon") as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, icon_value)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{FILE_PROG_ID}\shell\open\command") as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+
+        application_key = rf"Software\Classes\Applications\{APP_REGISTRY_NAME}.exe"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, application_key) as key:
+            winreg.SetValueEx(key, "FriendlyAppName", 0, winreg.REG_SZ, APP_REGISTRY_NAME)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, application_key + r"\DefaultIcon") as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, icon_value)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, application_key + r"\shell\open\command") as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, application_key + r"\SupportedTypes") as key:
+            for extension in supported:
+                winreg.SetValueEx(key, extension, 0, winreg.REG_SZ, "")
+
+        capabilities_path = rf"Software\{APP_REGISTRY_NAME}\Capabilities"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, capabilities_path) as key:
+            winreg.SetValueEx(key, "ApplicationName", 0, winreg.REG_SZ, APP_REGISTRY_NAME)
+            winreg.SetValueEx(
+                key,
+                "ApplicationDescription",
+                0,
+                winreg.REG_SZ,
+                "Edit Markdown, text, and source code files.",
+            )
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, capabilities_path + r"\FileAssociations") as key:
+            for extension in supported:
+                winreg.SetValueEx(key, extension, 0, winreg.REG_SZ, FILE_PROG_ID)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\RegisteredApplications") as key:
+            winreg.SetValueEx(key, APP_REGISTRY_NAME, 0, winreg.REG_SZ, capabilities_path)
+
+        for extension in supported:
+            with winreg.CreateKey(
+                winreg.HKEY_CURRENT_USER,
+                rf"Software\Classes\{extension}\OpenWithProgids",
+            ) as key:
+                winreg.SetValueEx(key, FILE_PROG_ID, 0, winreg.REG_SZ, "")
+        try:
+            ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)
+        except Exception:
+            pass
+        return True
+    except (OSError, AttributeError):
+        return False
 
 
 def is_startup_enabled() -> bool:
