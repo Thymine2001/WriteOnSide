@@ -223,31 +223,10 @@ class SettingsMixin:
         settings_title_label.pack(pady=(18, 10))
         settings_body = tk.Frame(content, bg=g["BG"])
         settings_body.pack(fill="both", expand=True, padx=14, pady=(0, 12))
-        settings_nav = tk.Frame(settings_body, bg=g["SURFACE"], width=124)
-        settings_nav.pack(side="left", fill="y", padx=(0, 12))
-        settings_nav.pack_propagate(False)
+        settings_nav = tk.Frame(settings_body, bg=g["BG"])
+        settings_nav.pack(fill="x", padx=4, pady=(0, 12))
         settings_pages = tk.Frame(settings_body, bg=g["BG"])
-        settings_pages.pack(side="left", fill="both", expand=True)
-        settings_layout_state = {"compact": False}
-
-        def layout_settings_body(_event=None) -> None:
-            compact = settings_body.winfo_width() < 560
-            if settings_layout_state["compact"] == compact:
-                return
-            settings_layout_state["compact"] = compact
-            settings_nav.pack_forget()
-            settings_pages.pack_forget()
-            if compact:
-                settings_nav.configure(width=0)
-                settings_nav.pack(fill="x", padx=0, pady=(0, 10))
-                settings_pages.pack(fill="both", expand=True)
-            else:
-                settings_nav.configure(width=124)
-                settings_nav.pack(side="left", fill="y", padx=(0, 12))
-                settings_pages.pack(side="left", fill="both", expand=True)
-            win.after_idle(update_scroll_region)
-
-        settings_body.bind("<Configure>", layout_settings_body)
+        settings_pages.pack(fill="both", expand=True)
         pages = {
             "general": tk.Frame(settings_pages, bg=g["BG"]),
             "appearance": tk.Frame(settings_pages, bg=g["BG"]),
@@ -262,7 +241,7 @@ class SettingsMixin:
             for key, button in page_buttons.items():
                 selected = active_page.get() == key
                 button.configure(
-                    bg=_g["SIDEBAR_HOVER"] if selected else _g["SURFACE"],
+                    bg=_g["SIDEBAR_HOVER"] if selected else _g["BG"],
                     fg=_g["ACCENT"] if selected else _g["TEXT_SOFT"],
                     font=("Segoe UI", 10, "bold" if selected else "normal"),
                 )
@@ -288,15 +267,15 @@ class SettingsMixin:
             button = tk.Label(
                 settings_nav,
                 text=label_text,
-                bg=_g["SURFACE"],
+                bg=_g["BG"],
                 fg=_g["TEXT_SOFT"],
                 font=("Segoe UI", 10),
-                anchor="w",
-                padx=12,
-                pady=10,
+                anchor="center",
+                padx=14,
+                pady=8,
                 cursor="hand2",
             )
-            button.pack(fill="x", padx=4, pady=2)
+            button.pack(side="left", fill="x", expand=True, padx=2)
             button.bind("<Button-1>", lambda _e, value=key: show_settings_page(value))
             page_buttons[key] = button
 
@@ -347,34 +326,27 @@ class SettingsMixin:
                 cursor="hand2",
             )
             value_label.pack(side="left", fill="x", expand=True)
-            arrow_label = tk.Label(
+            arrow_canvas = tk.Canvas(
                 button,
-                text="v",
                 bg=g["SURFACE"],
-                fg=g["TEXT_SOFT"],
-                font=("Segoe UI", 10, "bold"),
+                width=24,
+                height=20,
+                highlightthickness=0,
+                borderwidth=0,
                 cursor="hand2",
             )
-            arrow_label.pack(side="right")
-            panel = tk.Frame(shell, bg=g["SURFACE_2"], highlightthickness=1, highlightbackground=g["BORDER"])
-            listbox = tk.Listbox(
-                panel,
-                bg=g["SURFACE_2"],
-                fg=g["TEXT"],
-                selectbackground=g["ACCENT"],
-                selectforeground=self._contrast_text(g["ACCENT"]),
-                relief="flat",
-                borderwidth=0,
-                highlightthickness=0,
-                activestyle="none",
-                exportselection=False,
-                font=("Segoe UI", 10),
-            )
-            scrollbar = tk.Scrollbar(panel, orient="vertical", command=listbox.yview, relief="flat")
-            listbox.configure(yscrollcommand=scrollbar.set)
-            listbox.pack(side="left", fill="both", expand=True)
-            scrollbar.pack(side="right", fill="y")
+            arrow_canvas.pack(side="right")
 
+            def draw_arrow(opened: bool = False) -> None:
+                arrow_canvas.delete("all")
+                color = g["ACCENT"] if opened else g["TEXT_SOFT"]
+                if opened:
+                    points = (7, 12, 12, 7, 17, 12)
+                else:
+                    points = (7, 8, 12, 13, 17, 8)
+                arrow_canvas.create_line(*points, fill=color, width=2, capstyle=tk.ROUND, joinstyle=tk.ROUND)
+
+            draw_arrow(False)
             def refresh_display() -> None:
                 value = variable.get()
                 value_label.configure(text=value)
@@ -388,15 +360,111 @@ class SettingsMixin:
                 if not state["open"]:
                     return
                 state["open"] = False
-                panel.pack_forget()
-                arrow_label.configure(text="v")
-                win.after_idle(update_scroll_region)
+                popup = state.get("popup")
+                state["popup"] = None
+                state["listbox"] = None
+                if popup is not None:
+                    try:
+                        popup.destroy()
+                    except tk.TclError:
+                        pass
+                draw_arrow(False)
 
             def open_dropdown() -> None:
                 if state["open"]:
                     close_dropdown()
                     return
                 values_now = list(state["values"])
+                rows = max(1, min(max_rows, len(values_now)))
+                popup = tk.Frame(win, bg=g["BORDER"], highlightthickness=0)
+                width = max(180, shell.winfo_width())
+                row_height = 25
+                height = rows * row_height + 2
+                x = shell.winfo_rootx() - win.winfo_rootx()
+                y = shell.winfo_rooty() - win.winfo_rooty() + shell.winfo_height() + 2
+                popup.place(x=x, y=y, width=width, height=height)
+                panel = tk.Frame(popup, bg=g["SURFACE_2"], highlightthickness=1, highlightbackground=g["BORDER"])
+                panel.pack(fill="both", expand=True)
+                list_wrap = tk.Frame(panel, bg=g["SURFACE_2"])
+                list_wrap.pack(side="left", fill="both", expand=True)
+                listbox = tk.Listbox(
+                    list_wrap,
+                    bg=g["SURFACE_2"],
+                    fg=g["TEXT"],
+                    selectbackground=g["ACCENT"],
+                    selectforeground=self._contrast_text(g["ACCENT"]),
+                    relief="flat",
+                    borderwidth=0,
+                    highlightthickness=0,
+                    activestyle="none",
+                    exportselection=False,
+                    font=("Segoe UI", 10),
+                    height=rows,
+                )
+                scroll_canvas = tk.Canvas(
+                    panel,
+                    bg=g["SURFACE_2"],
+                    width=12,
+                    highlightthickness=0,
+                    borderwidth=0,
+                    cursor="sb_v_double_arrow",
+                )
+                scroll_thumb = {"id": None, "drag_y": 0, "first": 0.0}
+
+                def update_scrollbar(first: str, last: str) -> None:
+                    if len(values_now) <= rows:
+                        scroll_canvas.pack_forget()
+                        return
+                    scroll_canvas.pack(side="right", fill="y")
+                    scroll_canvas.delete("all")
+                    height_now = max(1, scroll_canvas.winfo_height())
+                    start = float(first)
+                    end = float(last)
+                    y1 = max(3, int(start * height_now))
+                    y2 = min(height_now - 3, max(y1 + 18, int(end * height_now)))
+                    scroll_canvas.create_line(
+                        6,
+                        4,
+                        6,
+                        height_now - 4,
+                        fill=g["BORDER"],
+                        width=4,
+                        capstyle=tk.ROUND,
+                    )
+                    scroll_thumb["id"] = scroll_canvas.create_line(
+                        6,
+                        y1,
+                        6,
+                        y2,
+                        fill=g["ACCENT"],
+                        width=5,
+                        capstyle=tk.ROUND,
+                    )
+
+                def scrollbar_to_pointer(event) -> str:
+                    if len(values_now) <= rows:
+                        return "break"
+                    height_now = max(1, scroll_canvas.winfo_height())
+                    listbox.yview_moveto(max(0.0, min(1.0, event.y / height_now)))
+                    return "break"
+
+                def start_scroll_drag(event) -> str:
+                    first, _last = listbox.yview()
+                    scroll_thumb["drag_y"] = event.y_root
+                    scroll_thumb["first"] = first
+                    return "break"
+
+                def drag_scroll_thumb(event) -> str:
+                    height_now = max(1, scroll_canvas.winfo_height())
+                    delta = (event.y_root - scroll_thumb["drag_y"]) / height_now
+                    listbox.yview_moveto(max(0.0, min(1.0, scroll_thumb["first"] + delta)))
+                    return "break"
+
+                listbox.configure(yscrollcommand=update_scrollbar)
+                listbox.pack(fill="both", expand=True)
+                scroll_canvas.bind("<Button-1>", scrollbar_to_pointer)
+                scroll_canvas.bind("<ButtonPress-1>", start_scroll_drag, add="+")
+                scroll_canvas.bind("<B1-Motion>", drag_scroll_thumb)
                 listbox.delete(0, tk.END)
                 for item in values_now:
                     listbox.insert(tk.END, item)
@@ -404,12 +472,17 @@ class SettingsMixin:
                     index = values_now.index(variable.get())
                     listbox.selection_set(index)
                     listbox.see(index)
-                rows = max(1, min(max_rows, len(values_now)))
-                listbox.configure(height=rows)
                 state["open"] = True
-                panel.pack(fill="x", padx=1, pady=(0, 1))
-                arrow_label.configure(text="^")
-                win.after_idle(update_scroll_region)
+                state["popup"] = popup
+                state["listbox"] = listbox
+                draw_arrow(True)
+                listbox.bind("<ButtonRelease-1>", choose_event)
+                listbox.bind("<Return>", lambda _event: choose_index(listbox.curselection()[0]) if listbox.curselection() else "break")
+                listbox.bind("<Escape>", lambda _event: close_dropdown() or "break")
+                listbox.bind("<MouseWheel>", scroll_list)
+                popup.bind("<Escape>", lambda _event: close_dropdown() or "break")
+                popup.lift()
+                popup.after_idle(lambda: (update_scrollbar(*listbox.yview()), listbox.focus_set()))
 
             def choose_index(index: int) -> str:
                 values_now = list(state["values"])
@@ -421,9 +494,15 @@ class SettingsMixin:
                 return "break"
 
             def choose_event(event) -> str:
+                listbox = state.get("listbox")
+                if not isinstance(listbox, tk.Listbox):
+                    return "break"
                 return choose_index(listbox.nearest(event.y))
 
             def scroll_list(event) -> str:
+                listbox = state.get("listbox")
+                if not isinstance(listbox, tk.Listbox):
+                    return "break"
                 listbox.yview_scroll(int(-1 * (event.delta / 120)), "units")
                 return "break"
 
@@ -433,12 +512,8 @@ class SettingsMixin:
                 if state["open"]:
                     close_dropdown()
 
-            for target in (button, value_label, arrow_label):
+            for target in (button, value_label, arrow_canvas):
                 target.bind("<Button-1>", lambda _event: open_dropdown() or "break")
-            listbox.bind("<ButtonRelease-1>", choose_event)
-            listbox.bind("<Return>", lambda _event: choose_index(listbox.curselection()[0]) if listbox.curselection() else "break")
-            listbox.bind("<Escape>", lambda _event: close_dropdown() or "break")
-            listbox.bind("<MouseWheel>", scroll_list)
             refresh_display()
             return {"set_values": set_values, "refresh": refresh_display, "close": close_dropdown}
 

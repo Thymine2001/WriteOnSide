@@ -730,19 +730,37 @@ class NotesMixin:
         preview = previews.pop(key, None)
         if not preview:
             return
-        window_index = preview.get("window_index")
-        block = preview.get("block")
-        if window_index:
+        window_mark = preview.get("window_mark")
+        window_widget = preview.get("window_widget")
+        if window_mark:
             try:
-                text.delete(window_index)
+                window_index = text.index(window_mark)
+                if text.window_cget(window_index, "window"):
+                    text.delete(window_index)
             except tk.TclError:
                 pass
-        if block is not None:
             try:
-                md_end = text.index(f"{block.start} + {len(block.markdown)}c")
-                text.tag_remove(EDITOR_IMAGE_ELIDE_TAG, block.start, md_end)
+                text.mark_unset(window_mark)
             except tk.TclError:
                 pass
+        if window_widget is not None:
+            try:
+                if window_widget.winfo_exists():
+                    window_widget.destroy()
+            except tk.TclError:
+                pass
+        source_start_mark = preview.get("source_start_mark")
+        source_end_mark = preview.get("source_end_mark")
+        if source_start_mark and source_end_mark:
+            try:
+                text.tag_remove(EDITOR_IMAGE_ELIDE_TAG, source_start_mark, source_end_mark)
+            except tk.TclError:
+                pass
+            for mark in (source_start_mark, source_end_mark):
+                try:
+                    text.mark_unset(mark)
+                except tk.TclError:
+                    pass
 
     def _clear_split_image_previews(self, note: dict[str, object]) -> None:
         previews = note.get("image_previews")
@@ -880,23 +898,42 @@ class NotesMixin:
         edit_btn.bind("<Button-1>", on_edit)
         image_label.bind("<Button-1>", on_edit)
 
+        safe_note = re.sub(r"\W+", "_", str(id(note)))
+        safe_key = re.sub(r"\W+", "_", block.key)
+        window_mark = f"_split_image_window_{safe_note}_{safe_key}"
+        source_start_mark = f"_split_image_source_start_{safe_note}_{safe_key}"
+        source_end_mark = f"_split_image_source_end_{safe_note}_{safe_key}"
         try:
             if text.compare(block.start, ">", tk.END):
                 return
-            text.window_create(block.start, window=outer, stretch=True)
-            md_start = text.index(f"{block.start} + 1c")
+            text.mark_set(window_mark, block.start)
+            text.mark_gravity(window_mark, tk.LEFT)
+            text.window_create(window_mark, window=outer, stretch=True)
+            md_start = text.index(f"{window_mark} + 1c")
             md_end = text.index(f"{md_start} + {len(block.markdown)}c")
+            text.mark_set(source_start_mark, md_start)
+            text.mark_set(source_end_mark, md_end)
+            text.mark_gravity(source_start_mark, tk.LEFT)
+            text.mark_gravity(source_end_mark, tk.RIGHT)
             text.tag_add(EDITOR_IMAGE_ELIDE_TAG, md_start, md_end)
             previews = note.setdefault("image_previews", {})
             if isinstance(previews, dict):
                 previews[block.key] = {
-                    "window_index": block.start,
+                    "window_mark": window_mark,
+                    "window_widget": outer,
+                    "source_start_mark": source_start_mark,
+                    "source_end_mark": source_end_mark,
                     "block": block,
                     "markdown": block.markdown,
                     "max_width": max_width,
                     "image_path": str(block.image_path),
                 }
         except tk.TclError:
+            for mark in (window_mark, source_start_mark, source_end_mark):
+                try:
+                    text.mark_unset(mark)
+                except tk.TclError:
+                    pass
             outer.destroy()
 
     def _show_split_image_source(self, note: dict[str, object], block) -> None:

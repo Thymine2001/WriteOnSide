@@ -163,19 +163,37 @@ class EditorMixin:
         preview = self._editor_image_previews.pop(key, None)
         if not preview:
             return
-        window_index = preview.get("window_index")
-        block = preview.get("block")
-        if window_index:
+        window_mark = preview.get("window_mark")
+        window_widget = preview.get("window_widget")
+        if window_mark:
             try:
-                self.text.delete(window_index)
+                window_index = self.text.index(window_mark)
+                if self.text.window_cget(window_index, "window"):
+                    self.text.delete(window_index)
             except tk.TclError:
                 pass
-        if block is not None:
             try:
-                md_end = self.text.index(f"{block.start} + {len(block.markdown)}c")
-                self.text.tag_remove(EDITOR_IMAGE_ELIDE_TAG, block.start, md_end)
+                self.text.mark_unset(window_mark)
             except tk.TclError:
                 pass
+        if window_widget is not None:
+            try:
+                if window_widget.winfo_exists():
+                    window_widget.destroy()
+            except tk.TclError:
+                pass
+        source_start_mark = preview.get("source_start_mark")
+        source_end_mark = preview.get("source_end_mark")
+        if source_start_mark and source_end_mark:
+            try:
+                self.text.tag_remove(EDITOR_IMAGE_ELIDE_TAG, source_start_mark, source_end_mark)
+            except tk.TclError:
+                pass
+            for mark in (source_start_mark, source_end_mark):
+                try:
+                    self.text.mark_unset(mark)
+                except tk.TclError:
+                    pass
 
     def _clear_editor_image_previews(self) -> None:
         if not hasattr(self, "text"):
@@ -309,21 +327,39 @@ class EditorMixin:
         edit_btn.bind("<Button-1>", on_edit)
         image_label.bind("<Button-1>", on_edit)
 
+        safe_key = re.sub(r"\W+", "_", block.key)
+        window_mark = f"_editor_image_window_{safe_key}"
+        source_start_mark = f"_editor_image_source_start_{safe_key}"
+        source_end_mark = f"_editor_image_source_end_{safe_key}"
         try:
             if self.text.compare(block.start, ">", tk.END):
                 return
-            self.text.window_create(block.start, window=outer, stretch=True)
-            md_start = self.text.index(f"{block.start} + 1c")
+            self.text.mark_set(window_mark, block.start)
+            self.text.mark_gravity(window_mark, tk.LEFT)
+            self.text.window_create(window_mark, window=outer, stretch=True)
+            md_start = self.text.index(f"{window_mark} + 1c")
             md_end = self.text.index(f"{md_start} + {len(block.markdown)}c")
+            self.text.mark_set(source_start_mark, md_start)
+            self.text.mark_set(source_end_mark, md_end)
+            self.text.mark_gravity(source_start_mark, tk.LEFT)
+            self.text.mark_gravity(source_end_mark, tk.RIGHT)
             self.text.tag_add(EDITOR_IMAGE_ELIDE_TAG, md_start, md_end)
             self._editor_image_previews[block.key] = {
-                "window_index": block.start,
+                "window_mark": window_mark,
+                "window_widget": outer,
+                "source_start_mark": source_start_mark,
+                "source_end_mark": source_end_mark,
                 "block": block,
                 "markdown": block.markdown,
                 "max_width": max_width,
                 "image_path": str(block.image_path),
             }
         except tk.TclError:
+            for mark in (window_mark, source_start_mark, source_end_mark):
+                try:
+                    self.text.mark_unset(mark)
+                except tk.TclError:
+                    pass
             outer.destroy()
 
     def _show_editor_image_source(self, block: EditorImageBlock) -> None:
