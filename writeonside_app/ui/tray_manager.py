@@ -81,6 +81,25 @@ class TrayMixin:
             self._active_hotkey = None
             self._set_error(t("error.hotkey_unavailable", exc=exc))
 
+    def _create_new_note_from_tray(self) -> None:
+        def create_when_ready() -> None:
+            if self.animating:
+                self.root.after(90, create_when_ready)
+                return
+            if not self.is_open:
+                self.open_panel()
+                self.root.after(260, create_when_ready)
+                return
+            self.root.deiconify()
+            if self.explorer_visible:
+                self.explorer.deiconify()
+                self.explorer.lift()
+            self.root.lift()
+            self.root.focus_force()
+            self._create_new_note()
+
+        create_when_ready()
+
     def _resource_path(self, *parts: str) -> Path:
         base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
         return base.joinpath(*parts)
@@ -132,7 +151,7 @@ class TrayMixin:
 
         menu = pystray.Menu(
             pystray.MenuItem(t("tray.toggle"), lambda: self._post_ui(self.toggle_panel)),
-            pystray.MenuItem(t("tray.new_note"), lambda: self._post_ui(self._create_new_note)),
+            pystray.MenuItem(t("tray.new_note"), lambda: self._post_ui(self._create_new_note_from_tray)),
             pystray.MenuItem(t("tray.settings"), lambda: self._post_ui(self._open_settings)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(t("tray.quit"), lambda: self._post_ui(self._quit)),

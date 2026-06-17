@@ -6,6 +6,7 @@ from typing import Callable
 from tkinter import filedialog, messagebox
 import tkinter as tk
 import tkinter.font as tkfont
+from PIL import Image, ImageDraw, ImageTk
 
 from .. import theme as theme_module
 from ..config import APP_NAME, AppConfig, normalize_relative_folder, save_config
@@ -223,7 +224,14 @@ class SettingsMixin:
         settings_title_label.pack(pady=(18, 10))
         settings_body = tk.Frame(content, bg=g["BG"])
         settings_body.pack(fill="both", expand=True, padx=14, pady=(0, 12))
-        settings_nav = tk.Frame(settings_body, bg=g["BG"])
+        settings_nav = tk.Frame(
+            settings_body,
+            bg=g["SURFACE"],
+            highlightthickness=1,
+            highlightbackground=g["BORDER"],
+            padx=4,
+            pady=4,
+        )
         settings_nav.pack(fill="x", padx=4, pady=(0, 12))
         settings_pages = tk.Frame(settings_body, bg=g["BG"])
         settings_pages.pack(fill="both", expand=True)
@@ -238,12 +246,15 @@ class SettingsMixin:
 
         def refresh_page_nav() -> None:
             _g = globals()
+            settings_nav.configure(bg=_g["SURFACE"], highlightbackground=_g["BORDER"])
             for key, button in page_buttons.items():
                 selected = active_page.get() == key
                 button.configure(
-                    bg=_g["SIDEBAR_HOVER"] if selected else _g["BG"],
-                    fg=_g["ACCENT"] if selected else _g["TEXT_SOFT"],
+                    bg=_g["SURFACE_2"] if selected else _g["SURFACE"],
+                    fg=_g["TEXT"] if selected else _g["TEXT_SOFT"],
                     font=("Segoe UI", 10, "bold" if selected else "normal"),
+                    highlightbackground=_g["ACCENT"] if selected else _g["SURFACE"],
+                    highlightcolor=_g["ACCENT"] if selected else _g["SURFACE"],
                 )
 
         def show_settings_page(name: str) -> None:
@@ -267,13 +278,15 @@ class SettingsMixin:
             button = tk.Label(
                 settings_nav,
                 text=label_text,
-                bg=_g["BG"],
+                bg=_g["SURFACE"],
                 fg=_g["TEXT_SOFT"],
                 font=("Segoe UI", 10),
                 anchor="center",
                 padx=14,
-                pady=8,
+                pady=7,
                 cursor="hand2",
+                highlightthickness=1,
+                highlightbackground=_g["SURFACE"],
             )
             button.pack(side="left", fill="x", expand=True, padx=2)
             button.bind("<Button-1>", lambda _e, value=key: show_settings_page(value))
@@ -1210,11 +1223,27 @@ class SettingsMixin:
             progress = (alpha_var.get() - 0.30) / 0.70
             progress = max(0.0, min(1.0, progress))
             thumb_x = left + (right - left) * progress
-            alpha_scale.create_line(left, center_y, right, center_y, fill=_g["SURFACE_2"], width=7, capstyle=tk.ROUND)
-            alpha_scale.create_line(left, center_y, thumb_x, center_y, fill=_g["ACCENT"], width=7, capstyle=tk.ROUND)
+            glow = _g["ACCENT"]
+            alpha_scale.create_line(left, center_y, right, center_y, fill=_g["BORDER"], width=8, capstyle=tk.ROUND)
+            alpha_scale.create_line(left, center_y, right, center_y, fill=_g["SURFACE_2"], width=5, capstyle=tk.ROUND)
+            alpha_scale.create_line(left, center_y, thumb_x, center_y, fill=glow, width=8, capstyle=tk.ROUND)
+            alpha_scale.create_line(left, center_y, thumb_x, center_y, fill=_g["ACCENT_2"], width=4, capstyle=tk.ROUND)
+            for radius, color in ((11, _g["BG"]), (10, glow), (8, _g["SURFACE_2"]), (6, _g["SURFACE"])):
+                alpha_scale.create_oval(
+                    thumb_x - radius,
+                    center_y - radius,
+                    thumb_x + radius,
+                    center_y + radius,
+                    fill=color,
+                    outline="",
+                )
             alpha_scale.create_oval(
-                thumb_x - 7, center_y - 7, thumb_x + 7, center_y + 7,
-                fill=_g["SURFACE"], outline=_g["ACCENT_2"], width=3,
+                thumb_x - 4,
+                center_y - 4,
+                thumb_x + 4,
+                center_y + 4,
+                fill=_g["ACCENT_2"],
+                outline="",
             )
 
         def set_alpha_from_x(x: int) -> None:
@@ -1242,60 +1271,96 @@ class SettingsMixin:
         alpha_scale.pack(side="left", fill="x", expand=True, padx=(4, 4))
         alpha_value.pack(side="right", padx=(2, 6))
 
-        bools = tk.Frame(general_page, bg=g["BG"])
+        bools = tk.Frame(
+            general_page,
+            bg=g["SURFACE"],
+            highlightthickness=1,
+            highlightbackground=g["BORDER"],
+            padx=8,
+            pady=8,
+        )
         bools.pack(fill="x", padx=18, pady=(8, 4))
         auto_save_var = tk.BooleanVar(value=self.config.auto_save)
         remember_var = tk.BooleanVar(value=self.config.remember_last_note)
         explorer_var = tk.BooleanVar(value=self.config.explorer_open)
         start_on_boot_var = tk.BooleanVar(value=self.config.start_on_boot)
-        setting_toggles: list[tuple[str, tk.BooleanVar, tk.Frame, tk.Canvas, tk.Label]] = []
+        setting_toggles: list[tuple[str, tk.BooleanVar, tk.Frame, tk.Label, tk.Label]] = []
+
+        def make_toggle_image(selected: bool) -> ImageTk.PhotoImage:
+            _g = globals()
+            width, height, scale = 38, 20, 4
+            size = (width * scale, height * scale)
+            image = Image.new("RGBA", size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(image)
+            radius = height * scale // 2
+            track_box = (1 * scale, 2 * scale, (width - 1) * scale, (height - 2) * scale)
+            track_fill = _g["ACCENT"] if selected else _g["SURFACE_2"]
+            track_outline = _g["ACCENT_2"] if selected else _g["BORDER"]
+            draw.rounded_rectangle(
+                track_box,
+                radius=radius,
+                fill=track_fill,
+                outline=track_outline,
+                width=scale,
+            )
+            knob_center_x = 28 if selected else 10
+            knob_radius = 7
+            shadow = (
+                (knob_center_x - knob_radius + 1) * scale,
+                (10 - knob_radius + 1) * scale,
+                (knob_center_x + knob_radius + 1) * scale,
+                (10 + knob_radius + 1) * scale,
+            )
+            knob = (
+                (knob_center_x - knob_radius) * scale,
+                (10 - knob_radius) * scale,
+                (knob_center_x + knob_radius) * scale,
+                (10 + knob_radius) * scale,
+            )
+            draw.ellipse(shadow, fill=(0, 0, 0, 42 if selected else 26))
+            draw.ellipse(
+                knob,
+                fill=self._contrast_text(_g["ACCENT"]) if selected else _g["SURFACE"],
+                outline=_g["ACCENT_2"] if selected else _g["BORDER"],
+                width=scale,
+            )
+            resample_filter = getattr(Image, "Resampling", Image).LANCZOS
+            return ImageTk.PhotoImage(image.resize((width, height), resample_filter))
 
         def refresh_setting_toggles() -> None:
             _g = globals()
             for text_key, var, row_frame, switch, text_label in setting_toggles:
                 selected = var.get()
-                row_frame.configure(bg=_g["BG"])
-                switch.configure(bg=_g["BG"])
-                switch.delete("all")
-                track = _g["ACCENT"] if selected else _g["BORDER"]
-                knob = self._contrast_text(_g["ACCENT"]) if selected else _g["TEXT_SOFT"]
-                switch.create_oval(2, 3, 16, 17, fill=track, outline=track)
-                switch.create_rectangle(9, 3, 27, 17, fill=track, outline=track)
-                switch.create_oval(20, 3, 34, 17, fill=track, outline=track)
-                knob_x = 26 if selected else 10
-                switch.create_oval(
-                    knob_x - 6,
-                    4,
-                    knob_x + 6,
-                    16,
-                    fill=knob,
-                    outline="",
-                )
+                row_frame.configure(bg=_g["SURFACE"])
+                switch.configure(bg=_g["SURFACE"])
+                toggle_image = make_toggle_image(selected)
+                switch.configure(image=toggle_image)
+                switch._toggle_image = toggle_image  # type: ignore[attr-defined]
                 text_label.configure(
                     text=t(text_key),
-                    bg=_g["BG"],
+                    bg=_g["SURFACE"],
                     fg=_g["TEXT"] if selected else _g["TEXT_SOFT"],
                     font=("Segoe UI", 9),
                 )
 
         def add_setting_toggle(text_key: str, var: tk.BooleanVar) -> None:
             _g = globals()
-            row_frame = tk.Frame(bools, bg=_g["BG"], cursor="hand2", padx=3, pady=5)
+            row_frame = tk.Frame(bools, bg=_g["SURFACE"], cursor="hand2", padx=5, pady=6)
             row_frame.pack(fill="x", pady=1)
-            switch = tk.Canvas(
+            switch = tk.Label(
                 row_frame,
-                bg=_g["BG"],
-                width=36,
-                height=20,
+                bg=_g["SURFACE"],
                 cursor="hand2",
                 highlightthickness=0,
                 borderwidth=0,
+                padx=0,
+                pady=0,
             )
             switch.pack(side="left", padx=(0, 9))
             text_label = tk.Label(
                 row_frame,
                 text=t(text_key),
-                bg=_g["BG"],
+                bg=_g["SURFACE"],
                 fg=_g["TEXT"],
                 font=("Segoe UI", 9),
                 anchor="w",
