@@ -35,10 +35,10 @@ class NotesMixin:
     def _new_note_path(self, suggested: str = "Untitled.md") -> Path:
         return unique_note_path(self._workspace_dir(), suggested)
 
-    def _ask_new_note_name(self) -> str | None:
+    def _ask_new_item_name(self, title: str, prompt: str, initial_value: str = "") -> str | None:
         g = globals()
         win = tk.Toplevel(self.root)
-        win.title(t("dialog.new_note_title"))
+        win.title(title)
         win.configure(bg=g["BG"])
         win.transient(self.root)
         win.attributes("-topmost", True)
@@ -58,7 +58,7 @@ class NotesMixin:
         shell.pack(fill="both", expand=True)
         tk.Label(
             shell,
-            text=t("dialog.new_note_title"),
+            text=title,
             bg=g["BG"],
             fg=g["TEXT"],
             font=("Segoe UI", 14, "bold"),
@@ -66,7 +66,7 @@ class NotesMixin:
         ).pack(fill="x")
         tk.Label(
             shell,
-            text=t("dialog.new_note_prompt"),
+            text=prompt,
             bg=g["BG"],
             fg=g["TEXT_SOFT"],
             font=("Segoe UI", 9),
@@ -83,7 +83,7 @@ class NotesMixin:
             relief="flat",
             font=("Segoe UI", 11),
         )
-        entry.insert(0, "Untitled.md")
+        entry.insert(0, initial_value)
         entry.pack(fill="x", ipady=7, padx=0, pady=0)
         entry.selection_range(0, tk.END)
 
@@ -136,6 +136,13 @@ class NotesMixin:
         win.grab_set()
         self.root.wait_window(win)
         return result["value"]
+
+    def _ask_new_note_name(self) -> str | None:
+        return self._ask_new_item_name(
+            t("dialog.new_note_title"),
+            t("dialog.new_note_prompt"),
+            "Untitled.md",
+        )
 
     def _create_new_note(self) -> None:
         self._save_note(False)

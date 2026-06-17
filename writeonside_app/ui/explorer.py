@@ -4,7 +4,7 @@ import re
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import messagebox, ttk
 from tkinterdnd2 import COPY, DND_FILES
 
 from PIL import Image, ImageDraw, ImageTk
@@ -1397,10 +1397,9 @@ class ExplorerMixin:
         if not self._is_in_workspace(parent):
             self._set_error(t("error.explorer_outside_workspace"))
             return
-        name = simpledialog.askstring(
+        name = self._ask_new_item_name(
             t("dialog.new_folder_title"),
             t("dialog.new_folder_prompt"),
-            parent=self.root,
         )
         if name is None:
             return

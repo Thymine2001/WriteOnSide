@@ -32,6 +32,9 @@ class ExplorerClipboardTests(unittest.TestCase):
                 def _refresh_explorer(self) -> None:
                     return
 
+                def _ask_new_item_name(self, _title: str, _prompt: str, _initial_value: str = "") -> str:
+                    return "Alpha"
+
                 def _set_status_key(self, key: str, **kwargs: object) -> None:
                     self.created_status = (key, kwargs)
 
@@ -39,8 +42,7 @@ class ExplorerClipboardTests(unittest.TestCase):
                     self.fail("Folder creation unexpectedly failed")
 
             app = FolderHarness()
-            with patch("writeonside_app.ui.explorer.simpledialog.askstring", return_value="Alpha"):
-                app._create_explorer_folder("ignored")
+            app._create_explorer_folder("ignored")
 
             self.assertTrue((parent / "Alpha").is_dir())
             self.assertEqual(("status.folder_created", {"name": "Alpha"}), app.created_status)
