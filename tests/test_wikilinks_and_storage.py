@@ -103,13 +103,41 @@ class StorageTests(unittest.TestCase):
                 def _workspace_dir(self) -> Path:
                     return root
 
-            folder = AttachmentPaths()._figure_folder()
+            app = AttachmentPaths()
+            folder = app._figure_folder()
             self.assertEqual(root / "Resources" / "Media" / "Projects" / "Alpha" / "Note", folder)
+            encoded = app._markdown_relative_path(folder / "预算 (2026).xlsx")
+            self.assertIn("%E9%A2%84%E7%AE%97%20%282026%29.xlsx", encoded)
 
     def test_invalid_attachment_folder_config_falls_back(self) -> None:
         self.assertEqual("Attachments", normalize_relative_folder("../Outside"))
         self.assertEqual("Attachments", normalize_relative_folder(r"C:\Outside"))
         self.assertEqual("Resources/Media", normalize_relative_folder(r"Resources\Media"))
+
+    def test_delete_note_attachment_folder_removes_only_that_notes_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            note = root / "Projects" / "Alpha.md"
+            note.parent.mkdir()
+            note.write_text("# Alpha", encoding="utf-8")
+
+            class AttachmentCleanup(NotesMixin):
+                config = SimpleNamespace(attachments_folder="Resources/Media")
+
+                def _workspace_dir(self) -> Path:
+                    return root
+
+            own_folder = root / "Resources" / "Media" / "Projects" / "Alpha"
+            sibling_folder = root / "Resources" / "Media" / "Projects" / "Beta"
+            own_folder.mkdir(parents=True)
+            sibling_folder.mkdir(parents=True)
+            (own_folder / "sheet.xlsx").write_bytes(b"sheet")
+            (sibling_folder / "keep.txt").write_text("keep", encoding="utf-8")
+
+            AttachmentCleanup()._delete_note_attachment_folder(note)
+
+            self.assertFalse(own_folder.exists())
+            self.assertTrue((sibling_folder / "keep.txt").exists())
 
     def test_backups_are_kept_outside_the_vault_and_pruned(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as backup_dir:

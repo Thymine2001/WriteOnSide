@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import re
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 from tkinterdnd2 import COPY, DND_FILES
 
 from PIL import Image, ImageDraw, ImageTk
@@ -1344,18 +1345,27 @@ class ExplorerMixin:
             return
         deleted = 0
         for path in paths:
+            was_directory = path.is_dir()
             try:
-                if path.is_dir():
+                if was_directory:
                     import shutil
 
                     shutil.rmtree(path)
                 else:
                     path.unlink()
-                self._after_explorer_tree_delete(path)
-                deleted += 1
             except OSError as exc:
                 self._set_error(t("error.delete_failed", exc=exc))
                 break
+            attachment_error: OSError | None = None
+            if not was_directory and is_markdown_note(path):
+                try:
+                    self._delete_note_attachment_folder(path)
+                except OSError as exc:
+                    attachment_error = exc
+            self._after_explorer_tree_delete(path)
+            deleted += 1
+            if attachment_error is not None:
+                self._set_error(t("error.attachment_cleanup_failed", exc=attachment_error))
         if deleted:
             if self.current_note_path and not self.current_note_path.exists():
                 self.current_note_path = None
@@ -1381,6 +1391,42 @@ class ExplorerMixin:
         item = self.file_tree.focus() or (self.file_tree.selection()[0] if self.file_tree.selection() else None)
         self._explorer_paste(item)
         return "break"
+
+    def _create_explorer_folder(self, item: str | None = None) -> None:
+        parent = self._explorer_paste_destination(item).resolve()
+        if not self._is_in_workspace(parent):
+            self._set_error(t("error.explorer_outside_workspace"))
+            return
+        name = simpledialog.askstring(
+            t("dialog.new_folder_title"),
+            t("dialog.new_folder_prompt"),
+            parent=self.root,
+        )
+        if name is None:
+            return
+        name = name.strip()
+        invalid = (
+            not name
+            or name in {".", ".."}
+            or name[-1:] in {".", " "}
+            or re.search(r'[<>:"/\\|?*\x00-\x1f]', name) is not None
+            or name.casefold().split(".", 1)[0]
+            in {"con", "prn", "aux", "nul", *(f"com{number}" for number in range(1, 10)), *(f"lpt{number}" for number in range(1, 10))}
+        )
+        if invalid:
+            self._set_error(t("error.invalid_folder_name"))
+            return
+        target = parent / name
+        try:
+            target.mkdir()
+        except FileExistsError:
+            self._set_error(t("error.folder_exists", name=name))
+            return
+        except OSError as exc:
+            self._set_error(t("error.create_folder_failed", exc=exc))
+            return
+        self._refresh_explorer()
+        self._set_status_key("status.folder_created", name=name)
 
     def _on_tree_context(self, event) -> str:
         g = globals()
@@ -1408,6 +1454,10 @@ class ExplorerMixin:
             font=("Segoe UI", 10),
         )
         menu.add_command(label=t("explorer.menu.new_note"), command=self._create_new_note)
+        menu.add_command(
+            label=t("explorer.menu.new_folder"),
+            command=lambda: self._create_explorer_folder(item),
+        )
         menu.add_separator()
         menu.add_command(
             label=t("explorer.menu.cut"),

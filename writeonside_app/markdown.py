@@ -1,7 +1,10 @@
 import re
+import unicodedata
 from pathlib import Path
 from typing import Callable
+from urllib.parse import unquote
 import tkinter as tk
+import tkinter.font as tkfont
 from PIL import Image, ImageTk
 
 from . import theme
@@ -65,6 +68,7 @@ def configure_markdown_tags(widget: tk.Text, font_family: str = "Segoe UI", font
     widget.tag_configure("task_done", lmargin1=list_margin, lmargin2=list_margin, foreground=theme.MUTED, overstrike=True)
     widget.tag_configure("table_header", font=("Consolas", max(9, body_size - 1), "bold"), foreground=theme.TEXT)
     widget.tag_configure("table", font=("Consolas", max(9, body_size - 1)), foreground=theme.TEXT_SOFT)
+    widget.tag_configure("table_border", font=("Consolas", max(9, body_size - 1)), foreground=theme.MUTED)
     widget.tag_configure("body", font=(font_family, body_size), foreground=theme.TEXT)
     widget.tag_configure("hr", foreground=theme.MUTED)
     widget.tag_configure("obsidian_tag", foreground=theme.ACCENT_2)
@@ -197,6 +201,25 @@ def _insert_external_link(widget: tk.Text, label: str, url: str, base_tag: str) 
     widget.insert(tk.END, label, (base_tag, tag))
 
 
+def _insert_attachment_link(
+    widget: tk.Text,
+    label: str,
+    raw_path: str,
+    base_tag: str,
+    base_path: Path | None,
+) -> bool:
+    path = resolve_markdown_path(raw_path, base_path)
+    if path is None or not path.exists() or not path.is_file():
+        return False
+    counter = getattr(widget, "_attachment_link_counter", 0) + 1
+    widget._attachment_link_counter = counter
+    tag = f"attachment_link_{counter}"
+    widget.tag_configure(tag, foreground=theme.LINK, underline=True)
+    widget._attachment_links[tag] = str(path.resolve())
+    widget.insert(tk.END, label, (base_tag, tag))
+    return True
+
+
 # Fix #5: added base_path parameter so inline images within paragraphs can be rendered
 def insert_inline_md(
     widget: tk.Text,
@@ -245,6 +268,14 @@ def insert_inline_md(
             link = re.match(r"\[([^\]]+)\]\(([^)]+)\)", chunk)
             if link and EXTERNAL_URL_MD.match(link.group(2).strip()):
                 _insert_external_link(widget, link.group(1), link.group(2).strip(), base_tag)
+            elif link and _insert_attachment_link(
+                widget,
+                link.group(1),
+                link.group(2).strip(),
+                base_tag,
+                base_path,
+            ):
+                pass
             else:
                 widget.insert(tk.END, link.group(1) if link else chunk, "link" if link else base_tag)
         elif chunk.startswith("[^"):
@@ -266,7 +297,35 @@ def insert_inline_md(
 
 
 def parse_table_row(line: str) -> list[str]:
-    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+    value = line.strip()
+    if value.startswith("|"):
+        value = value[1:]
+    if value.endswith("|") and not value.endswith(r"\|"):
+        value = value[:-1]
+    cells: list[str] = []
+    current: list[str] = []
+    in_code = False
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if character == "\\" and index + 1 < len(value) and value[index + 1] in {"|", "\\"}:
+            current.append(value[index + 1])
+            index += 2
+            continue
+        if character == "`":
+            in_code = not in_code
+            current.append(character)
+            index += 1
+            continue
+        if character == "|" and not in_code:
+            cells.append("".join(current).strip())
+            current = []
+            index += 1
+            continue
+        current.append(character)
+        index += 1
+    cells.append("".join(current).strip())
+    return cells
 
 
 def is_table_separator(line: str) -> bool:
@@ -288,43 +347,111 @@ def parse_table_alignment(line: str) -> list[str]:
     return alignments
 
 
-# Fix #3: insert_table now accepts and applies per-column alignment
+def _plain_table_cell(value: str) -> str:
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", value)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"!?\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]", lambda match: match.group(2) or match.group(1), text)
+    text = re.sub(r"</?(?:u|sup|sub|span|font)\b[^>]*>", "", text, flags=re.IGNORECASE)
+    for marker in ("**", "__", "~~", "==", "`"):
+        text = text.replace(marker, "")
+    return text.strip()
+
+
+def _display_width(value: str) -> int:
+    width = 0
+    for character in value:
+        if unicodedata.combining(character):
+            continue
+        width += 2 if unicodedata.east_asian_width(character) in {"W", "F"} else 1
+    return width
+
+
+def _truncate_display(value: str, width: int) -> str:
+    if _display_width(value) <= width:
+        return value
+    if width <= 3:
+        return "." * width
+    target = width - 3
+    result: list[str] = []
+    used = 0
+    for character in value:
+        char_width = 0 if unicodedata.combining(character) else 2 if unicodedata.east_asian_width(character) in {"W", "F"} else 1
+        if used + char_width > target:
+            break
+        result.append(character)
+        used += char_width
+    return "".join(result) + "..."
+
+
+def _pad_table_cell(value: str, width: int, alignment: str) -> str:
+    value = _truncate_display(value, width)
+    padding = max(0, width - _display_width(value))
+    if alignment == "right":
+        return " " * padding + value
+    if alignment == "center":
+        left = padding // 2
+        return " " * left + value + " " * (padding - left)
+    return value + " " * padding
+
+
+def format_table_lines(
+    rows: list[list[str]],
+    alignments: list[str] | None = None,
+    *,
+    max_width: int = 80,
+) -> list[tuple[str, str]]:
+    if not rows:
+        return []
+    column_count = max(len(row) for row in rows)
+    normalized = [
+        [_plain_table_cell(row[index]) if index < len(row) else "" for index in range(column_count)]
+        for row in rows
+    ]
+    alignments = list(alignments or []) + ["left"] * column_count
+    widths = [max(3, max(_display_width(row[index]) for row in normalized)) for index in range(column_count)]
+    available_cells = max(column_count * 3, max_width - (3 * column_count + 1))
+    while sum(widths) > available_cells:
+        widest = max(range(column_count), key=lambda index: widths[index])
+        if widths[widest] <= 3:
+            break
+        widths[widest] -= 1
+
+    border = "+-" + "-+-".join("-" * width for width in widths) + "-+"
+    result: list[tuple[str, str]] = [(border, "table_border")]
+    for row_index, row in enumerate(normalized):
+        cells = [
+            _pad_table_cell(row[index], widths[index], alignments[index])
+            for index in range(column_count)
+        ]
+        result.append(("| " + " | ".join(cells) + " |", "table_header" if row_index == 0 else "table"))
+        if row_index == 0:
+            result.append((border, "table_border"))
+    if len(normalized) > 1:
+        result.append((border, "table_border"))
+    return result
+
+
 def insert_table(
     widget: tk.Text,
     rows: list[list[str]],
     alignments: list[str] | None = None,
+    font_size: int = 10,
 ) -> None:
     if not rows:
         return
-    column_count = max(len(row) for row in rows)
-    widths = [
-        min(28, max(len(row[index]) if index < len(row) else 0 for row in rows))
-        for index in range(column_count)
-    ]
-    if alignments is None:
-        alignments = ["left"] * column_count
-    for row_index, row in enumerate(rows):
-        cells = []
-        for index in range(column_count):
-            cell = row[index] if index < len(row) else ""
-            w = widths[index]
-            align = alignments[index] if index < len(alignments) else "left"
-            if align == "center":
-                cells.append(cell.center(w))
-            elif align == "right":
-                cells.append(cell.rjust(w))
-            else:
-                cells.append(cell.ljust(w))
-        widget.insert(
-            tk.END,
-            " | ".join(cells).rstrip() + "\n",
-            "table_header" if row_index == 0 else "table",
-        )
+    width = widget.winfo_width()
+    if width > 100:
+        font = tkfont.Font(widget, font=("Consolas", max(9, font_size)))
+        max_width = max(24, (width - 28) // max(1, font.measure("0")))
+    else:
+        max_width = 80
+    for line, tag in format_table_lines(rows, alignments, max_width=max_width):
+        widget.insert(tk.END, line + "\n", tag)
     widget.insert(tk.END, "\n")
 
 
 def resolve_markdown_path(raw: str, base_path: Path | None) -> Path | None:
-    target = raw.strip().strip("<>").replace("%20", " ")
+    target = unquote(raw.strip().strip("<>"))
     if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", target):
         return None
     path = Path(target)
@@ -412,6 +539,8 @@ def render_markdown(
     widget._wiki_link_counter = 0
     widget._external_links = {}
     widget._external_link_counter = 0
+    widget._attachment_links = {}
+    widget._attachment_link_counter = 0
     widget._html_color_tag_counter = 0
     configure_markdown_tags(widget, font_family, font_size)
     body_size = _markdown_body_size(widget, font_size)
@@ -504,7 +633,7 @@ def render_markdown(
             while line_index < len(lines) and "|" in lines[line_index] and lines[line_index].strip():
                 rows.append(parse_table_row(lines[line_index]))
                 line_index += 1
-            insert_table(widget, rows, alignments)
+            insert_table(widget, rows, alignments, font_size=max(9, body_size - 1))
             continue
         image_match = IMAGE_MD.fullmatch(stripped)
         if image_match:

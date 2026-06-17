@@ -5,9 +5,46 @@ from unittest.mock import patch
 
 from writeonside_app.dragdrop import compact_paths, format_paths_for_drag
 from writeonside_app.platform import reveal_in_file_explorer
+from writeonside_app.ui.explorer import ExplorerMixin
 
 
 class ExplorerClipboardTests(unittest.TestCase):
+    def test_create_folder_uses_context_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            parent = root / "Projects"
+            parent.mkdir()
+
+            class FolderHarness(ExplorerMixin):
+                def __init__(self) -> None:
+                    self.root = object()
+                    self.created_status = None
+
+                def _workspace_dir(self) -> Path:
+                    return root
+
+                def _is_in_workspace(self, path: Path) -> bool:
+                    return path.resolve().is_relative_to(root)
+
+                def _explorer_paste_destination(self, _item=None) -> Path:
+                    return parent
+
+                def _refresh_explorer(self) -> None:
+                    return
+
+                def _set_status_key(self, key: str, **kwargs: object) -> None:
+                    self.created_status = (key, kwargs)
+
+                def _set_error(self, _text: str) -> None:
+                    self.fail("Folder creation unexpectedly failed")
+
+            app = FolderHarness()
+            with patch("writeonside_app.ui.explorer.simpledialog.askstring", return_value="Alpha"):
+                app._create_explorer_folder("ignored")
+
+            self.assertTrue((parent / "Alpha").is_dir())
+            self.assertEqual(("status.folder_created", {"name": "Alpha"}), app.created_status)
+
     def test_compact_paths_drops_nested_selection(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

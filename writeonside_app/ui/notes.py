@@ -6,6 +6,7 @@ import shutil
 import time
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog
+from urllib.parse import quote
 
 import tkinter as tk
 from PIL import Image, ImageGrab
@@ -210,17 +211,24 @@ class NotesMixin:
     def _delete_note(self, path: Path) -> None:
         if not messagebox.askyesno(APP_NAME, t("dialog.delete_note", name=path.name)):
             return
+        attachment_error: OSError | None = None
         try:
             path.unlink()
         except OSError as exc:
             self._set_error(t("error.delete_failed", exc=exc))
             return
+        try:
+            self._delete_note_attachment_folder(path)
+        except OSError as exc:
+            attachment_error = exc
         if self.current_note_path and self.current_note_path.resolve() == path.resolve():
             self.current_note_path = None
             self._load_initial_note()
         self._close_deleted_split_notes(path)
         self._refresh_explorer()
         self._schedule_wiki_index_refresh()
+        if attachment_error is not None:
+            self._set_error(t("error.attachment_cleanup_failed", exc=attachment_error))
 
     # ── Open / load notes ────────────────────────────────────────────────────
 
@@ -504,6 +512,7 @@ class NotesMixin:
         text.bind("<<Modified>>", lambda _event: self._on_split_text_modified(note))
         text.bind("<Control-s>", lambda _event: self._save_split_note(note, show_indicator=True) or "break")
         text.bind("<Control-S>", lambda _event: self._save_split_note(note, show_indicator=True) or "break")
+        text.bind("<Control-Button-1>", self._on_edit_wikilink_click, add="+")
         text.bind("<Escape>", lambda _event: self._on_escape())
         text.bind("<Configure>", lambda _event: self._schedule_split_live_render(note), add="+")
         text.bind("<ButtonRelease-1>", lambda _event: self._on_split_image_click_outside(note), add="+")
@@ -1239,15 +1248,45 @@ class NotesMixin:
 
     # ── Attachments ──────────────────────────────────────────────────────────
 
-    def _figure_folder(self) -> Path | None:
-        if not self.current_note_path or not is_markdown_note(self.current_note_path):
+    def _attachment_folder_for_note(self, note_path: Path | None) -> Path | None:
+        if note_path is None or not is_markdown_note(note_path):
             return None
         root = self._workspace_dir().resolve()
         try:
-            note_key = self.current_note_path.resolve().relative_to(root).with_suffix("")
+            note_key = note_path.resolve().relative_to(root).with_suffix("")
         except ValueError:
-            note_key = Path(self.current_note_path.stem)
-        return root / self.config.attachments_folder / note_key
+            note_key = Path(note_path.stem)
+        attachments_root = (root / self.config.attachments_folder).resolve()
+        folder = (attachments_root / note_key).resolve()
+        try:
+            folder.relative_to(attachments_root)
+        except ValueError:
+            return None
+        return folder
+
+    def _figure_folder(self) -> Path | None:
+        return self._attachment_folder_for_note(self.current_note_path)
+
+    def _delete_note_attachment_folder(self, note_path: Path) -> None:
+        folder = self._attachment_folder_for_note(note_path)
+        if folder is None or not folder.exists():
+            return
+        attachments_root = (self._workspace_dir().resolve() / self.config.attachments_folder).resolve()
+        if folder == attachments_root:
+            return
+        if folder.is_symlink():
+            folder.unlink()
+        elif folder.is_dir():
+            shutil.rmtree(folder)
+        else:
+            folder.unlink()
+        parent = folder.parent
+        while parent != attachments_root:
+            try:
+                parent.rmdir()
+            except OSError:
+                break
+            parent = parent.parent
 
     def _unique_attachment_path(self, folder: Path, name: str) -> Path:
         cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", name).strip().strip(".") or "attachment"
@@ -1269,7 +1308,7 @@ class NotesMixin:
             rel = path.relative_to(self.current_note_path.parent)
         except ValueError:
             rel = path
-        return rel.as_posix().replace(" ", "%20")
+        return quote(rel.as_posix(), safe="/")
 
     def _copy_attachment(self, source: Path) -> Path | None:
         folder = self._figure_folder()

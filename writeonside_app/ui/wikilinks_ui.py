@@ -6,13 +6,16 @@ from pathlib import Path
 import tkinter as tk
 
 from ..frontmatter import note_template, parse_front_matter
+from ..markdown import resolve_markdown_path
 from ..storage import read_text_file, safe_note_name, safe_write_text
 from ..obsidian_md import find_block_line
 from ..i18n import t
+from ..text_files import is_markdown_note
 from ..theme import *  # noqa: F401,F403
 from ..wikilinks import WikiLink, WikiLinkIndex, WikiIndexState, refresh_wiki_index, WIKI_LINK_PATTERN
 
 MARKDOWN_URL_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\((https?://[^)\s]+)\)", re.IGNORECASE)
+MARKDOWN_LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)\n]+)\)")
 BARE_URL_PATTERN = re.compile(r"https?://[^\s<>)]+", re.IGNORECASE)
 
 
@@ -70,6 +73,14 @@ class WikiLinksMixin:
                 "<Control-Button-1>",
                 lambda _event, target=url: self._open_external_url(target),
             )
+        for tag, path in getattr(self.read_text, "_attachment_links", {}).items():
+            self.read_text.tag_bind(tag, "<Enter>", lambda _event: self.read_text.configure(cursor="hand2"))
+            self.read_text.tag_bind(tag, "<Leave>", lambda _event: self.read_text.configure(cursor="arrow"))
+            self.read_text.tag_bind(
+                tag,
+                "<Button-1>",
+                lambda _event, target=path: self._open_local_attachment(target),
+            )
         for tag, link in getattr(self.read_text, "_wiki_links", {}).items():
             self.read_text.tag_bind(tag, "<Enter>", lambda _event: self.read_text.configure(cursor="hand2"))
             self.read_text.tag_bind(tag, "<Leave>", lambda _event: self.read_text.configure(cursor="arrow"))
@@ -98,6 +109,10 @@ class WikiLinksMixin:
         if not BARE_URL_PATTERN.fullmatch(target):
             return "break"
         webbrowser.open(target)
+        return "break"
+
+    def _open_local_attachment(self, path: str | Path) -> str:
+        self._open_external_file(Path(path))
         return "break"
 
     def _create_wikilink_note(self, target: str) -> Path | None:
@@ -149,17 +164,32 @@ class WikiLinksMixin:
         self._set_status_key("status.heading_not_found", heading=heading)
 
     def _on_edit_wikilink_click(self, event) -> str | None:
-        if not self._is_markdown_document():
+        widget = event.widget if isinstance(getattr(event, "widget", None), tk.Text) else self.text
+        source = self.current_note_path
+        is_main_editor = widget is self.text
+        if not is_main_editor and hasattr(self, "_note_for_text_widget"):
+            split_note = self._note_for_text_widget(widget)
+            if split_note is not None:
+                source = Path(split_note["path"])
+        if source is None or not is_markdown_note(source):
             return None
-        index = self.text.index(f"@{event.x},{event.y}")
+        index = widget.index(f"@{event.x},{event.y}")
         line, column = (int(value) for value in index.split("."))
-        line_text = self.text.get(f"{line}.0", f"{line}.end")
+        line_text = widget.get(f"{line}.0", f"{line}.end")
         for match in MARKDOWN_URL_PATTERN.finditer(line_text):
             if match.start() <= column <= match.end():
                 return self._open_external_url(match.group(1))
         for match in BARE_URL_PATTERN.finditer(line_text):
             if match.start() <= column <= match.end():
                 return self._open_external_url(match.group(0))
+        for match in MARKDOWN_LINK_PATTERN.finditer(line_text):
+            if not (match.start() <= column <= match.end()):
+                continue
+            target = resolve_markdown_path(match.group(1), source)
+            if target is not None and target.exists() and target.is_file() and target.suffix.casefold() != ".md":
+                return self._open_local_attachment(target)
+        if not is_main_editor:
+            return None
         for match in WIKI_LINK_PATTERN.finditer(line_text):
             if match.start() <= column <= match.end():
                 destination, separator, alias = match.group(2).partition("|")

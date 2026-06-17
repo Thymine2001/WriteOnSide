@@ -37,6 +37,22 @@ class I18nTests(unittest.TestCase):
             set_language(code)
             self.assertEqual(t("settings.title"), TRANSLATIONS[code]["settings.title"])
 
+    def test_new_folder_messages_exist_in_every_language(self) -> None:
+        from writeonside_app.locales import TRANSLATIONS
+
+        required = {
+            "explorer.menu.new_folder",
+            "status.folder_created",
+            "error.attachment_cleanup_failed",
+            "error.invalid_folder_name",
+            "error.folder_exists",
+            "error.create_folder_failed",
+            "dialog.new_folder_title",
+            "dialog.new_folder_prompt",
+        }
+        for code, catalog in TRANSLATIONS.items():
+            self.assertFalse(required - catalog.keys(), code)
+
     def test_config_language_default_and_persist(self) -> None:
         config = AppConfig()
         self.assertEqual("en", config.language)
