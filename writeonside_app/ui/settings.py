@@ -6,7 +6,6 @@ from typing import Callable
 from tkinter import filedialog, messagebox
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import ttk
 
 from .. import theme as theme_module
 from ..config import APP_NAME, AppConfig, normalize_relative_folder, save_config
@@ -52,14 +51,18 @@ class SettingsMixin:
 
         win = tk.Toplevel(self.root)
         win.title(t("settings.window_title", app=APP_NAME))
-        settings_h = max(420, min(620, self.work_bottom - self.work_top - 80))
-        settings_w = 640
-        settings_x = self.work_left + max(0, (self.work_right - self.work_left - settings_w) // 2)
-        settings_y = self.work_top + max(0, (self.work_bottom - self.work_top - settings_h) // 2)
+        work_width = max(320, self.work_right - self.work_left)
+        work_height = max(320, self.work_bottom - self.work_top)
+        settings_w = min(760, max(320, work_width - 48))
+        settings_h = min(680, max(320, work_height - 72))
+        settings_x = self.work_left + max(0, (work_width - settings_w) // 2)
+        settings_y = self.work_top + max(0, (work_height - settings_h) // 2)
         win.geometry(f"{settings_w}x{settings_h}+{settings_x}+{settings_y}")
+        win.minsize(min(420, settings_w), min(320, settings_h))
         win.configure(bg=g["BG"])
-        win.attributes("-topmost", True)
-        win.resizable(False, True)
+        win.transient(self.root)
+        win.lift(self.root)
+        win.resizable(True, True)
 
         content_shell = tk.Frame(win, bg=g["BG"])
         content_shell.pack(fill="both", expand=True)
@@ -139,6 +142,11 @@ class SettingsMixin:
         footer.pack(fill="x", side="bottom")
         msg = tk.Label(footer, text=t("settings.footer_hint"), bg=g["BG"], fg=g["MUTED"], font=("Segoe UI", 9), anchor="w")
         msg.pack(fill="x", padx=22, pady=(8, 12))
+        win.bind(
+            "<Configure>",
+            lambda _event: msg.configure(wraplength=max(220, win.winfo_width() - 44)),
+            add="+",
+        )
 
         def row(
             parent: tk.Widget,
@@ -152,26 +160,67 @@ class SettingsMixin:
             _g = globals()
             frame = tk.Frame(parent, bg=_g["BG"])
             frame.pack(fill="x", padx=18, pady=6)
-            tk.Label(frame, text=label, bg=_g["BG"], fg=_g["TEXT"], font=("Segoe UI", 10), width=16, anchor="w").pack(side="left")
-            entry = tk.Entry(frame, bg=_g["SURFACE"], fg=_g["TEXT"], insertbackground=_g["TEXT"], relief="flat", font=("Segoe UI", 10))
+            label_widget = tk.Label(
+                frame,
+                text=label,
+                bg=_g["BG"],
+                fg=_g["TEXT"],
+                font=("Segoe UI", 10),
+                width=16,
+                anchor="w",
+            )
+            input_frame = tk.Frame(frame, bg=_g["BG"])
+            entry = tk.Entry(
+                input_frame,
+                bg=_g["SURFACE"],
+                fg=_g["TEXT"],
+                insertbackground=_g["TEXT"],
+                relief="flat",
+                font=("Segoe UI", 10),
+            )
             entry.insert(0, value)
             entry.pack(side="left", fill="x", expand=True, ipady=5, padx=(4, 6))
+            setattr(entry, "_label_widget", label_widget)
             if browse:
-                tk.Button(
-                    frame,
+                browse_button = tk.Button(
+                    input_frame,
                     text=t("settings.browse"),
                     command=lambda: self._browse_into(entry, browse, after_browse),
                     bg=_g["BORDER"],
                     fg=_g["TEXT"],
                     relief="flat",
-                ).pack(side="right")
+                )
+                browse_button.pack(side="right")
+                setattr(entry, "_browse_button", browse_button)
             if action_text and action:
-                action_button = tk.Button(frame, text=action_text, command=action, bg=_g["BORDER"], fg=_g["TEXT"], relief="flat")
+                action_button = tk.Button(input_frame, text=action_text, command=action, bg=_g["BORDER"], fg=_g["TEXT"], relief="flat")
                 action_button.pack(side="right")
                 setattr(entry, "_action_button", action_button)
+
+            row_layout_state = {"compact": None}
+
+            def layout_row(_event=None) -> None:
+                compact = frame.winfo_width() < 430
+                if row_layout_state["compact"] == compact:
+                    return
+                row_layout_state["compact"] = compact
+                label_widget.pack_forget()
+                input_frame.pack_forget()
+                if compact:
+                    label_widget.configure(width=0)
+                    label_widget.pack(fill="x", anchor="w", pady=(0, 3))
+                    input_frame.pack(fill="x")
+                else:
+                    label_widget.configure(width=16)
+                    label_widget.pack(side="left")
+                    input_frame.pack(side="left", fill="x", expand=True)
+
+            frame.bind("<Configure>", layout_row)
+            frame.after_idle(layout_row)
             return entry
 
-        tk.Label(content, text=t("settings.title"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 15, "bold")).pack(pady=(18, 10))
+        settings_title_label = tk.Label(content, text=t("settings.title"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 15, "bold"))
+        settings_title_label.pack(pady=(18, 10))
         settings_body = tk.Frame(content, bg=g["BG"])
         settings_body.pack(fill="both", expand=True, padx=14, pady=(0, 12))
         settings_nav = tk.Frame(settings_body, bg=g["SURFACE"], width=124)
@@ -179,6 +228,26 @@ class SettingsMixin:
         settings_nav.pack_propagate(False)
         settings_pages = tk.Frame(settings_body, bg=g["BG"])
         settings_pages.pack(side="left", fill="both", expand=True)
+        settings_layout_state = {"compact": False}
+
+        def layout_settings_body(_event=None) -> None:
+            compact = settings_body.winfo_width() < 560
+            if settings_layout_state["compact"] == compact:
+                return
+            settings_layout_state["compact"] = compact
+            settings_nav.pack_forget()
+            settings_pages.pack_forget()
+            if compact:
+                settings_nav.configure(width=0)
+                settings_nav.pack(fill="x", padx=0, pady=(0, 10))
+                settings_pages.pack(fill="both", expand=True)
+            else:
+                settings_nav.configure(width=124)
+                settings_nav.pack(side="left", fill="y", padx=(0, 12))
+                settings_pages.pack(side="left", fill="both", expand=True)
+            win.after_idle(update_scroll_region)
+
+        settings_body.bind("<Configure>", layout_settings_body)
         pages = {
             "general": tk.Frame(settings_pages, bg=g["BG"]),
             "appearance": tk.Frame(settings_pages, bg=g["BG"]),
@@ -235,42 +304,174 @@ class SettingsMixin:
         appearance_page = pages["appearance"]
         layout_page = pages["layout"]
         shortcuts_page = pages["shortcuts"]
-        tk.Label(general_page, text=t("settings.section.general"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w").pack(fill="x", padx=18, pady=(2, 10))
-        tk.Label(appearance_page, text=t("settings.section.appearance"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w").pack(fill="x", padx=18, pady=(2, 10))
-        tk.Label(layout_page, text=t("settings.section.layout"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w").pack(fill="x", padx=18, pady=(2, 10))
-        tk.Label(shortcuts_page, text=t("settings.section.shortcuts"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w").pack(fill="x", padx=18, pady=(2, 4))
-        tk.Label(
+        general_section_label = tk.Label(general_page, text=t("settings.section.general"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
+        general_section_label.pack(fill="x", padx=18, pady=(2, 10))
+        appearance_section_label = tk.Label(appearance_page, text=t("settings.section.appearance"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
+        appearance_section_label.pack(fill="x", padx=18, pady=(2, 10))
+        layout_section_label = tk.Label(layout_page, text=t("settings.section.layout"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
+        layout_section_label.pack(fill="x", padx=18, pady=(2, 10))
+        shortcuts_section_label = tk.Label(shortcuts_page, text=t("settings.section.shortcuts"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
+        shortcuts_section_label.pack(fill="x", padx=18, pady=(2, 4))
+        shortcuts_hint_label = tk.Label(
             shortcuts_page,
             text=t("settings.shortcuts_hint"),
             bg=g["BG"],
             fg=g["MUTED"],
             font=("Segoe UI", 9),
             anchor="w",
-        ).pack(fill="x", padx=18, pady=(0, 8))
+        )
+        shortcuts_hint_label.pack(fill="x", padx=18, pady=(0, 8))
         show_settings_page("general")
+
+        def dropdown_control(
+            parent: tk.Widget,
+            variable: tk.StringVar,
+            values: list[str],
+            on_select: Callable[[], None],
+            *,
+            max_rows: int = 8,
+            preview_font: bool = False,
+        ) -> dict[str, Callable]:
+            state = {"open": False, "values": list(values)}
+            shell = tk.Frame(parent, bg=g["SURFACE"], highlightthickness=1, highlightbackground=g["BORDER"])
+            shell.pack(fill="x")
+            button = tk.Frame(shell, bg=g["SURFACE"], cursor="hand2", padx=10, pady=7)
+            button.pack(fill="x")
+            value_label = tk.Label(
+                button,
+                text=variable.get(),
+                bg=g["SURFACE"],
+                fg=g["TEXT"],
+                font=("Segoe UI", 10),
+                anchor="w",
+                cursor="hand2",
+            )
+            value_label.pack(side="left", fill="x", expand=True)
+            arrow_label = tk.Label(
+                button,
+                text="v",
+                bg=g["SURFACE"],
+                fg=g["TEXT_SOFT"],
+                font=("Segoe UI", 10, "bold"),
+                cursor="hand2",
+            )
+            arrow_label.pack(side="right")
+            panel = tk.Frame(shell, bg=g["SURFACE_2"], highlightthickness=1, highlightbackground=g["BORDER"])
+            listbox = tk.Listbox(
+                panel,
+                bg=g["SURFACE_2"],
+                fg=g["TEXT"],
+                selectbackground=g["ACCENT"],
+                selectforeground=self._contrast_text(g["ACCENT"]),
+                relief="flat",
+                borderwidth=0,
+                highlightthickness=0,
+                activestyle="none",
+                exportselection=False,
+                font=("Segoe UI", 10),
+            )
+            scrollbar = tk.Scrollbar(panel, orient="vertical", command=listbox.yview, relief="flat")
+            listbox.configure(yscrollcommand=scrollbar.set)
+            listbox.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+
+            def refresh_display() -> None:
+                value = variable.get()
+                value_label.configure(text=value)
+                if preview_font:
+                    try:
+                        value_label.configure(font=(value or "Segoe UI", 10))
+                    except tk.TclError:
+                        value_label.configure(font=("Segoe UI", 10))
+
+            def close_dropdown() -> None:
+                if not state["open"]:
+                    return
+                state["open"] = False
+                panel.pack_forget()
+                arrow_label.configure(text="v")
+                win.after_idle(update_scroll_region)
+
+            def open_dropdown() -> None:
+                if state["open"]:
+                    close_dropdown()
+                    return
+                values_now = list(state["values"])
+                listbox.delete(0, tk.END)
+                for item in values_now:
+                    listbox.insert(tk.END, item)
+                if variable.get() in values_now:
+                    index = values_now.index(variable.get())
+                    listbox.selection_set(index)
+                    listbox.see(index)
+                rows = max(1, min(max_rows, len(values_now)))
+                listbox.configure(height=rows)
+                state["open"] = True
+                panel.pack(fill="x", padx=1, pady=(0, 1))
+                arrow_label.configure(text="^")
+                win.after_idle(update_scroll_region)
+
+            def choose_index(index: int) -> str:
+                values_now = list(state["values"])
+                if 0 <= index < len(values_now):
+                    variable.set(values_now[index])
+                    refresh_display()
+                    close_dropdown()
+                    on_select()
+                return "break"
+
+            def choose_event(event) -> str:
+                return choose_index(listbox.nearest(event.y))
+
+            def scroll_list(event) -> str:
+                listbox.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                return "break"
+
+            def set_values(new_values: list[str]) -> None:
+                state["values"] = list(new_values)
+                refresh_display()
+                if state["open"]:
+                    close_dropdown()
+
+            for target in (button, value_label, arrow_label):
+                target.bind("<Button-1>", lambda _event: open_dropdown() or "break")
+            listbox.bind("<ButtonRelease-1>", choose_event)
+            listbox.bind("<Return>", lambda _event: choose_index(listbox.curselection()[0]) if listbox.curselection() else "break")
+            listbox.bind("<Escape>", lambda _event: close_dropdown() or "break")
+            listbox.bind("<MouseWheel>", scroll_list)
+            refresh_display()
+            return {"set_values": set_values, "refresh": refresh_display, "close": close_dropdown}
 
         language_labels = {code: t(f"lang.{code}") for code in SUPPORTED_LANGUAGES}
         label_to_code = {label: code for code, label in language_labels.items()}
         language_frame = tk.Frame(general_page, bg=g["BG"])
-        language_frame.pack(fill="x", padx=18, pady=6)
-        tk.Label(
+        language_frame.pack(fill="x", padx=18, pady=(6, 10))
+        language_label = tk.Label(
             language_frame,
             text=t("settings.language"),
             bg=g["BG"],
             fg=g["TEXT"],
             font=("Segoe UI", 10),
-            width=16,
             anchor="w",
-        ).pack(side="left")
-        language_var = tk.StringVar(value=language_labels.get(self.config.language, language_labels["en"]))
-        language_box = ttk.Combobox(
-            language_frame,
-            textvariable=language_var,
-            values=[language_labels[code] for code in SUPPORTED_LANGUAGES],
-            state="readonly",
-            width=24,
         )
-        language_box.pack(side="left", fill="x", expand=True, padx=(4, 6), ipady=3)
+        language_label.pack(fill="x", pady=(0, 6))
+        language_var = tk.StringVar(value=language_labels.get(self.config.language, language_labels["en"]))
+        language_dropdown = dropdown_control(
+            language_frame,
+            language_var,
+            [language_labels[code] for code in SUPPORTED_LANGUAGES],
+            lambda: preview_language(),
+            max_rows=6,
+        )
+
+        def refresh_language_options(selected_code: str | None = None) -> None:
+            nonlocal language_labels, label_to_code
+            selected_code = selected_code or label_to_code.get(language_var.get(), self.config.language)
+            language_labels = {code: t(f"lang.{code}") for code in SUPPORTED_LANGUAGES}
+            label_to_code = {label: code for code, label in language_labels.items()}
+            language_var.set(language_labels.get(selected_code, language_labels["en"]))
+            language_dropdown["set_values"]([language_labels[code] for code in SUPPORTED_LANGUAGES])
+            language_dropdown["refresh"]()
 
         def preview_language(_event=None) -> None:
             selected = language_var.get()
@@ -278,9 +479,9 @@ class SettingsMixin:
             self.config.language = code
             set_language(code)
             self._apply_language()
+            refresh_language_options(code)
+            refresh_settings_language()
             msg.config(text=t("settings.msg.language_changed"), fg=globals()["TEXT"])
-
-        language_box.bind("<<ComboboxSelected>>", preview_language)
 
         shortcut_entries: dict[str, tk.Entry] = {}
         shortcut_record_buttons: dict[str, tk.Button] = {}
@@ -331,7 +532,7 @@ class SettingsMixin:
         for command_id, (_label, _default) in COMMAND_SHORTCUTS.items():
             shortcut_row = tk.Frame(shortcuts_page, bg=g["BG"])
             shortcut_row.pack(fill="x", padx=18, pady=4)
-            tk.Label(
+            shortcut_label = tk.Label(
                 shortcut_row,
                 text=command_label(command_id),
                 bg=g["BG"],
@@ -339,7 +540,8 @@ class SettingsMixin:
                 font=("Segoe UI", 9),
                 width=25,
                 anchor="w",
-            ).pack(side="left")
+            )
+            shortcut_label.pack(side="left")
             shortcut_entry = tk.Entry(
                 shortcut_row,
                 bg=g["SURFACE"],
@@ -366,6 +568,7 @@ class SettingsMixin:
             record_button.pack(side="right", padx=(6, 0))
             shortcut_entries[command_id] = shortcut_entry
             shortcut_record_buttons[command_id] = record_button
+            setattr(shortcut_entry, "_label_widget", shortcut_label)
 
         def reset_shortcuts() -> None:
             for command_id, entry in shortcut_entries.items():
@@ -373,7 +576,7 @@ class SettingsMixin:
                 entry.insert(0, format_hotkey_display(DEFAULT_COMMAND_SHORTCUTS[command_id]))
             msg.config(text=t("settings.msg.shortcuts_restored"), fg=globals()["TEXT"])
 
-        tk.Button(
+        restore_shortcuts_button = tk.Button(
             shortcuts_page,
             text=t("settings.restore_defaults"),
             command=reset_shortcuts,
@@ -384,7 +587,8 @@ class SettingsMixin:
             relief="flat",
             padx=12,
             pady=6,
-        ).pack(anchor="e", padx=18, pady=(8, 4))
+        )
+        restore_shortcuts_button.pack(anchor="e", padx=18, pady=(8, 4))
 
         e_notes = row(general_page, t("settings.notes_folder"), self.config.notes_directory, lambda: filedialog.askdirectory(parent=win), lambda: apply_workspace_only())
 
@@ -416,7 +620,7 @@ class SettingsMixin:
             action_text=t("settings.browse"),
             action=browse_attachments_folder,
         )
-        tk.Label(
+        backups_label = tk.Label(
             general_page,
             text=t("settings.backups", path=BACKUP_DIR),
             bg=g["BG"],
@@ -425,7 +629,8 @@ class SettingsMixin:
             anchor="w",
             wraplength=390,
             justify="left",
-        ).pack(fill="x", padx=22, pady=(0, 6))
+        )
+        backups_label.pack(fill="x", padx=22, pady=(0, 6))
         record_btn_ref: list[tk.Button] = []
         hotkey_recording = False
         e_hotkey: tk.Entry
@@ -512,7 +717,8 @@ class SettingsMixin:
 
         position_frame = tk.Frame(layout_page, bg=g["BG"])
         position_frame.pack(fill="x", padx=18, pady=6)
-        tk.Label(position_frame, text=t("settings.app_position"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 10), width=16, anchor="w").pack(side="left")
+        position_label = tk.Label(position_frame, text=t("settings.app_position"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 10), width=16, anchor="w")
+        position_label.pack(side="left")
         position_var = tk.StringVar(value=self.config.app_position)
         position_choices = tk.Frame(position_frame, bg=g["SURFACE"])
         position_choices.pack(side="left", fill="x", expand=True, padx=(4, 6))
@@ -580,7 +786,7 @@ class SettingsMixin:
 
         theme_frame = tk.Frame(appearance_page, bg=g["BG"])
         theme_frame.pack(fill="x", padx=18, pady=6)
-        tk.Label(
+        theme_label = tk.Label(
             theme_frame,
             text=t("settings.color_theme"),
             bg=g["BG"],
@@ -589,7 +795,8 @@ class SettingsMixin:
             width=16,
             anchor="nw",
             pady=7,
-        ).pack(side="left")
+        )
+        theme_label.pack(side="left")
         theme_choices = tk.Frame(theme_frame, bg=g["BG"])
         theme_choices.pack(side="left", fill="x", expand=True, padx=(4, 6))
         theme_choices.grid_columnconfigure(0, weight=1, uniform="theme")
@@ -670,49 +877,105 @@ class SettingsMixin:
         refresh_theme_tiles()
 
         typography_frame = tk.Frame(appearance_page, bg=g["BG"])
-        typography_frame.pack(fill="x", padx=18, pady=6)
-        tk.Label(
+        typography_frame.pack(fill="x", padx=18, pady=(10, 6))
+        typography_label = tk.Label(
             typography_frame,
             text=t("settings.typography"),
             bg=g["BG"],
             fg=g["TEXT"],
             font=("Segoe UI", 10),
-            width=16,
             anchor="w",
-        ).pack(side="left")
+        )
+        typography_label.pack(fill="x", pady=(0, 6))
+        typography_panel = tk.Frame(
+            typography_frame,
+            bg=g["SURFACE"],
+            highlightthickness=1,
+            highlightbackground=g["BORDER"],
+            padx=8,
+            pady=8,
+        )
+        typography_panel.pack(fill="x")
+        controls_row = tk.Frame(typography_panel, bg=g["SURFACE"])
+        controls_row.pack(fill="x")
         available_fonts = sorted(set(tkfont.families(self.root)), key=str.casefold)
         font_family_var = tk.StringVar(value=self.config.font_family)
-        font_family_box = ttk.Combobox(
-            typography_frame,
-            textvariable=font_family_var,
-            values=available_fonts,
-            state="readonly",
-            width=24,
+        font_shell = tk.Frame(controls_row, bg=g["SURFACE"], highlightthickness=1, highlightbackground=g["BORDER"])
+        font_shell.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        font_dropdown = dropdown_control(
+            font_shell,
+            font_family_var,
+            available_fonts,
+            lambda: preview_typography(),
+            max_rows=9,
+            preview_font=True,
         )
-        font_family_box.pack(side="left", fill="x", expand=True, padx=(4, 6), ipady=3)
         font_size_var = tk.IntVar(value=self.config.font_size)
-        font_size_box = tk.Spinbox(
-            typography_frame,
-            from_=8,
-            to=20,
-            textvariable=font_size_var,
-            width=4,
-            justify="center",
-            bg=g["SURFACE"],
-            fg=g["TEXT"],
-            buttonbackground=g["BORDER"],
-            insertbackground=g["TEXT"],
-            relief="flat",
-            font=("Segoe UI", 10),
+        size_frame = tk.Frame(
+            controls_row,
+            bg=g["SURFACE_2"],
+            highlightthickness=1,
+            highlightbackground=g["BORDER"],
         )
-        font_size_box.pack(side="right", ipady=4)
+        size_frame.pack(side="right")
+        size_down = tk.Label(
+            size_frame,
+            text="-",
+            bg=g["SURFACE_2"],
+            fg=g["TEXT_SOFT"],
+            font=("Segoe UI", 12, "bold"),
+            padx=10,
+            pady=4,
+            cursor="hand2",
+        )
+        size_value = tk.Label(
+            size_frame,
+            text=str(font_size_var.get()),
+            bg=g["SURFACE_2"],
+            fg=g["TEXT"],
+            font=("Segoe UI", 10, "bold"),
+            width=3,
+            pady=6,
+        )
+        size_up = tk.Label(
+            size_frame,
+            text="+",
+            bg=g["SURFACE_2"],
+            fg=g["TEXT_SOFT"],
+            font=("Segoe UI", 12, "bold"),
+            padx=10,
+            pady=4,
+            cursor="hand2",
+        )
+        size_down.pack(side="left")
+        size_value.pack(side="left")
+        size_up.pack(side="left")
+        typography_preview = tk.Label(
+            typography_panel,
+            text="Aa Markdown 123",
+            bg=g["SURFACE"],
+            fg=g["TEXT_SOFT"],
+            anchor="w",
+            pady=8,
+        )
+        typography_preview.pack(fill="x", pady=(8, 0))
 
-        def preview_typography(*_args) -> None:
+        def refresh_typography_preview_label() -> tuple[str, int] | None:
             family = font_family_var.get().strip() or "Segoe UI"
             try:
                 size = max(8, min(20, int(font_size_var.get())))
             except (tk.TclError, ValueError):
+                return None
+            font_size_var.set(size)
+            size_value.configure(text=str(size))
+            typography_preview.configure(font=(family, size + 1), text=f"{family}  {size} pt")
+            return family, size
+
+        def preview_typography(*_args) -> None:
+            preview = refresh_typography_preview_label()
+            if preview is None:
                 return
+            family, size = preview
             self.config.font_family = family
             self.config.font_size = size
             self._apply_typography()
@@ -720,12 +983,19 @@ class SettingsMixin:
             win.after_idle(update_scroll_region)
             msg.config(text=t("settings.msg.typography_preview", family=family, size=size), fg=globals()["TEXT"])
 
-        font_family_box.bind("<<ComboboxSelected>>", preview_typography)
-        font_family_box.bind("<MouseWheel>", lambda _e: "break")
-        font_size_box.configure(command=preview_typography)
-        font_size_box.bind("<Return>", preview_typography)
-        font_size_box.bind("<FocusOut>", preview_typography)
-        font_size_box.bind("<MouseWheel>", lambda _e: "break")
+        def adjust_font_size(delta: int) -> str:
+            try:
+                current_size = int(font_size_var.get())
+            except (tk.TclError, ValueError):
+                current_size = self.config.font_size
+            font_size_var.set(max(8, min(20, current_size + delta)))
+            preview_typography()
+            return "break"
+
+        size_down.bind("<Button-1>", lambda _event: adjust_font_size(-1))
+        size_up.bind("<Button-1>", lambda _event: adjust_font_size(1))
+        font_dropdown["refresh"]()
+        refresh_typography_preview_label()
 
         e_width = row(layout_page, t("settings.panel_width"), str(self.config.width))
         e_explorer = row(layout_page, t("settings.explorer_width"), str(self.config.explorer_width))
@@ -819,7 +1089,7 @@ class SettingsMixin:
             width_entry.bind("<FocusOut>", lambda _event: apply_width_preview())
         opacity_frame = tk.Frame(appearance_page, bg=g["BG"])
         opacity_frame.pack(fill="x", padx=18, pady=6)
-        tk.Label(
+        opacity_label = tk.Label(
             opacity_frame,
             text=t("settings.opacity"),
             bg=g["BG"],
@@ -827,7 +1097,8 @@ class SettingsMixin:
             font=("Segoe UI", 10),
             width=16,
             anchor="w",
-        ).pack(side="left")
+        )
+        opacity_label.pack(side="left")
         alpha_var = tk.DoubleVar(value=self.config.alpha)
         alpha_value = tk.Label(
             opacity_frame,
@@ -902,11 +1173,11 @@ class SettingsMixin:
         remember_var = tk.BooleanVar(value=self.config.remember_last_note)
         explorer_var = tk.BooleanVar(value=self.config.explorer_open)
         start_on_boot_var = tk.BooleanVar(value=self.config.start_on_boot)
-        setting_toggles: list[tuple[tk.BooleanVar, tk.Frame, tk.Canvas, tk.Label]] = []
+        setting_toggles: list[tuple[str, tk.BooleanVar, tk.Frame, tk.Canvas, tk.Label]] = []
 
         def refresh_setting_toggles() -> None:
             _g = globals()
-            for var, row_frame, switch, text_label in setting_toggles:
+            for text_key, var, row_frame, switch, text_label in setting_toggles:
                 selected = var.get()
                 row_frame.configure(bg=_g["BG"])
                 switch.configure(bg=_g["BG"])
@@ -926,12 +1197,13 @@ class SettingsMixin:
                     outline="",
                 )
                 text_label.configure(
+                    text=t(text_key),
                     bg=_g["BG"],
                     fg=_g["TEXT"] if selected else _g["TEXT_SOFT"],
                     font=("Segoe UI", 9),
                 )
 
-        def add_setting_toggle(text: str, var: tk.BooleanVar) -> None:
+        def add_setting_toggle(text_key: str, var: tk.BooleanVar) -> None:
             _g = globals()
             row_frame = tk.Frame(bools, bg=_g["BG"], cursor="hand2", padx=3, pady=5)
             row_frame.pack(fill="x", pady=1)
@@ -947,7 +1219,7 @@ class SettingsMixin:
             switch.pack(side="left", padx=(0, 9))
             text_label = tk.Label(
                 row_frame,
-                text=text,
+                text=t(text_key),
                 bg=_g["BG"],
                 fg=_g["TEXT"],
                 font=("Segoe UI", 9),
@@ -970,16 +1242,67 @@ class SettingsMixin:
                 target.bind("<Button-1>", toggle)
                 target.bind("<Enter>", enter)
                 target.bind("<Leave>", leave)
-            setting_toggles.append((var, row_frame, switch, text_label))
+            setting_toggles.append((text_key, var, row_frame, switch, text_label))
 
-        for text, var in (
-            (t("settings.toggle.auto_save"), auto_save_var),
-            (t("settings.toggle.remember_note"), remember_var),
-            (t("settings.toggle.explorer"), explorer_var),
-            (t("settings.toggle.startup"), start_on_boot_var),
+        for text_key, var in (
+            ("settings.toggle.auto_save", auto_save_var),
+            ("settings.toggle.remember_note", remember_var),
+            ("settings.toggle.explorer", explorer_var),
+            ("settings.toggle.startup", start_on_boot_var),
         ):
-            add_setting_toggle(text, var)
+            add_setting_toggle(text_key, var)
         refresh_setting_toggles()
+
+        def update_entry_label(entry: tk.Entry, text_key: str) -> None:
+            label_widget = getattr(entry, "_label_widget", None)
+            if label_widget is not None:
+                label_widget.configure(text=t(text_key))
+
+        def refresh_settings_language() -> None:
+            win.title(t("settings.window_title", app=APP_NAME))
+            settings_title_label.configure(text=t("settings.title"))
+            general_section_label.configure(text=t("settings.section.general"))
+            appearance_section_label.configure(text=t("settings.section.appearance"))
+            layout_section_label.configure(text=t("settings.section.layout"))
+            shortcuts_section_label.configure(text=t("settings.section.shortcuts"))
+            shortcuts_hint_label.configure(text=t("settings.shortcuts_hint"))
+            for key, button in page_buttons.items():
+                button.configure(text=t(f"settings.page.{key}"))
+            language_label.configure(text=t("settings.language"))
+            update_entry_label(e_notes, "settings.notes_folder")
+            update_entry_label(e_attachments, "settings.attachments_folder")
+            update_entry_label(e_hotkey, "settings.hotkey")
+            update_entry_label(e_width, "settings.panel_width")
+            update_entry_label(e_explorer, "settings.explorer_width")
+            update_entry_label(e_nav, "settings.nav_width")
+            position_label.configure(text=t("settings.app_position"))
+            position_labels.update({"left": t("position.left"), "right": t("position.right")})
+            select_position(position_var.get(), preview=False)
+            theme_label.configure(text=t("settings.color_theme"))
+            typography_label.configure(text=t("settings.typography"))
+            opacity_label.configure(text=t("settings.opacity"))
+            backups_label.configure(text=t("settings.backups", path=BACKUP_DIR))
+            refresh_width_hint()
+            browse_button = getattr(e_notes, "_browse_button", None)
+            if browse_button is not None:
+                browse_button.configure(text=t("settings.browse"))
+            attachments_button = getattr(e_attachments, "_action_button", None)
+            if attachments_button is not None:
+                attachments_button.configure(text=t("settings.browse"))
+            hotkey_button = getattr(e_hotkey, "_action_button", None)
+            if hotkey_button is not None:
+                hotkey_button.configure(text=t("settings.record"))
+            for command_id, entry in shortcut_entries.items():
+                label_widget = getattr(entry, "_label_widget", None)
+                if label_widget is not None:
+                    label_widget.configure(text=command_label(command_id))
+            for button in shortcut_record_buttons.values():
+                if str(button.cget("state")) != tk.DISABLED:
+                    button.configure(text=t("settings.record"))
+            restore_shortcuts_button.configure(text=t("settings.restore_defaults"))
+            refresh_setting_toggles()
+            refresh_page_nav()
+            win.after_idle(update_scroll_region)
 
         def apply_runtime_settings(
             workspace_changed: bool,

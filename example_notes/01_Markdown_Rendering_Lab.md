@@ -95,5 +95,4 @@ This paragraph has a block id for wikilink jump tests. ^render-block
 
 ## Image preview in editor and split panes
 
-![Icon from repository assets](../assets/icon_light.png)
-
+![Icon from example assets](assets/icon_light.png)

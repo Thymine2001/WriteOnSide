@@ -132,6 +132,8 @@ MESSAGES = {
     "dialog.delete_folder": "删除文件夹「{name}」及其全部内容？",
     "dialog.new_note_title": "新建笔记",
     "dialog.new_note_prompt": "笔记名称：",
+    "dialog.create": "创建",
+    "dialog.cancel": "取消",
     "dialog.rename_note_title": "重命名笔记",
     "dialog.rename_note_prompt": "新名称：",
     "dialog.save_settings": "关闭前是否保存设置？",

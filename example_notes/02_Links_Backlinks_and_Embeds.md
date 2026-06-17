@@ -27,7 +27,7 @@ The next line embeds another note in read mode:
 
 Markdown image preview:
 
-![Repository icon](../assets/icon_light.png)
+![Example icon](assets/icon_light.png)
 
 Manual wiki image embed test:
 
@@ -39,4 +39,3 @@ Manual wiki image embed test:
 ## Backlinks expectation
 
 Open [[03_Target_Note]], click Backlinks, and this note should appear as a source.
-

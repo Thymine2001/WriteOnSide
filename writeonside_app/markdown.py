@@ -108,6 +108,7 @@ INLINE_MD = re.compile(
     r"!?\[\[[^\[\]\n]+?\]\]|"
     r"!\[[^\]]*\]\([^)]+\)|"
     r"\[[^\]]+\]\([^)]+\)|"
+    r"https?://[^\s<>)]+|"
     r"\[\^[^\]]+\]|"
     r"(?<![\w#])#[a-zA-Z][\w/-]*|"
     r"`[^`]+`|"
@@ -122,6 +123,7 @@ INLINE_MD = re.compile(
     re.IGNORECASE,
 )
 IMAGE_MD = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+EXTERNAL_URL_MD = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
 HTML_COLOR_MD = re.compile(
     r"<span\b[^>]*style=[\"'][^\"']*\bcolor\s*:\s*([^;\"']+)[^\"']*[\"'][^>]*>(.*?)</span>"
     r"|<font\b[^>]*color\s*=\s*[\"']?([^\"'\s>]+)[\"']?[^>]*>(.*?)</font>",
@@ -179,6 +181,15 @@ def _insert_wiki_link(widget: tk.Text, link: WikiLink, base_tag: str) -> None:
     widget.insert(tk.END, label, (base_tag, tag))
 
 
+def _insert_external_link(widget: tk.Text, label: str, url: str, base_tag: str) -> None:
+    counter = getattr(widget, "_external_link_counter", 0) + 1
+    widget._external_link_counter = counter
+    tag = f"external_link_{counter}"
+    widget.tag_configure(tag, foreground=theme.LINK, underline=True)
+    widget._external_links[tag] = url
+    widget.insert(tk.END, label, (base_tag, tag))
+
+
 # Fix #5: added base_path parameter so inline images within paragraphs can be rendered
 def insert_inline_md(
     widget: tk.Text,
@@ -213,6 +224,8 @@ def insert_inline_md(
                 _insert_wiki_link(widget, links[0], base_tag)
             else:
                 widget.insert(tk.END, chunk, base_tag)
+        elif EXTERNAL_URL_MD.match(chunk):
+            _insert_external_link(widget, chunk, chunk, base_tag)
         elif chunk.startswith("!["):
             # Fix #5: attempt to render inline images; fall back to raw text
             img_match = IMAGE_MD.fullmatch(chunk)
@@ -223,7 +236,10 @@ def insert_inline_md(
                 widget.insert(tk.END, chunk, base_tag)
         elif chunk.startswith("[") and not chunk.startswith("[^"):
             link = re.match(r"\[([^\]]+)\]\(([^)]+)\)", chunk)
-            widget.insert(tk.END, link.group(1) if link else chunk, "link" if link else base_tag)
+            if link and EXTERNAL_URL_MD.match(link.group(2).strip()):
+                _insert_external_link(widget, link.group(1), link.group(2).strip(), base_tag)
+            else:
+                widget.insert(tk.END, link.group(1) if link else chunk, "link" if link else base_tag)
         elif chunk.startswith("[^"):
             widget.insert(tk.END, chunk, ("footnote", "sup"))
         elif TAG_PATTERN.fullmatch(chunk):
@@ -387,6 +403,8 @@ def render_markdown(
     widget._clickable_images = {}
     widget._wiki_links = {}
     widget._wiki_link_counter = 0
+    widget._external_links = {}
+    widget._external_link_counter = 0
     widget._html_color_tag_counter = 0
     configure_markdown_tags(widget, font_family, font_size)
     # Newly created content tags outrank the built-in selection tag; without

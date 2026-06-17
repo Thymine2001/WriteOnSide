@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from hashlib import sha1
 from typing import Callable, Iterable
 
 from .frontmatter import split_front_matter
@@ -48,6 +49,7 @@ INLINE_MD_EDIT = re.compile(
     r"!?\[\[[^\[\]\n]+?\]\]|"
     r"!\[[^\]]*\]\([^)]+\)|"
     r"(?<!!)\[[^\]]+\]\([^)]+\)|"
+    r"https?://[^\s<>)]+|"
     r"\[\^[^\]]+\]|"
     r"(?<![\w#])#[a-zA-Z][\w/-]*|"
     r"`[^`]+`|"
@@ -117,6 +119,8 @@ def _inline_tag_for_match(match_text: str) -> str | None:
         return "md_link"
     if match_text.startswith("[") and "](" in match_text:
         return "md_link"
+    if re.match(r"^https?://", match_text, re.IGNORECASE):
+        return "md_link"
     if match_text.startswith("[^"):
         return "md_code"
     if TAG_PATTERN.fullmatch(match_text):
@@ -140,10 +144,15 @@ def _inline_tag_for_match(match_text: str) -> str | None:
     return None
 
 
-def _color_span_for_match(line_no: int, match: re.Match[str]) -> ColorSpan | None:
+def _color_span_for_match(line_no: int, line_offset: int, match: re.Match[str]) -> ColorSpan | None:
     color = normalize_html_color(match.group(1) or match.group(3) or "")
     content_group = 2 if match.group(2) is not None else 4
-    return ColorSpan(line_no, match.start(content_group), match.end(content_group), color)
+    return ColorSpan(
+        line_no,
+        line_offset + match.start(content_group),
+        line_offset + match.end(content_group),
+        color,
+    )
 
 
 def _structure_line_tag(line: str) -> str | None:
@@ -208,7 +217,7 @@ def _plan_line(
         chunk = match.group(0)
         color_match = HTML_COLOR_MD.fullmatch(chunk)
         if color_match is not None:
-            color_span = _color_span_for_match(line_no, color_match)
+            color_span = _color_span_for_match(line_no, match.start(), color_match)
             if color_span is not None:
                 colors.append(color_span)
             continue
@@ -274,7 +283,8 @@ def plan_live_highlight(
 
 
 def color_tag_name(color: str) -> str:
-    return f"md_color_{abs(hash(color.casefold()))}"
+    digest = sha1(color.casefold().encode("utf-8")).hexdigest()[:12]
+    return f"md_color_{digest}"
 
 
 def apply_live_highlight_plan(
@@ -291,6 +301,8 @@ def apply_live_highlight_plan(
 
     if clear_line_range is None:
         for tag in clear_tags:
+            text_widget.tag_remove(tag, "1.0", tk.END)
+        for tag in list(editor_color_tags):
             text_widget.tag_remove(tag, "1.0", tk.END)
         editor_color_tags.clear()
     else:
@@ -327,3 +339,4 @@ def apply_live_highlight_plan(
             f"{color_span.line}.{color_span.start}",
             f"{color_span.line}.{color_span.end}",
         )
+        text_widget.tag_raise(tag)

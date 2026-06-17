@@ -35,9 +35,111 @@ class NotesMixin:
     def _new_note_path(self, suggested: str = "Untitled.md") -> Path:
         return unique_note_path(self._workspace_dir(), suggested)
 
+    def _ask_new_note_name(self) -> str | None:
+        g = globals()
+        win = tk.Toplevel(self.root)
+        win.title(t("dialog.new_note_title"))
+        win.configure(bg=g["BG"])
+        win.transient(self.root)
+        win.attributes("-topmost", True)
+        win.resizable(False, False)
+
+        width = 390
+        height = 188
+        try:
+            x = self.root.winfo_rootx() + max(0, (self.root.winfo_width() - width) // 2)
+            y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - height) // 2)
+        except tk.TclError:
+            x = self.work_left + max(0, (self.work_right - self.work_left - width) // 2)
+            y = self.work_top + max(0, (self.work_bottom - self.work_top - height) // 2)
+        win.geometry(f"{width}x{height}+{x}+{y}")
+
+        shell = tk.Frame(win, bg=g["BG"], padx=18, pady=16)
+        shell.pack(fill="both", expand=True)
+        tk.Label(
+            shell,
+            text=t("dialog.new_note_title"),
+            bg=g["BG"],
+            fg=g["TEXT"],
+            font=("Segoe UI", 14, "bold"),
+            anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            shell,
+            text=t("dialog.new_note_prompt"),
+            bg=g["BG"],
+            fg=g["TEXT_SOFT"],
+            font=("Segoe UI", 9),
+            anchor="w",
+        ).pack(fill="x", pady=(4, 10))
+
+        entry_wrap = tk.Frame(shell, bg=g["ACCENT"], padx=1, pady=1)
+        entry_wrap.pack(fill="x")
+        entry = tk.Entry(
+            entry_wrap,
+            bg=g["SURFACE"],
+            fg=g["TEXT"],
+            insertbackground=g["TEXT"],
+            relief="flat",
+            font=("Segoe UI", 11),
+        )
+        entry.insert(0, "Untitled.md")
+        entry.pack(fill="x", ipady=7, padx=0, pady=0)
+        entry.selection_range(0, tk.END)
+
+        actions = tk.Frame(shell, bg=g["BG"])
+        actions.pack(fill="x", pady=(16, 0))
+        result = {"value": None}
+
+        def close(value: str | None) -> None:
+            result["value"] = value
+            win.grab_release()
+            win.destroy()
+
+        def submit(_event=None) -> str:
+            value = entry.get().strip()
+            if value:
+                close(value)
+            else:
+                entry.focus_set()
+            return "break"
+
+        cancel_btn = tk.Label(
+            actions,
+            text=t("dialog.cancel"),
+            bg=g["SURFACE"],
+            fg=g["TEXT_SOFT"],
+            font=("Segoe UI", 10),
+            padx=14,
+            pady=7,
+            cursor="hand2",
+        )
+        create_btn = tk.Label(
+            actions,
+            text=t("dialog.create"),
+            bg=g["ACCENT"],
+            fg=self._contrast_text(g["ACCENT"]),
+            font=("Segoe UI", 10, "bold"),
+            padx=15,
+            pady=7,
+            cursor="hand2",
+        )
+        create_btn.pack(side="right")
+        cancel_btn.pack(side="right", padx=(0, 8))
+        cancel_btn.bind("<Button-1>", lambda _event: close(None))
+        create_btn.bind("<Button-1>", submit)
+        entry.bind("<Return>", submit)
+        win.bind("<Escape>", lambda _event: close(None) or "break")
+        win.protocol("WM_DELETE_WINDOW", lambda: close(None))
+
+        entry.focus_set()
+        win.grab_set()
+        self.root.wait_window(win)
+        return result["value"]
+
     def _create_new_note(self) -> None:
         self._save_note(False)
-        name = simpledialog.askstring(t("dialog.new_note_title"), t("dialog.new_note_prompt"), parent=self.root, initialvalue="Untitled.md")
+        name = self._ask_new_note_name()
         if name is None:
             return
         path = self._new_note_path(name)

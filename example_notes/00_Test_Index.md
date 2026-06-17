@@ -48,4 +48,4 @@ Inline tags: #inline-test #project/alpha #todo/review
 
 This image uses a relative path to a repository asset. It should preview in the main editor and split panes:
 
-![WriteOnSide icon](../assets/icon_light.png)
+![WriteOnSide icon](assets/icon_light.png)

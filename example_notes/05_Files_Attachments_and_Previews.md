@@ -38,4 +38,4 @@ Use the context menu on these files:
 
 This relative image should preview without copying:
 
-![Icon](../assets/icon_light.png)
+![Icon](assets/icon_light.png)

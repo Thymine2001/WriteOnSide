@@ -27,7 +27,7 @@ Typing **bold**, *italic*, `code`, ==highlight==, #split-tag, and headings shoul
 
 This image should preview in split editor panes too:
 
-![Split pane image](../assets/icon_light.png)
+![Split pane image](assets/icon_light.png)
 
 ### More content for scrolling
 

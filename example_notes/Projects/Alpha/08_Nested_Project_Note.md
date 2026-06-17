@@ -21,7 +21,7 @@ Inline nested tags: #project/alpha #area/nested
 
 ## Image from root-relative relative path
 
-![Nested image](../../../assets/icon_light.png)
+![Nested image](../../assets/icon_light.png)
 
 ## Manual create-from-wikilink test
 

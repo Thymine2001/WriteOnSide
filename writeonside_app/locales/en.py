@@ -131,6 +131,8 @@ MESSAGES = {
     "dialog.delete_folder": "Delete folder \"{name}\" and all its contents?",
     "dialog.new_note_title": "New note",
     "dialog.new_note_prompt": "Note name:",
+    "dialog.create": "Create",
+    "dialog.cancel": "Cancel",
     "dialog.rename_note_title": "Rename note",
     "dialog.rename_note_prompt": "New name:",
     "dialog.save_settings": "Save settings before closing?",

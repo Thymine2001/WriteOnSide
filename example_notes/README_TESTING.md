@@ -12,4 +12,4 @@ This test Vault covers:
 - Right-click split opening, drag/drop attachments, image links, image preview, and split panes
 - Settings for theme, typography, layout, opacity, language, and shortcuts
 
-The notes reference `../assets/icon_light.png`, so image preview tests are intended to run from this repository checkout.
+The notes reference `assets/icon_light.png`, so image preview tests are self-contained when `example_notes` is selected as the notes folder.

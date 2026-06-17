@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import webbrowser
 from pathlib import Path
 import tkinter as tk
 
@@ -10,6 +11,9 @@ from ..obsidian_md import find_block_line
 from ..i18n import t
 from ..theme import *  # noqa: F401,F403
 from ..wikilinks import WikiLink, WikiLinkIndex, WikiIndexState, refresh_wiki_index, WIKI_LINK_PATTERN
+
+MARKDOWN_URL_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\((https?://[^)\s]+)\)", re.IGNORECASE)
+BARE_URL_PATTERN = re.compile(r"https?://[^\s<>)]+", re.IGNORECASE)
 
 
 class WikiLinksMixin:
@@ -58,6 +62,14 @@ class WikiLinksMixin:
         return title, body.strip()
 
     def _bind_rendered_wikilinks(self) -> None:
+        for tag, url in getattr(self.read_text, "_external_links", {}).items():
+            self.read_text.tag_bind(tag, "<Enter>", lambda _event: self.read_text.configure(cursor="hand2"))
+            self.read_text.tag_bind(tag, "<Leave>", lambda _event: self.read_text.configure(cursor="arrow"))
+            self.read_text.tag_bind(
+                tag,
+                "<Control-Button-1>",
+                lambda _event, target=url: self._open_external_url(target),
+            )
         for tag, link in getattr(self.read_text, "_wiki_links", {}).items():
             self.read_text.tag_bind(tag, "<Enter>", lambda _event: self.read_text.configure(cursor="hand2"))
             self.read_text.tag_bind(tag, "<Leave>", lambda _event: self.read_text.configure(cursor="arrow"))
@@ -79,6 +91,13 @@ class WikiLinksMixin:
             self.root.after_idle(lambda block_id=link.block_id, note=target: self._jump_to_wiki_block(block_id, note))
         elif link.heading:
             self.root.after_idle(lambda heading=link.heading: self._jump_to_wiki_heading(heading))
+        return "break"
+
+    def _open_external_url(self, url: str) -> str:
+        target = url.strip()
+        if not BARE_URL_PATTERN.fullmatch(target):
+            return "break"
+        webbrowser.open(target)
         return "break"
 
     def _create_wikilink_note(self, target: str) -> Path | None:
@@ -135,6 +154,12 @@ class WikiLinksMixin:
         index = self.text.index(f"@{event.x},{event.y}")
         line, column = (int(value) for value in index.split("."))
         line_text = self.text.get(f"{line}.0", f"{line}.end")
+        for match in MARKDOWN_URL_PATTERN.finditer(line_text):
+            if match.start() <= column <= match.end():
+                return self._open_external_url(match.group(1))
+        for match in BARE_URL_PATTERN.finditer(line_text):
+            if match.start() <= column <= match.end():
+                return self._open_external_url(match.group(0))
         for match in WIKI_LINK_PATTERN.finditer(line_text):
             if match.start() <= column <= match.end():
                 destination, separator, alias = match.group(2).partition("|")

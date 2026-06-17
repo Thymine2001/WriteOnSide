@@ -132,6 +132,8 @@ MESSAGES = {
     "dialog.delete_folder": "Eliminar a pasta \"{name}\" e todo o seu conteúdo?",
     "dialog.new_note_title": "Nova nota",
     "dialog.new_note_prompt": "Nome da nota:",
+    "dialog.create": "Criar",
+    "dialog.cancel": "Cancelar",
     "dialog.rename_note_title": "Renomear nota",
     "dialog.rename_note_prompt": "Novo nome:",
     "dialog.save_settings": "Guardar definições antes de fechar?",
