@@ -8,6 +8,8 @@ from typing import Callable, Iterable
 from .frontmatter import split_front_matter
 from .markdown import HTML_COLOR_MD, normalize_html_color
 from .obsidian_md import CALLOUT_LINE, TAG_PATTERN
+from .syntax_highlight import code_token_spans
+from . import theme
 
 MD_EDITOR_TAGS: tuple[str, ...] = (
     "md_h1",
@@ -112,6 +114,24 @@ def code_block_active_before(lines: list[str], line_no: int) -> bool:
     return active
 
 
+def code_block_context_before(lines: list[str], line_no: int) -> tuple[bool, str]:
+    active = False
+    language = ""
+    for index in range(1, line_no):
+        if index > len(lines):
+            break
+        stripped = lines[index - 1].strip()
+        if not stripped.startswith("```"):
+            continue
+        if active:
+            active = False
+            language = ""
+        else:
+            active = True
+            language = stripped[3:].strip()
+    return active, language
+
+
 def _inline_tag_for_match(match_text: str) -> str | None:
     if match_text.startswith("![") and "](" in match_text and not match_text.startswith("![["):
         return "md_image"
@@ -184,8 +204,9 @@ def _plan_line(
     line: str,
     *,
     in_code_block: bool,
+    code_language: str,
     simplified: bool,
-) -> tuple[bool, list[LineTag], list[TagSpan], list[ColorSpan]]:
+) -> tuple[bool, str, list[LineTag], list[TagSpan], list[ColorSpan]]:
     line_tags: list[LineTag] = []
     spans: list[TagSpan] = []
     colors: list[ColorSpan] = []
@@ -193,16 +214,21 @@ def _plan_line(
 
     if stripped.startswith("```"):
         line_tags.append(LineTag(line_no, "md_code"))
-        return not in_code_block, line_tags, spans, colors
+        if in_code_block:
+            return False, "", line_tags, spans, colors
+        return True, stripped[3:].strip(), line_tags, spans, colors
     if in_code_block:
         line_tags.append(LineTag(line_no, "md_code"))
-        return True, line_tags, spans, colors
+        if not simplified:
+            for token_span in code_token_spans(line, code_language, background=theme.CODE_BG, max_chars=8_000):
+                colors.append(ColorSpan(line_no, token_span.start, token_span.end, token_span.color))
+        return True, code_language, line_tags, spans, colors
     if stripped in {"---", "***", "___"}:
         line_tags.append(LineTag(line_no, "md_hr"))
-        return False, line_tags, spans, colors
+        return False, "", line_tags, spans, colors
     if CALLOUT_LINE.match(line):
         line_tags.append(LineTag(line_no, "md_callout"))
-        return False, line_tags, spans, colors
+        return False, "", line_tags, spans, colors
     if "%%" in line:
         line_tags.append(LineTag(line_no, "md_comment"))
 
@@ -211,7 +237,7 @@ def _plan_line(
         line_tags.append(LineTag(line_no, structure_tag))
 
     if simplified:
-        return False, line_tags, spans, colors
+        return False, "", line_tags, spans, colors
 
     for match in INLINE_MD_EDIT.finditer(line):
         chunk = match.group(0)
@@ -225,7 +251,7 @@ def _plan_line(
         if tag:
             spans.append(TagSpan(line_no, match.start(), match.end(), tag))
 
-    return False, line_tags, spans, colors
+    return False, "", line_tags, spans, colors
 
 
 def plan_live_highlight(
@@ -255,16 +281,17 @@ def plan_live_highlight(
     line_tags: list[LineTag] = []
     spans: list[TagSpan] = []
     colors: list[ColorSpan] = []
-    in_code_block = code_block_active_before(lines, start_line)
+    in_code_block, code_language = code_block_context_before(lines, start_line)
 
     for line_no in range(start_line, end_line + 1):
         if line_no <= frontmatter_lines:
             continue
         line = lines[line_no - 1] if line_no <= len(lines) else ""
-        in_code_block, planned_line_tags, planned_spans, planned_colors = _plan_line(
+        in_code_block, code_language, planned_line_tags, planned_spans, planned_colors = _plan_line(
             line_no,
             line,
             in_code_block=in_code_block,
+            code_language=code_language,
             simplified=simplified,
         )
         line_tags.extend(planned_line_tags)

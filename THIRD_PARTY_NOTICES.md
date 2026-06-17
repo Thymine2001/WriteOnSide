@@ -15,6 +15,7 @@ executables produced from that source using `WriteOnSide.spec`.
 | Tcl/Tk | 8.6 | Tkinter GUI runtime | [`tcl-tk-license.txt`](licenses/tcl-tk-license.txt) |
 | keyboard | 0.13.5 | Global keyboard shortcuts | [`keyboard-MIT.txt`](licenses/keyboard-MIT.txt) |
 | Pillow | 12.2.0 | Image loading, rendering, and icon generation | [`pillow-MIT-CMU.txt`](licenses/pillow-MIT-CMU.txt) |
+| Pygments | 2.19.2 | Syntax highlighting for fenced code blocks | [`pygments-BSD-2-Clause.txt`](licenses/pygments-BSD-2-Clause.txt) |
 | pystray | 0.19.5 | Windows system tray integration | [`pystray-LGPL-3.0.txt`](licenses/pystray-LGPL-3.0.txt) |
 | six | 1.17.0 | Compatibility dependency used by pystray | [`six-MIT.txt`](licenses/six-MIT.txt) |
 | tkinterdnd2 | 0.5.0 | Tkinter drag-and-drop wrapper | [`tkinterdnd2-MIT.txt`](licenses/tkinterdnd2-MIT.txt) |

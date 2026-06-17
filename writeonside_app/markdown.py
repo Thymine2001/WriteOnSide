@@ -16,7 +16,14 @@ from .obsidian_md import (
     is_footnote_definition_line,
     strip_obsidian_comments,
 )
+from .syntax_highlight import insert_syntax_highlighted_code_block
 from .wikilinks import WIKI_LINK_PATTERN, WikiLink, parse_wiki_links
+
+
+def _markdown_body_size(widget: tk.Text, font_size: int) -> int:
+    width = widget.winfo_width()
+    compact = width and width < 360
+    return (11 if compact else 12) + (font_size - 10)
 
 
 def configure_markdown_tags(widget: tk.Text, font_family: str = "Segoe UI", font_size: int = 10) -> None:
@@ -26,7 +33,7 @@ def configure_markdown_tags(widget: tk.Text, font_family: str = "Segoe UI", font
     h1_size = (15 if compact else 18) + delta
     h2_size = (14 if compact else 16) + delta
     h3_size = (13 if compact else 14) + delta
-    body_size = (11 if compact else 12) + delta
+    body_size = _markdown_body_size(widget, font_size)
     margin = 10 if compact else 18
     list_margin = 16 if compact else 22
     widget.tag_configure("h1", font=(font_family, h1_size, "bold"), foreground=theme.TEXT, spacing3=8)
@@ -407,6 +414,7 @@ def render_markdown(
     widget._external_link_counter = 0
     widget._html_color_tag_counter = 0
     configure_markdown_tags(widget, font_family, font_size)
+    body_size = _markdown_body_size(widget, font_size)
     # Newly created content tags outrank the built-in selection tag; without
     # this, selecting text over code blocks (CODE_BG) shows no highlight
     widget.tag_raise("sel")
@@ -415,7 +423,6 @@ def render_markdown(
     _header, body = split_front_matter(content)
     lines = body.splitlines()
     footnote_defs = collect_footnote_definitions(lines)
-    in_code_block = False
     line_index = 0
 
     # Fix #2: compute HR width from the widget's actual pixel width
@@ -460,17 +467,30 @@ def render_markdown(
 
         # Fix #4: capture fenced code block language and display a label
         if stripped.startswith("```"):
-            if not in_code_block:
-                lang = stripped[3:].strip()
-                if lang:
-                    widget.insert(tk.END, lang + "\n", "code_lang")
-            in_code_block = not in_code_block
+            lang = stripped[3:].strip()
             line_index += 1
-            continue
-        if in_code_block:
-            # "code_block" tag distinguishes fenced blocks from inline code
-            widget.insert(tk.END, line + "\n", ("code", "code_block"))
-            line_index += 1
+            code_lines: list[str] = []
+            while line_index < len(lines):
+                candidate = lines[line_index]
+                if candidate.strip().startswith("```"):
+                    line_index += 1
+                    break
+                code_lines.append(candidate)
+                line_index += 1
+            if lang:
+                widget.insert(tk.END, lang + "\n", "code_lang")
+            code_text = "\n".join(code_lines)
+            if code_lines:
+                code_text += "\n"
+            insert_syntax_highlighted_code_block(
+                widget,
+                code_text,
+                lang,
+                base_tags=("code", "code_block"),
+                tag_prefix="code_syntax",
+                font_size=max(10, body_size),
+                background=theme.CODE_BG,
+            )
             continue
         if (
             "|" in line
