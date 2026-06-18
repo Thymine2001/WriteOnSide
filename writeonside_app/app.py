@@ -222,7 +222,7 @@ class WriteOnSideApp(
             ("heading", "H", lambda: self._show_heading_popup(self._format_buttons["heading"])),
             ("highlight", "==", lambda: self._wrap_selection("==", "==", "text")),
             ("color", "A", lambda: self._show_text_color_popup(self._format_buttons["color"])),
-            ("code", "<>", self._smart_code_format),
+            ("code", "</>", self._smart_code_format),
             ("quote", format_action_glyph("quote", "“"), lambda: self._line_prefix("> ")),
             ("link", "🔗", lambda: self._wrap_selection("[", "](url)", "text")),
             ("image", format_action_glyph("image", "▧"), self._insert_image_file),

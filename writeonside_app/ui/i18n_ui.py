@@ -87,10 +87,13 @@ class I18nMixin:
 
     def _refresh_find_tooltips(self) -> None:
         mapping = getattr(self, "_find_tooltip_buttons", None)
-        if not mapping:
-            return
-        for key, button in mapping.items():
-            self._track_tooltip(button, key)
+        if mapping:
+            for key, button in mapping.items():
+                self._track_tooltip(button, key)
+        if hasattr(self, "replace_current_btn"):
+            self.replace_current_btn.configure(text=t("find.replace"))
+        if hasattr(self, "replace_all_btn"):
+            self.replace_all_btn.configure(text=t("find.replace_all"))
 
 
     def _rebuild_tray_menu(self) -> None:

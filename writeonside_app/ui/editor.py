@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import colorchooser, messagebox
 
 from ..config import APP_NAME, save_config
-from ..format_icons import FORMAT_MDL2_ICONS, format_menu_label
+from ..format_icons import FORMAT_MDL2_FONT, FORMAT_MDL2_ICONS, format_menu_label
 from ..frontmatter import ensure_front_matter, split_front_matter
 from ..i18n import command_label, t
 from ..editor_images import (
@@ -31,6 +31,11 @@ from ..theme import *  # noqa: F401,F403
 
 # Fix #6: module-level constant — single source of truth for all MD tag name lists
 _MD_EDITOR_TAGS: tuple[str, ...] = MD_EDITOR_TAGS
+
+
+def _literal_find_pattern(needle: str, case_sensitive: bool) -> re.Pattern[str]:
+    flags = 0 if case_sensitive else re.IGNORECASE
+    return re.compile(re.escape(needle), flags)
 
 
 class EditorMixin:
@@ -1035,33 +1040,103 @@ class EditorMixin:
     def _build_find_panel(self) -> None:
         g = globals()
         self._find_tooltip_buttons: dict[str, tk.Label] = {}
-        self.find_panel = tk.Frame(self.root, bg=g["SURFACE_2"])
+        self.find_panel = tk.Frame(
+            self.root,
+            bg=g["SURFACE"],
+            highlightthickness=1,
+            highlightbackground=g["BORDER"],
+        )
         self.find_var = tk.StringVar()
         self.replace_var = tk.StringVar()
+        self.find_case_sensitive_var = tk.BooleanVar(value=False)
         self._find_replace_visible = False
         self._find_current_index = None
 
-        find_row = tk.Frame(self.find_panel, bg=g["SURFACE_2"])
-        find_row.pack(fill="x", padx=8, pady=(7, 4))
-        tk.Label(find_row, text="", bg=g["SURFACE_2"], fg=g["MUTED"], font=("Segoe MDL2 Assets", 11), width=2).pack(side="left")
-        self.find_entry = tk.Entry(find_row, textvariable=self.find_var, bg=g["SURFACE"], fg=g["TEXT"], insertbackground=g["TEXT"], relief="flat", borderwidth=0, font=("Segoe UI", 10))
-        self.find_entry.pack(side="left", fill="x", expand=True, ipady=4, padx=(2, 5))
-        self.find_count_label = tk.Label(find_row, text="", bg=g["SURFACE_2"], fg=g["MUTED"], font=("Segoe UI", 9), width=7, anchor="e")
-        self.find_count_label.pack(side="left", padx=(0, 4))
-        self._mini_button(find_row, "↑", self._find_previous, "tooltip.find_prev").pack(side="left")
-        self._mini_button(find_row, "↓", self._find_next, "tooltip.find_next").pack(side="left")
-        self._mini_button(find_row, "↔", lambda: self._set_replace_visible(not self._find_replace_visible), "tooltip.find_replace_toggle").pack(side="left")
-        self._mini_button(find_row, "×", self._hide_find_panel, "tooltip.find_close").pack(side="left")
+        find_row = tk.Frame(self.find_panel, bg=g["SURFACE"])
+        find_row.pack(fill="x", padx=7, pady=(6, 5))
+        self.find_expand_btn = self._mini_button(
+            find_row,
+            FORMAT_MDL2_ICONS["find_replace_show"],
+            lambda: self._set_replace_visible(not self._find_replace_visible),
+            "tooltip.find_replace_toggle",
+            width=3,
+            background_key="SURFACE",
+        )
+        self.find_expand_btn.configure(font=FORMAT_MDL2_FONT)
+        self.find_expand_btn.pack(side="left", padx=(0, 6))
 
-        self.replace_row = tk.Frame(self.find_panel, bg=g["SURFACE_2"])
-        tk.Label(self.replace_row, text="", bg=g["SURFACE_2"], fg=g["MUTED"], font=("Segoe UI", 10, "bold"), width=2).pack(side="left")
-        self.replace_entry = tk.Entry(self.replace_row, textvariable=self.replace_var, bg=g["SURFACE"], fg=g["TEXT"], insertbackground=g["TEXT"], relief="flat", borderwidth=0, font=("Segoe UI", 10))
-        self.replace_entry.pack(side="left", fill="x", expand=True, ipady=4, padx=(2, 5))
-        self._mini_button(self.replace_row, "One", self._replace_current, "tooltip.replace_current").pack(side="left", padx=(0, 3))
-        self._mini_button(self.replace_row, "All", self._replace_all, "tooltip.replace_all").pack(side="left")
+        self.find_field = tk.Frame(find_row, bg=g["BORDER"])
+        self.find_field.pack(side="left", fill="x", expand=True)
+        find_field_inner = tk.Frame(self.find_field, bg=g["BG"])
+        find_field_inner.pack(fill="both", expand=True, padx=1, pady=1)
+        self.find_entry = tk.Entry(
+            find_field_inner,
+            textvariable=self.find_var,
+            bg=g["BG"],
+            fg=g["TEXT"],
+            insertbackground=g["ACCENT"],
+            selectbackground=g["ACCENT"],
+            selectforeground=self._contrast_text(g["ACCENT"]),
+            relief="flat",
+            borderwidth=0,
+            font=("Segoe UI", 10),
+        )
+        self.find_entry.pack(side="left", fill="x", expand=True, ipady=6, padx=(10, 4))
+        self.find_count_label = tk.Label(
+            find_field_inner,
+            text="",
+            bg=g["BG"],
+            fg=g["MUTED"],
+            font=("Segoe UI", 9),
+            anchor="e",
+        )
+        self.find_count_label.pack(side="right", padx=(3, 9))
 
-        tk.Frame(self.find_panel, bg=g["BORDER"], height=1).pack(fill="x")
+        self._mini_button(find_row, "↓", self._find_next, "tooltip.find_next", width=3, background_key="SURFACE").pack(side="left", padx=(6, 0))
+        self._mini_button(find_row, "↑", self._find_previous, "tooltip.find_prev", width=3, background_key="SURFACE").pack(side="left", padx=(1, 0))
+        self.find_case_btn = self._mini_button(
+            find_row,
+            "Aa",
+            self._toggle_find_case_sensitive,
+            "tooltip.find_case_sensitive",
+            width=3,
+            background_key="SURFACE",
+        )
+        self.find_case_btn.pack(side="left", padx=(1, 0))
+        self._mini_button(find_row, "×", self._hide_find_panel, "tooltip.find_close", width=3, background_key="SURFACE").pack(side="left", padx=(1, 0))
+
+        self.replace_row = tk.Frame(self.find_panel, bg=g["SURFACE"])
+        replace_indent = tk.Frame(self.replace_row, bg=g["SURFACE"], width=34)
+        replace_indent.pack(side="left")
+        replace_indent.pack_propagate(False)
+        self.replace_field = tk.Frame(self.replace_row, bg=g["BORDER"])
+        self.replace_field.pack(side="left", fill="x", expand=True)
+        replace_field_inner = tk.Frame(self.replace_field, bg=g["BG"])
+        replace_field_inner.pack(fill="both", expand=True, padx=1, pady=1)
+        self.replace_entry = tk.Entry(
+            replace_field_inner,
+            textvariable=self.replace_var,
+            bg=g["BG"],
+            fg=g["TEXT"],
+            insertbackground=g["ACCENT"],
+            selectbackground=g["ACCENT"],
+            selectforeground=self._contrast_text(g["ACCENT"]),
+            relief="flat",
+            borderwidth=0,
+            font=("Segoe UI", 10),
+        )
+        self.replace_entry.pack(fill="x", expand=True, ipady=6, padx=10)
+        self.replace_current_btn = self._mini_button(
+            self.replace_row, t("find.replace"), self._replace_current, "tooltip.replace_current", background_key="SURFACE"
+        )
+        self.replace_current_btn.pack(side="left", padx=(8, 5))
+        self.replace_all_btn = self._mini_button(
+            self.replace_row, t("find.replace_all"), self._replace_all, "tooltip.replace_all", background_key="SURFACE"
+        )
+        self.replace_all_btn.pack(side="left", padx=(0, 1))
+
         self.find_var.trace_add("write", lambda *_: self._refresh_find_matches(True))
+        self.find_case_sensitive_var.trace_add("write", lambda *_: self._refresh_find_matches(True))
         self.find_entry.bind("<Return>", lambda _e: self._find_next() or "break")
         self.find_entry.bind("<Shift-Return>", lambda _e: self._find_previous() or "break")
         self.replace_entry.bind("<Return>", lambda _e: self._replace_current() or "break")
@@ -1069,18 +1144,51 @@ class EditorMixin:
         self.find_entry.bind("<Escape>", lambda _e: self._hide_find_panel() or "break")
         self.replace_entry.bind("<Escape>", lambda _e: self._hide_find_panel() or "break")
 
-    def _mini_button(self, parent: tk.Widget, text: str, command: Callable[[], None], tooltip_key: str = "") -> tk.Label:
+    def _mini_button(
+        self,
+        parent: tk.Widget,
+        text: str,
+        command: Callable[[], None],
+        tooltip_key: str = "",
+        width: int = 0,
+        background_key: str = "SURFACE_2",
+    ) -> tk.Label:
         g = globals()
-        btn = tk.Label(parent, text=text, bg=g["SURFACE_2"], fg=g["MUTED"], font=("Segoe UI", 9, "bold"), cursor="hand2", padx=6, pady=3)
+        btn = tk.Label(
+            parent,
+            text=text,
+            bg=g[background_key],
+            fg=g["MUTED"],
+            font=("Segoe UI", 9, "bold"),
+            cursor="hand2",
+            padx=6,
+            pady=6,
+            width=width,
+        )
         btn.bind("<Button-1>", lambda _e: command())
+        btn._find_background_key = background_key
         tooltip = t(tooltip_key) if tooltip_key else ""
         btn._tooltip_text = tooltip
         if tooltip_key:
             self._find_tooltip_buttons = getattr(self, "_find_tooltip_buttons", {})
             self._find_tooltip_buttons[tooltip_key] = btn
         btn.bind("<Enter>", lambda _e: (btn.config(bg=globals()["BORDER"], fg=globals()["TEXT"]), self._show_tooltip(btn, getattr(btn, "_tooltip_text", tooltip))))
-        btn.bind("<Leave>", lambda _e: (btn.config(bg=globals()["SURFACE_2"], fg=globals()["MUTED"]), self._hide_tooltip()))
+        btn.bind("<Leave>", lambda _e: (self._restore_find_button(btn), self._hide_tooltip()))
         return btn
+
+    def _restore_find_button(self, button: tk.Label) -> None:
+        if button is getattr(self, "find_case_btn", None) and self.find_case_sensitive_var.get():
+            button.configure(bg=globals()["ACCENT"], fg=self._contrast_text(globals()["ACCENT"]))
+        else:
+            background_key = getattr(button, "_find_background_key", "SURFACE_2")
+            button.configure(bg=globals()[background_key], fg=globals()["MUTED"])
+
+    def _toggle_find_case_sensitive(self) -> None:
+        self.find_case_sensitive_var.set(not self.find_case_sensitive_var.get())
+        self._restore_find_button(self.find_case_btn)
+
+    def _find_nocase(self) -> bool:
+        return not self.find_case_sensitive_var.get()
 
     def _active_text_widget(self) -> tk.Text:
         if self.preview_path is not None:
@@ -1106,8 +1214,11 @@ class EditorMixin:
 
     def _set_replace_visible(self, visible: bool) -> None:
         self._find_replace_visible = visible
+        self.find_expand_btn.configure(
+            text=FORMAT_MDL2_ICONS["find_replace_hide" if visible else "find_replace_show"]
+        )
         if visible:
-            self.replace_row.pack(fill="x", padx=8, pady=(0, 7))
+            self.replace_row.pack(fill="x", padx=7, pady=(0, 6))
         else:
             self.replace_row.pack_forget()
 
@@ -1147,7 +1258,7 @@ class EditorMixin:
         matches = []
         pos = "1.0"
         while True:
-            idx = widget.search(needle, pos, stopindex=tk.END, nocase=True, count=count_var)
+            idx = widget.search(needle, pos, stopindex=tk.END, nocase=self._find_nocase(), count=count_var)
             if not idx:
                 break
             length = count_var.get()
@@ -1190,14 +1301,14 @@ class EditorMixin:
         count_var = tk.IntVar()
         if forward:
             start = widget.index(f"{tk.INSERT}+1c")
-            idx = widget.search(needle, start, stopindex=tk.END, nocase=True, count=count_var)
+            idx = widget.search(needle, start, stopindex=tk.END, nocase=self._find_nocase(), count=count_var)
             if not idx:
-                idx = widget.search(needle, "1.0", stopindex=tk.END, nocase=True, count=count_var)
+                idx = widget.search(needle, "1.0", stopindex=tk.END, nocase=self._find_nocase(), count=count_var)
         else:
             start = widget.index(f"{tk.INSERT}-1c")
-            idx = widget.search(needle, start, stopindex="1.0", backwards=True, nocase=True, count=count_var)
+            idx = widget.search(needle, start, stopindex="1.0", backwards=True, nocase=self._find_nocase(), count=count_var)
             if not idx:
-                idx = widget.search(needle, tk.END, stopindex="1.0", backwards=True, nocase=True, count=count_var)
+                idx = widget.search(needle, tk.END, stopindex="1.0", backwards=True, nocase=self._find_nocase(), count=count_var)
         self._refresh_find_matches(False)
         if idx:
             self._select_find_result(idx, count_var.get())
@@ -1234,7 +1345,7 @@ class EditorMixin:
         if not needle:
             return
         content = self._get_editor_content()
-        pattern = re.compile(re.escape(needle), re.IGNORECASE)
+        pattern = _literal_find_pattern(needle, self.find_case_sensitive_var.get())
         new_content, count = pattern.subn(self.replace_var.get(), content)
         if count == 0:
             return

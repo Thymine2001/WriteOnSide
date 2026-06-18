@@ -4,6 +4,8 @@ from __future__ import annotations
 FORMAT_MDL2_FONT = ("Segoe MDL2 Assets", 10)
 
 FORMAT_MDL2_ICONS: dict[str, str] = {
+    "find_replace_show": "\uE70D",  # ChevronDown
+    "find_replace_hide": "\uE70E",  # ChevronUp
     "quote": "\uE8FD",  # Message
     "image": "\uEB9F",  # Picture
     "table": "\uED58",  # GridView
