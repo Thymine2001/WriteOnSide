@@ -9,9 +9,11 @@ from typing import Callable
 import keyboard
 import pystray
 import tkinter as tk
+from tkinter import filedialog, messagebox
 from PIL import Image
 
 from ..config import APP_NAME
+from ..diagnostics import export_diagnostic_report, get_logger
 from ..hotkeys import format_hotkey_display, normalize_hotkey, purge_phantom_pressed_keys, validate_hotkey
 from ..i18n import t
 from ..platform import SingleInstanceGuard, get_system_color_mode
@@ -104,6 +106,24 @@ class TrayMixin:
 
         create_when_ready()
 
+    def _export_diagnostic_report(self) -> None:
+        try:
+            target = filedialog.asksaveasfilename(
+                parent=self.root,
+                title=t("dialog.export_diagnostics"),
+                defaultextension=".zip",
+                filetypes=[(t("dialog.zip_files"), "*.zip"), (t("dialog.all_files"), "*.*")],
+                initialfile="WriteOnSide-diagnostics.zip",
+            )
+            if not target:
+                return
+            report_path = export_diagnostic_report(Path(target))
+        except Exception as exc:
+            get_logger().exception("Failed to export diagnostic report")
+            self._set_error(t("error.diagnostics_export_failed", exc=exc))
+            return
+        messagebox.showinfo(APP_NAME, t("dialog.diagnostics_exported", path=report_path))
+
     def _resource_path(self, *parts: str) -> Path:
         base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
         return base.joinpath(*parts)
@@ -157,6 +177,7 @@ class TrayMixin:
             pystray.MenuItem(t("tray.toggle"), lambda: self._post_ui(self.toggle_panel)),
             pystray.MenuItem(t("tray.new_note"), lambda: self._post_ui(self._create_new_note_from_tray)),
             pystray.MenuItem(t("tray.settings"), lambda: self._post_ui(self._open_settings)),
+            pystray.MenuItem(t("tray.export_diagnostics"), lambda: self._post_ui(self._export_diagnostic_report)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(t("tray.quit"), lambda: self._post_ui(self._quit)),
         )

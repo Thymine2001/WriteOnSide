@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import traceback
 from pathlib import Path
 from typing import Callable
 
@@ -8,6 +9,7 @@ import tkinter as tk
 from tkinterdnd2 import DND_FILES, DND_TEXT, TkinterDnD
 
 from .config import APP_NAME, AppConfig, load_config, save_config
+from .diagnostics import get_logger, log_exception
 from .editor_images import EditorImageBlock
 from .format_icons import FORMAT_MDL2_FONT, FORMAT_MDL2_KEYS, format_action_glyph
 from .frontmatter import NoteMetadata
@@ -135,6 +137,7 @@ class WriteOnSideApp(
         self.root.configure(bg=g["BG"])
         self._set_window_icon()
         self.root.protocol("WM_DELETE_WINDOW", self.close_panel)
+        self.root.report_callback_exception = self._report_callback_exception
 
         self.screen_w = self.root.winfo_screenwidth()
         self.screen_h = self.root.winfo_screenheight()
@@ -636,6 +639,11 @@ class WriteOnSideApp(
             pass
 
     # ── Entry point ───────────────────────────────────────────────────────────
+
+    def _report_callback_exception(self, exc_type, exc, tb) -> None:
+        log_exception("Unhandled Tk callback exception", exc_type, exc, tb)
+        self._set_error(f"{exc_type.__name__}: {exc}")
+        get_logger().debug("Tk callback traceback:\n%s", "".join(traceback.format_exception(exc_type, exc, tb)))
 
     def run(self) -> None:
         try:

@@ -107,6 +107,7 @@ class I18nMixin:
                 pystray.MenuItem(t("tray.toggle"), lambda: self._post_ui(self.toggle_panel)),
                 pystray.MenuItem(t("tray.new_note"), lambda: self._post_ui(self._create_new_note_from_tray)),
                 pystray.MenuItem(t("tray.settings"), lambda: self._post_ui(self._open_settings)),
+                pystray.MenuItem(t("tray.export_diagnostics"), lambda: self._post_ui(self._export_diagnostic_report)),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem(t("tray.quit"), lambda: self._post_ui(self._quit)),
             )
