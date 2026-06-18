@@ -171,6 +171,7 @@ MESSAGES = {
     "editor.outline": "Esquema",
     "editor.no_headings": "Sem títulos",
     "editor.copy": "copiar",
+    "editor.read_limited": "Pré-visualização de ficheiro grande: são mostrados os primeiros 1,5 MB. Continue no modo de edição.",
     "editor.copied": "Copiado",
     "editor.edit_image": "Editar",
     "editor.placeholder_title": "# Comece uma nota Markdown",

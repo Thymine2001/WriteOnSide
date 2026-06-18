@@ -58,6 +58,7 @@ class I18nTests(unittest.TestCase):
             "tooltip.find_case_sensitive",
             "find.replace",
             "find.replace_all",
+            "editor.read_limited",
         }
         for code, catalog in TRANSLATIONS.items():
             self.assertFalse(required - catalog.keys(), code)

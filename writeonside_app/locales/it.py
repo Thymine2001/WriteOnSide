@@ -171,6 +171,7 @@ MESSAGES = {
     "editor.outline": "Struttura",
     "editor.no_headings": "Nessun titolo",
     "editor.copy": "copia",
+    "editor.read_limited": "Anteprima file grande: vengono mostrati i primi 1,5 MB. Continuare in modalità modifica.",
     "editor.copied": "Copiato",
     "editor.edit_image": "Modifica",
     "editor.placeholder_title": "# Inizia una nota Markdown",

@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows" alt="Windows 10 与 11" />
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/version-0.1.1-2ea44f" alt="版本 0.1.1" />
+  <img src="https://img.shields.io/badge/version-0.1.2-2ea44f" alt="版本 0.1.2" />
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@
 **随边记**（WriteOnSide）将 Markdown 笔记保存在你指定的文件夹中。没有私有数据库，也不强制使用云服务，因此同一 Vault 可在随边记、Obsidian、VS Code 或其他编辑器中打开。
 
 > [!NOTE]
-> 随边记 `0.1.1` 为开发中的预发布版本。升级前请备份重要笔记并查看发行说明。
+> 随边记 `0.1.2` 为开发中的预发布版本。升级前请备份重要笔记并查看发行说明。
 
 ## 安装
 

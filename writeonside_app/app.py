@@ -136,6 +136,13 @@ class WriteOnSideApp(
         self._active_theme: str = self.config.theme
         self._wiki_index_after = None
         self._wiki_completion = None
+        self._outline_cache: tuple[dict[str, int | str], ...] = ()
+        self._outline_cache_lines: tuple[int, ...] = ()
+        self._outline_parent_stacks: tuple[tuple[int, ...], ...] = ()
+        self._outline_code_ranges: tuple[tuple[int, int, str], ...] = ()
+        self._outline_cache_valid = False
+        self._outline_cache_after: str | None = None
+        self._large_highlight_range: tuple[int, int] | None = None
         self._backlinks_popup = None
         self._vault_observer = None
         self._vault_watch_path: Path | None = None
@@ -538,6 +545,9 @@ class WriteOnSideApp(
                 thumb.place(relx=0.5, rely=start, relheight=max(0.06, end - start), width=4, anchor="n")
             if widget is getattr(self, "text", None):
                 self._on_editor_scroll()
+            callback = getattr(widget, "_scroll_refresh_callback", None)
+            if callable(callback):
+                callback()
 
         def scroll_to_pointer(event) -> None:
             height = max(1, track.winfo_height())

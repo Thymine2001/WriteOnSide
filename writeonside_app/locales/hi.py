@@ -171,6 +171,7 @@ MESSAGES = {
     "editor.outline": "रूपरेखा",
     "editor.no_headings": "कोई शीर्षक नहीं",
     "editor.copy": "कॉपी",
+    "editor.read_limited": "बड़ी फ़ाइल पूर्वावलोकन: पहले 1.5 MB दिखाए जा रहे हैं। आगे संपादन मोड में देखें।",
     "editor.copied": "कॉपी किया गया",
     "editor.edit_image": "संपादित करें",
     "editor.placeholder_title": "# Markdown नोट शुरू करें",

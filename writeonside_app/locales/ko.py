@@ -171,6 +171,7 @@ MESSAGES = {
     "editor.outline": "개요",
     "editor.no_headings": "제목 없음",
     "editor.copy": "복사",
+    "editor.read_limited": "대용량 파일 미리보기: 처음 1.5MB만 표시됩니다. 편집 모드에서 계속 확인하세요.",
     "editor.copied": "복사됨",
     "editor.edit_image": "편집",
     "editor.placeholder_title": "# Markdown 노트 시작하기",

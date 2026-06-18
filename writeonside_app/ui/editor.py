@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from pathlib import Path
 from typing import Callable
 
@@ -21,6 +22,13 @@ from ..live_highlight import (
     MD_EDITOR_TAGS,
     apply_live_highlight_plan,
     plan_live_highlight,
+    plan_live_highlight_fragment,
+)
+from ..document_performance import (
+    DocumentMetrics,
+    VISIBLE_HIGHLIGHT_MARGIN,
+    limit_read_mode_content,
+    metrics_for_content,
 )
 from ..markdown import render_markdown
 from ..preview import render_file_preview
@@ -119,6 +127,31 @@ class EditorMixin:
     def _is_markdown_document(self) -> bool:
         return bool(self.current_note_path and is_markdown_note(self.current_note_path))
 
+    def _editor_document_metrics(self) -> DocumentMetrics:
+        try:
+            characters = int(self.text.count("1.0", "end-1c", "chars")[0])
+            lines = int(str(self.text.index("end-1c")).split(".")[0])
+            return DocumentMetrics(characters, lines)
+        except (tk.TclError, TypeError, ValueError):
+            return DocumentMetrics(0, 1)
+
+    def _is_large_editor_document(self) -> bool:
+        return self._editor_document_metrics().is_large
+
+    def _visible_editor_line_range(self) -> tuple[int, int]:
+        metrics = self._editor_document_metrics()
+        try:
+            top = int(str(self.text.index("@0,0")).split(".")[0])
+            height = max(1, self.text.winfo_height())
+            bottom = int(str(self.text.index(f"@0,{height}")).split(".")[0])
+        except (tk.TclError, TypeError, ValueError):
+            top = 1
+            bottom = min(metrics.lines, 200)
+        return (
+            max(1, top - VISIBLE_HIGHLIGHT_MARGIN),
+            min(metrics.lines, bottom + VISIBLE_HIGHLIGHT_MARGIN),
+        )
+
     def _schedule_live_render(self) -> None:
         if self.view_mode != "edit":
             return
@@ -144,6 +177,40 @@ class EditorMixin:
             self._schedule_editor_structure_refresh(reapply_folds=True)
             return
         self._configure_editor_markdown_tags()
+        if self._is_large_editor_document():
+            start_line, end_line = self._visible_editor_line_range()
+            content = self.text.get(f"{start_line}.0", f"{end_line}.end")
+            initial_code, code_language = self._large_document_code_context(start_line)
+            plan = plan_live_highlight_fragment(
+                content,
+                start_line=start_line,
+                initial_code_block=initial_code,
+                initial_code_language=code_language,
+                simplified=True,
+            )
+            previous_range = getattr(self, "_large_highlight_range", None)
+            if previous_range is None:
+                clear_range = plan.line_range
+            else:
+                clear_range = (
+                    min(previous_range[0], plan.line_range[0]),
+                    max(previous_range[1], plan.line_range[1]),
+                )
+            self._large_highlight_range = plan.line_range
+            apply_live_highlight_plan(
+                self.text,
+                plan,
+                clear_tags=_MD_EDITOR_TAGS,
+                clear_line_range=clear_range,
+                validate_color=self._validate_editor_color,
+                configure_color_tag=self._configure_editor_color_tag,
+                editor_color_tags=self._editor_color_tags,
+            )
+            self._clear_editor_image_previews()
+            self._schedule_editor_structure_refresh(reapply_folds=True)
+            return
+
+        self._large_highlight_range = None
         content = self.text.get("1.0", "end-1c")
         try:
             focus_line = int(str(self.text.index("insert")).split(".")[0])
@@ -248,6 +315,9 @@ class EditorMixin:
             self._clear_editor_image_previews()
             return
         if not self.current_note_path or not is_markdown_note(self.current_note_path):
+            self._clear_editor_image_previews()
+            return
+        if self._is_large_editor_document():
             self._clear_editor_image_previews()
             return
         if content is None:
@@ -515,9 +585,11 @@ class EditorMixin:
         self._editor_image_preview_state = None
         self.text.delete("1.0", tk.END)
         self.text.insert("1.0", content)
+        self.text.edit_reset()
         self.text.edit_modified(False)
         self.text.config(fg=globals()["TEXT"])
         self._maybe_show_placeholder()
+        self._rebuild_outline_cache(content)
         self._apply_live_render()
         self._schedule_editor_structure_refresh(reapply_folds=True)
 
@@ -528,6 +600,7 @@ class EditorMixin:
         if self._showing_placeholder:
             return
         self._dirty = True
+        self._invalidate_outline_cache()
         self._set_status_key("status.unsaved")
         self._schedule_live_render()
         self._schedule_autosave()
@@ -1357,19 +1430,41 @@ class EditorMixin:
 
     # ── Outline popup ────────────────────────────────────────────────────────
 
-    def _parse_outline(self) -> list[dict[str, int | str]]:
+    def _invalidate_outline_cache(self) -> None:
+        self._outline_cache_valid = False
+        after_id = getattr(self, "_outline_cache_after", None)
+        if after_id is not None:
+            try:
+                self.root.after_cancel(after_id)
+            except tk.TclError:
+                pass
+        delay = 400 if self._is_large_editor_document() else 180
+        self._outline_cache_after = self.root.after(delay, self._rebuild_outline_cache)
+
+    def _rebuild_outline_cache(self, content: str | None = None) -> None:
+        self._outline_cache_after = None
+        if content is None:
+            content = self._get_editor_content()
         headings: list[dict[str, int | str]] = []
-        in_code_block = False
-        content = self._get_editor_content()
+        code_ranges: list[tuple[int, int, str]] = []
+        code_start: int | None = None
+        code_language = ""
         _header, body = split_front_matter(content)
         body_offset = content[: len(content) - len(body)].count("\n")
+        total_lines = content.count("\n") + 1
         for body_line_no, line in enumerate(body.splitlines(), start=1):
             line_no = body_line_no + body_offset
             stripped = line.strip()
             if stripped.startswith("```"):
-                in_code_block = not in_code_block
+                if code_start is None:
+                    code_start = line_no
+                    code_language = stripped[3:].strip()
+                else:
+                    code_ranges.append((code_start, line_no, code_language))
+                    code_start = None
+                    code_language = ""
                 continue
-            if in_code_block:
+            if code_start is not None:
                 continue
             match = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line)
             if not match:
@@ -1377,7 +1472,59 @@ class EditorMixin:
             title = self._plain_heading_text(match.group(2)).strip()
             if title:
                 headings.append({"level": len(match.group(1)), "title": title, "line": line_no})
-        return headings
+        if code_start is not None:
+            code_ranges.append((code_start, total_lines, code_language))
+
+        occurrences: dict[tuple[int, str], int] = {}
+        stack: list[int] = []
+        outline_stacks: list[tuple[int, ...]] = []
+        for index, heading in enumerate(headings):
+            level = int(heading["level"])
+            identity = (level, str(heading["title"]))
+            occurrences[identity] = occurrences.get(identity, 0) + 1
+            heading["occurrence"] = occurrences[identity]
+            heading["end_line"] = total_lines
+            while stack and int(headings[stack[-1]]["level"]) >= level:
+                previous = stack.pop()
+                headings[previous]["end_line"] = int(heading["line"]) - 1
+            stack.append(index)
+            outline_stacks.append(tuple(stack[-4:]))
+
+        self._outline_cache = tuple(dict(item) for item in headings)
+        self._outline_cache_lines = tuple(int(item["line"]) for item in headings)
+        self._outline_parent_stacks = tuple(outline_stacks)
+        self._outline_code_ranges = tuple(code_ranges)
+        self._outline_cache_metrics = metrics_for_content(content)
+        self._outline_cache_valid = True
+        if hasattr(self, "line_number_canvas"):
+            self._schedule_editor_structure_refresh()
+
+    def _parse_outline(self) -> list[dict[str, int | str]]:
+        cache = getattr(self, "_outline_cache", ())
+        if not getattr(self, "_outline_cache_valid", False):
+            if not cache or not self._is_large_editor_document():
+                self._rebuild_outline_cache()
+                cache = getattr(self, "_outline_cache", ())
+        return [dict(item) for item in cache]
+
+    def _large_document_code_context(self, line_no: int) -> tuple[bool, str]:
+        for start, end, language in getattr(self, "_outline_code_ranges", ()):
+            if start < line_no <= end:
+                return True, language
+            if start >= line_no:
+                break
+        return False, ""
+
+    def _cached_active_heading_stack(self, line_no: int) -> list[dict[str, int | str]]:
+        lines = getattr(self, "_outline_cache_lines", ())
+        index = bisect_right(lines, line_no) - 1
+        if index < 0:
+            return []
+        cache = getattr(self, "_outline_cache", ())
+        stacks = getattr(self, "_outline_parent_stacks", ())
+        if index >= len(stacks):
+            return []
+        return [dict(cache[item]) for item in stacks[index]]
 
     def _plain_heading_text(self, text: str) -> str:
         text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
@@ -1523,15 +1670,18 @@ class EditorMixin:
                 font_size=self.config.font_size,
             )
         else:
+            content, limited = limit_read_mode_content(self._get_editor_content())
             render_markdown(
                 self.read_text,
-                self._get_editor_content(),
+                content,
                 self.current_note_path,
                 self.config.font_family,
                 self.config.font_size,
                 wiki_asset_resolver=self._wiki_asset_resolver,
                 wiki_note_resolver=self._wiki_note_embed,
             )
+            if limited:
+                self.read_text.insert(tk.END, f"\n\n{t('editor.read_limited')}\n", "body")
             self._bind_rendered_wikilinks()
         # Keep widget selectable so users can copy text; edits are blocked by key binding
         self.read_text.configure(state=tk.NORMAL)

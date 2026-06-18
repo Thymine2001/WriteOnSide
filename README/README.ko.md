@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows" alt="Windows 10 및 11" />
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/version-0.1.1-2ea44f" alt="버전 0.1.1" />
+  <img src="https://img.shields.io/badge/version-0.1.2-2ea44f" alt="버전 0.1.2" />
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@
 WriteOnSide(随边记)는 선택한 폴더에 Markdown 노트를 저장합니다. 비공개 데이터베이스나 필수 클라우드 서비스가 없으므로 동일한 Vault를 WriteOnSide, Obsidian, VS Code 또는 다른 편집기에서 열 수 있습니다.
 
 > [!NOTE]
-> WriteOnSide `0.1.1`은 활발히 개발 중인 사전 출시 프로젝트입니다. 업그레이드 전에 중요한 노트를 백업하고 릴리스 노트를 확인하세요.
+> WriteOnSide `0.1.2`은 활발히 개발 중인 사전 출시 프로젝트입니다. 업그레이드 전에 중요한 노트를 백업하고 릴리스 노트를 확인하세요.
 
 <p align="center">
   <img src="../assets/screenshots/writeonside-screenshot.png" alt="Windows의 WriteOnSide 사이드 패널" width="720" />

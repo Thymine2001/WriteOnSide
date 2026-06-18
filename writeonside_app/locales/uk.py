@@ -171,6 +171,7 @@ MESSAGES = {
     "editor.outline": "Структура",
     "editor.no_headings": "Немає заголовків",
     "editor.copy": "копіювати",
+    "editor.read_limited": "Перегляд великого файлу: показано перші 1,5 МБ. Продовжуйте в режимі редагування.",
     "editor.copied": "Скопійовано",
     "editor.edit_image": "Редагувати",
     "editor.placeholder_title": "# Почніть нотатку Markdown",

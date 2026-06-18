@@ -171,6 +171,7 @@ MESSAGES = {
     "editor.outline": "Overzicht",
     "editor.no_headings": "Geen koppen",
     "editor.copy": "kopiëren",
+    "editor.read_limited": "Voorbeeld van groot bestand: de eerste 1,5 MB wordt getoond. Lees verder in de bewerkingsmodus.",
     "editor.copied": "Gekopieerd",
     "editor.edit_image": "Bewerken",
     "editor.placeholder_title": "# Start een Markdown-notitie",

@@ -171,6 +171,7 @@ MESSAGES = {
     "editor.outline": "Gliederung",
     "editor.no_headings": "Keine Überschriften",
     "editor.copy": "kopieren",
+    "editor.read_limited": "Großdateivorschau: Die ersten 1,5 MB werden angezeigt. Im Bearbeitungsmodus weiterlesen.",
     "editor.copied": "Kopiert",
     "editor.edit_image": "Bearbeiten",
     "editor.placeholder_title": "# Starte eine Markdown-Notiz",

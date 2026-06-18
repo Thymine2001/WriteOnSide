@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows" alt="Windows 10 और 11" />
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/version-0.1.1-2ea44f" alt="संस्करण 0.1.1" />
+  <img src="https://img.shields.io/badge/version-0.1.2-2ea44f" alt="संस्करण 0.1.2" />
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@
 WriteOnSide (随边记) आपके चुने हुए फ़ोल्डर में Markdown नोट रखता है। कोई निजी डेटाबेस या अनिवार्य क्लाउड सेवा नहीं है, इसलिए एक ही Vault WriteOnSide, Obsidian, VS Code या किसी अन्य संपादक में खोला जा सकता है।
 
 > [!NOTE]
-> WriteOnSide `0.1.1` सक्रिय विकास में एक प्री-रिलीज़ परियोजना है। अपग्रेड से पहले महत्वपूर्ण नोट का बैकअप लें और रिलीज़ नोट पढ़ें।
+> WriteOnSide `0.1.2` सक्रिय विकास में एक प्री-रिलीज़ परियोजना है। अपग्रेड से पहले महत्वपूर्ण नोट का बैकअप लें और रिलीज़ नोट पढ़ें।
 
 <p align="center">
   <img src="../assets/screenshots/writeonside-screenshot.png" alt="Windows पर WriteOnSide साइड पैनल" width="720" />

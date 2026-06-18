@@ -171,6 +171,7 @@ MESSAGES = {
     "editor.outline": "Plan",
     "editor.no_headings": "Aucun titre",
     "editor.copy": "copier",
+    "editor.read_limited": "Aperçu de fichier volumineux : seuls les premiers 1,5 Mo sont affichés. Continuez en mode édition.",
     "editor.copied": "Copié",
     "editor.edit_image": "Modifier",
     "editor.placeholder_title": "# Commencez une note Markdown",

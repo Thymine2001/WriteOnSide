@@ -309,6 +309,47 @@ def plan_live_highlight(
     )
 
 
+def plan_live_highlight_fragment(
+    content: str,
+    *,
+    start_line: int,
+    initial_code_block: bool = False,
+    initial_code_language: str = "",
+    simplified: bool = True,
+) -> LiveHighlightPlan:
+    """Plan tags for a bounded editor fragment using absolute line numbers."""
+    lines = content.splitlines()
+    line_tags: list[LineTag] = []
+    spans: list[TagSpan] = []
+    colors: list[ColorSpan] = []
+    in_code_block = initial_code_block
+    code_language = initial_code_language
+
+    for offset, line in enumerate(lines):
+        line_no = start_line + offset
+        in_code_block, code_language, planned_tags, planned_spans, planned_colors = _plan_line(
+            line_no,
+            line,
+            in_code_block=in_code_block,
+            code_language=code_language,
+            simplified=simplified,
+        )
+        line_tags.extend(planned_tags)
+        spans.extend(planned_spans)
+        colors.extend(planned_colors)
+
+    end_line = start_line + max(0, len(lines) - 1)
+    return LiveHighlightPlan(
+        frontmatter_end_line=0,
+        line_range=(start_line, end_line),
+        line_tags=tuple(line_tags),
+        spans=tuple(spans),
+        color_spans=tuple(colors),
+        simplified=simplified,
+        partial=True,
+    )
+
+
 def color_tag_name(color: str) -> str:
     digest = sha1(color.casefold().encode("utf-8")).hexdigest()[:12]
     return f"md_color_{digest}"
@@ -334,13 +375,12 @@ def apply_live_highlight_plan(
         editor_color_tags.clear()
     else:
         start_line, end_line = clear_line_range
-        for line_no in range(start_line, end_line + 1):
-            line_start = f"{line_no}.0"
-            line_end = f"{line_no}.end"
-            for tag in clear_tags:
-                text_widget.tag_remove(tag, line_start, line_end)
-            for tag in list(editor_color_tags):
-                text_widget.tag_remove(tag, line_start, line_end)
+        line_start = f"{start_line}.0"
+        line_end = f"{end_line}.end"
+        for tag in clear_tags:
+            text_widget.tag_remove(tag, line_start, line_end)
+        for tag in list(editor_color_tags):
+            text_widget.tag_remove(tag, line_start, line_end)
 
     if plan.frontmatter_end_line:
         text_widget.tag_add("md_frontmatter", "1.0", f"{plan.frontmatter_end_line + 1}.0")

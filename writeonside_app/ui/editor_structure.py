@@ -33,6 +33,8 @@ class EditorStructureMixin:
 
     def _on_editor_scroll(self) -> None:
         self._schedule_editor_structure_refresh()
+        if getattr(self, "_is_large_editor_document", lambda: False)():
+            self._schedule_live_render()
 
     def _schedule_editor_structure_refresh(self, reapply_folds: bool = False) -> None:
         if reapply_folds:
@@ -69,21 +71,7 @@ class EditorStructureMixin:
         )
 
     def _heading_sections(self) -> list[dict[str, int | str]]:
-        headings = self._parse_outline() if self._is_markdown_document() else []
-        total_lines = int(self.text.index("end-1c").split(".")[0])
-        occurrences: dict[tuple[int, str], int] = {}
-        for index, heading in enumerate(headings):
-            level = int(heading["level"])
-            identity = (level, str(heading["title"]))
-            occurrences[identity] = occurrences.get(identity, 0) + 1
-            heading["occurrence"] = occurrences[identity]
-            end_line = total_lines
-            for following in headings[index + 1 :]:
-                if int(following["level"]) <= level:
-                    end_line = int(following["line"]) - 1
-                    break
-            heading["end_line"] = max(int(heading["line"]), end_line)
-        return headings
+        return self._parse_outline() if self._is_markdown_document() else []
 
     def _apply_heading_folds(self) -> None:
         for tag in self._fold_tags:
@@ -190,14 +178,7 @@ class EditorStructureMixin:
         if not self._is_markdown_document():
             return []
         top_line = int(self.text.index("@0,0").split(".")[0])
-        stack: list[dict[str, int | str]] = []
-        for heading in self._heading_sections():
-            if int(heading["line"]) > top_line:
-                break
-            level = int(heading["level"])
-            stack = [item for item in stack if int(item["level"]) < level]
-            stack.append(heading)
-        return stack[-4:]
+        return self._cached_active_heading_stack(top_line)
 
     def _refresh_sticky_headings(self) -> None:
         for row in self._sticky_heading_rows:

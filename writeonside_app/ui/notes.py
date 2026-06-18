@@ -19,7 +19,8 @@ from ..frontmatter import note_template, parse_front_matter
 from ..diagnostics import get_logger
 from ..i18n import t
 from ..live_highlight import MD_EDITOR_TAGS, apply_live_highlight_plan, plan_live_highlight
-from ..markdown import render_markdown
+from ..live_highlight import plan_live_highlight_fragment
+from ..document_performance import DocumentMetrics, VISIBLE_HIGHLIGHT_MARGIN
 from ..preview import render_file_preview
 from ..notes.service import rename_target, unique_note_path
 from ..storage import read_text_file, safe_write_text
@@ -404,15 +405,7 @@ class NotesMixin:
         self._update_view_buttons()
         save_config(self.config)
         if self.view_mode == "read":
-            render_markdown(
-                self.read_text,
-                content,
-                self.current_note_path,
-                self.config.font_family,
-                self.config.font_size,
-                wiki_asset_resolver=self._wiki_asset_resolver,
-            )
-            self._bind_rendered_wikilinks()
+            self._render_read_content()
 
     def _load_initial_note(self) -> None:
         root = self._workspace_dir()
@@ -609,7 +602,9 @@ class NotesMixin:
             "image_last_width": None,
             "image_editing_keys": set(),
             "image_preview_busy": False,
+            "large_highlight_range": None,
         }
+        text._scroll_refresh_callback = lambda n=note: self._schedule_split_live_render(n)
         self._split_notes.append(note)
         save_btn.bind("<Button-1>", lambda _event, n=note: self._save_split_note(n, show_indicator=True))
         close_btn.bind("<Button-1>", lambda _event, f=frame: self._close_split_note(f))
@@ -659,6 +654,7 @@ class NotesMixin:
         note["dirty"] = False
         text.delete("1.0", tk.END)
         text.insert("1.0", content)
+        text.edit_reset()
         text.edit_modified(False)
         note["loading"] = False
         self._update_split_note_title(note)
@@ -782,6 +778,48 @@ class NotesMixin:
                 text.tag_raise("sel")
             return
         self._configure_split_markdown_tags(text)
+        try:
+            metrics = DocumentMetrics(
+                int(text.count("1.0", "end-1c", "chars")[0]),
+                int(str(text.index("end-1c")).split(".")[0]),
+            )
+        except (tk.TclError, TypeError, ValueError):
+            metrics = DocumentMetrics(0, 1)
+        if metrics.is_large:
+            try:
+                top = int(str(text.index("@0,0")).split(".")[0])
+                bottom = int(str(text.index(f"@0,{max(1, text.winfo_height())}")).split(".")[0])
+            except (tk.TclError, TypeError, ValueError):
+                top, bottom = 1, min(metrics.lines, 200)
+            start_line = max(1, top - VISIBLE_HIGHLIGHT_MARGIN)
+            end_line = min(metrics.lines, bottom + VISIBLE_HIGHLIGHT_MARGIN)
+            fragment = text.get(f"{start_line}.0", f"{end_line}.end")
+            plan = plan_live_highlight_fragment(fragment, start_line=start_line, simplified=True)
+            previous_range = note.get("large_highlight_range")
+            clear_range = plan.line_range
+            if isinstance(previous_range, tuple) and len(previous_range) == 2:
+                clear_range = (
+                    min(int(previous_range[0]), plan.line_range[0]),
+                    max(int(previous_range[1]), plan.line_range[1]),
+                )
+            note["large_highlight_range"] = plan.line_range
+            color_tags = note.setdefault("color_tags", set())
+            if not isinstance(color_tags, set):
+                color_tags = set()
+                note["color_tags"] = color_tags
+            apply_live_highlight_plan(
+                text,
+                plan,
+                clear_tags=MD_EDITOR_TAGS,
+                clear_line_range=clear_range,
+                validate_color=lambda color, widget=text: self._validate_split_color(widget, color),
+                configure_color_tag=lambda tag, color, widget=text: self._configure_split_color_tag(widget, tag, color),
+                editor_color_tags=color_tags,
+            )
+            self._clear_split_image_previews(note)
+            return
+
+        note["large_highlight_range"] = None
         content = text.get("1.0", "end-1c")
         try:
             focus_line = int(str(text.index("insert")).split(".")[0])
@@ -878,6 +916,16 @@ class NotesMixin:
         text = note.get("text")
         path = Path(note["path"])
         if not isinstance(text, tk.Text) or not is_markdown_note(path):
+            self._clear_split_image_previews(note)
+            return
+        try:
+            metrics = DocumentMetrics(
+                int(text.count("1.0", "end-1c", "chars")[0]),
+                int(str(text.index("end-1c")).split(".")[0]),
+            )
+        except (tk.TclError, TypeError, ValueError):
+            metrics = DocumentMetrics(0, 1)
+        if metrics.is_large:
             self._clear_split_image_previews(note)
             return
         if content is None:
