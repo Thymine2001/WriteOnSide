@@ -27,6 +27,7 @@ class SyntaxSpan:
 
 
 _LANGUAGE_ALIASES = {
+    "htm": "html",
     "shell": "bash",
     "sh": "bash",
     "zsh": "bash",
@@ -48,13 +49,39 @@ _SOURCE_LANGUAGE_BY_SUFFIX = {
     ".hh": "cpp",
     ".hpp": "cpp",
     ".hxx": "cpp",
+    ".bat": "batch",
+    ".cmd": "batch",
+    ".cs": "csharp",
+    ".css": "css",
+    ".go": "go",
     ".htm": "html",
     ".html": "html",
+    ".ini": "ini",
+    ".java": "java",
+    ".js": "javascript",
+    ".json": "json",
+    ".jsx": "jsx",
+    ".less": "less",
+    ".lua": "lua",
+    ".php": "php",
+    ".ps1": "powershell",
     ".py": "python",
     ".pyw": "python",
     ".r": "r",
     ".rmd": "r",
+    ".rb": "ruby",
     ".rs": "rust",
+    ".sass": "sass",
+    ".scss": "scss",
+    ".sh": "bash",
+    ".sql": "sql",
+    ".svg": "xml",
+    ".toml": "toml",
+    ".ts": "typescript",
+    ".tsx": "tsx",
+    ".xml": "xml",
+    ".yaml": "yaml",
+    ".yml": "yaml",
 }
 
 
@@ -85,6 +112,18 @@ def style_for_background(background: str) -> str:
     return "default" if _hex_luminance(background) > 0.55 else "monokai"
 
 
+def _style_color_for_token(style, token_type) -> str | None:
+    current = token_type
+    while current is not None:
+        try:
+            token_style = style.style_for_token(current)
+        except KeyError:
+            current = getattr(current, "parent", None)
+            continue
+        return token_style.get("color")
+    return None
+
+
 def code_token_spans(
     code: str,
     language: str | None,
@@ -110,8 +149,7 @@ def code_token_spans(
     for token_type, value in lex(code, lexer):
         end = position + len(value)
         if value.strip():
-            token_style = style.style_for_token(token_type)
-            color = token_style.get("color")
+            color = _style_color_for_token(style, token_type)
             if color:
                 spans.append(SyntaxSpan(position, end, f"#{color}"))
         position = end
@@ -145,7 +183,7 @@ def source_token_spans(
     for token_type, value in lex(code, lexer):
         end = position + len(value)
         if value.strip():
-            color = style.style_for_token(token_type).get("color")
+            color = _style_color_for_token(style, token_type)
             if color:
                 spans.append(SyntaxSpan(position, end, f"#{color}"))
         position = end

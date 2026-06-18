@@ -45,6 +45,12 @@ class SyntaxHighlightTests(unittest.TestCase):
     def test_source_files_use_filename_lexer_highlighting(self) -> None:
         samples = {
             "page.html": "<main class=\"page\">Hello</main>\n",
+            "style.css": ".page { color: red; }\n",
+            "script.js": "const value = 1;\n",
+            "component.ts": "const value: number = 1;\n",
+            "data.json": '{"name": "WriteOnSide", "ok": true}\n',
+            "config.yaml": "name: WriteOnSide\nok: true\n",
+            "layout.xml": "<root><item /></root>\n",
             "script.py": "def demo():\n    return 1\n",
             "report.rmd": "value <- function(x) x + 1\n",
             "main.rs": "fn main() { println!(\"hello\"); }\n",
