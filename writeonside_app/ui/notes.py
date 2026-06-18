@@ -365,6 +365,12 @@ class NotesMixin:
                 pass
             self._preview_render_after = None
         if not restore_note:
+            self.edit_frame.pack_forget()
+            self.read_frame.pack_forget()
+            if self.view_mode == "read":
+                self.read_frame.pack(fill="both", expand=True)
+            else:
+                self.edit_frame.pack(fill="both", expand=True)
             return
         self.edit_frame.pack_forget()
         self.read_frame.pack_forget()

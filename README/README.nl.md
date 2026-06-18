@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows" alt="Windows 10 en 11" />
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/version-0.1.0-2ea44f" alt="Versie 0.1.0" />
+  <img src="https://img.shields.io/badge/version-0.1.1-2ea44f" alt="Versie 0.1.1" />
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@
 WriteOnSide (随边记) bewaart Markdown-notities in een map naar keuze. Er is geen privédatabase en geen verplichte clouddienst, dus dezelfde Vault kan worden geopend in WriteOnSide, Obsidian, VS Code of een andere editor.
 
 > [!NOTE]
-> WriteOnSide `0.1.0` is een pre-releaseproject in actieve ontwikkeling. Maak back-ups van belangrijke notities en lees de release-opmerkingen vóór een upgrade.
+> WriteOnSide `0.1.1` is een pre-releaseproject in actieve ontwikkeling. Maak back-ups van belangrijke notities en lees de release-opmerkingen vóór een upgrade.
 
 <p align="center">
   <img src="../assets/screenshots/writeonside-screenshot.png" alt="WriteOnSide-zijpaneel op Windows" width="720" />

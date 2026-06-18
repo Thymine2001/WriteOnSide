@@ -157,6 +157,8 @@ def load_config() -> AppConfig:
     raw_theme = merged.get("theme", "")
     if not isinstance(raw_theme, str) or not raw_theme.strip():
         merged["theme"] = cfg.theme
+    elif raw_theme == "tokyo_night":
+        merged["theme"] = "mid_night"
     return AppConfig(**merged)
 
 

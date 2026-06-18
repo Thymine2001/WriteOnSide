@@ -158,6 +158,46 @@ class TextFileTests(unittest.TestCase):
             self.assertTrue(app._open_note_split(fifth))
             self.assertIn("4", app.error)
 
+    def test_closing_preview_without_restore_resyncs_visible_frame(self):
+        class FrameSpy:
+            def __init__(self) -> None:
+                self.packed = False
+                self.pack_calls: list[dict[str, str]] = []
+
+            def pack(self, **kwargs: str) -> None:
+                self.packed = True
+                self.pack_calls.append(kwargs)
+
+            def pack_forget(self) -> None:
+                self.packed = False
+
+        class RootSpy:
+            def after_cancel(self, _after_id: str) -> None:
+                return None
+
+        class PreviewHarness(NotesMixin):
+            def __init__(self, view_mode: str) -> None:
+                self.preview_path = Path("preview.bin")
+                self._preview_previous_mode = view_mode
+                self._preview_render_after = "after-id"
+                self.view_mode = "read"
+                self.root = RootSpy()
+                self.edit_frame = FrameSpy()
+                self.read_frame = FrameSpy()
+
+        edit_app = PreviewHarness("edit")
+        edit_app.read_frame.packed = True
+        edit_app._close_file_preview(restore_note=False)
+        self.assertIsNone(edit_app.preview_path)
+        self.assertTrue(edit_app.edit_frame.packed)
+        self.assertFalse(edit_app.read_frame.packed)
+
+        read_app = PreviewHarness("read")
+        read_app.read_frame.packed = True
+        read_app._close_file_preview(restore_note=False)
+        self.assertTrue(read_app.read_frame.packed)
+        self.assertFalse(read_app.edit_frame.packed)
+
 
 if __name__ == "__main__":
     unittest.main()

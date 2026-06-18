@@ -41,6 +41,17 @@ class ConfigTests(unittest.TestCase):
                 config = load_config()
             self.assertEqual("zh", config.language)
 
+    def test_load_config_migrates_tokyo_night_theme_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir)
+            config_file = config_dir / "config.json"
+            config_file.write_text(json.dumps({"theme": "tokyo_night"}), encoding="utf-8")
+            with patch("writeonside_app.config.APP_DATA_DIR", config_dir), patch(
+                "writeonside_app.config.CONFIG_FILE", config_file
+            ):
+                config = load_config()
+            self.assertEqual("mid_night", config.theme)
+
     def test_save_config_writes_valid_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = Path(temp_dir)

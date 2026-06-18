@@ -97,8 +97,17 @@ class ThemePaletteTests(unittest.TestCase):
     def test_icon_themes_have_complete_palettes(self) -> None:
         dark = ThemePalette.from_dict(get_theme("icon_dark"))
         light = ThemePalette.from_dict(get_theme("icon_light"))
-        self.assertEqual("#a65bd4", dark.ACCENT)
+        self.assertEqual("#b45cff", dark.ACCENT)
         self.assertEqual("#df7134", light.ACCENT)
+
+    def test_named_theme_updates_are_available(self) -> None:
+        mid_night = get_theme("mid_night")
+        black_gold = ThemePalette.from_dict(get_theme("black_gold"))
+        morandi = ThemePalette.from_dict(get_theme("morandi"))
+
+        self.assertEqual("Mid Night", mid_night["NAME"])
+        self.assertEqual("#cfb991", black_gold.ACCENT)
+        self.assertEqual("#8fa6a0", morandi.ACCENT)
 
     def test_active_theme_updates_current_palette(self) -> None:
         active = ActiveTheme()
