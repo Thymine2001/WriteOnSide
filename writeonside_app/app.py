@@ -13,7 +13,13 @@ from .diagnostics import get_logger, log_exception
 from .editor_images import EditorImageBlock
 from .format_icons import FORMAT_MDL2_FONT, FORMAT_MDL2_KEYS, format_action_glyph
 from .frontmatter import NoteMetadata
-from .platform import SingleInstanceGuard, enable_per_monitor_dpi, is_startup_enabled
+from .platform import (
+    SingleInstanceGuard,
+    enable_per_monitor_dpi,
+    is_startup_enabled,
+    is_startup_registered,
+    set_startup_enabled,
+)
 from .theme import *  # noqa: F401,F403
 
 from .ui.theme_utils import ThemeMixin
@@ -52,7 +58,19 @@ class WriteOnSideApp(
         initial_file: Path | None = None,
     ) -> None:
         self.config = load_config()
-        self.config.start_on_boot = is_startup_enabled()
+        startup_preference = self.config.start_on_boot
+        startup_registered = is_startup_registered()
+        if startup_preference and not startup_registered:
+            try:
+                set_startup_enabled(True)
+                self.config.start_on_boot = True
+            except OSError as exc:
+                self.config.start_on_boot = False
+                get_logger().warning("Unable to repair Windows startup registration: %s", exc)
+        else:
+            # Preserve compatibility with older configs that did not persist
+            # the preference, while respecting an explicit Task Manager disable.
+            self.config.start_on_boot = is_startup_enabled()
         self._init_i18n()
         self._instance_guard = instance_guard
         self._instance_poll_after: str | None = None

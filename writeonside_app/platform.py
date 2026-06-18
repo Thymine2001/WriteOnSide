@@ -11,6 +11,9 @@ from pathlib import Path
 APP_REGISTRY_NAME = "WriteOnSide"
 FILE_PROG_ID = "WriteOnSide.TextFile"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+STARTUP_APPROVED_RUN_KEY = (
+    r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
+)
 MUTEX_NAME = r"Local\WriteOnSide.SingleInstance"
 ACTIVATE_EVENT_NAME = r"Local\WriteOnSide.Activate"
 OPEN_REQUEST_PATH = Path(tempfile.gettempdir()) / "WriteOnSide-open-request.json"
@@ -248,7 +251,7 @@ def register_file_open_support(extensions) -> bool:
         return False
 
 
-def is_startup_enabled() -> bool:
+def is_startup_registered() -> bool:
     try:
         import winreg
 
@@ -256,6 +259,28 @@ def is_startup_enabled() -> bool:
             value, _value_type = winreg.QueryValueEx(key, APP_REGISTRY_NAME)
         registered = str(value).strip()
         return bool(registered) and registered.casefold() == startup_command().casefold()
+    except OSError:
+        return False
+
+
+def is_startup_enabled() -> bool:
+    if not is_startup_registered():
+        return False
+    try:
+        import winreg
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, STARTUP_APPROVED_RUN_KEY) as key:
+                approval, _value_type = winreg.QueryValueEx(key, APP_REGISTRY_NAME)
+        except OSError:
+            return True
+        # Windows Startup Apps stores 0x03 as disabled and 0x02 as enabled.
+        # Removing the value lets Windows recreate an enabled approval record.
+        return not (
+            isinstance(approval, (bytes, bytearray))
+            and len(approval) > 0
+            and approval[0] == 0x03
+        )
     except OSError:
         return False
 
@@ -271,6 +296,26 @@ def set_startup_enabled(enabled: bool) -> None:
                 winreg.DeleteValue(key, APP_REGISTRY_NAME)
             except FileNotFoundError:
                 pass
+
+    # A Run value can still be blocked when Task Manager's Startup Apps page
+    # has a stale disabled record. An explicit choice in WriteOnSide should
+    # reset that record for both enable and disable transitions.
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            STARTUP_APPROVED_RUN_KEY,
+            0,
+            winreg.KEY_SET_VALUE,
+        ) as key:
+            try:
+                winreg.DeleteValue(key, APP_REGISTRY_NAME)
+            except FileNotFoundError:
+                pass
+    except FileNotFoundError:
+        pass
+
+    if is_startup_enabled() != bool(enabled):
+        raise OSError("Windows did not retain the WriteOnSide startup setting")
 
 def set_timer_resolution(enabled: bool) -> None:
     """Raise the Windows timer resolution to 1 ms while animating.
