@@ -324,7 +324,12 @@ class SettingsMixin:
             max_rows: int = 8,
             preview_font: bool = False,
         ) -> dict[str, Callable]:
-            state = {"open": False, "values": list(values)}
+            state = {
+                "open": False,
+                "values": list(values),
+                "win_click_bind": None,
+                "root_click_bind": None,
+            }
             shell = tk.Frame(parent, bg=g["SURFACE"], highlightthickness=1, highlightbackground=g["BORDER"])
             shell.pack(fill="x")
             button = tk.Frame(shell, bg=g["SURFACE"], cursor="hand2", padx=10, pady=7)
@@ -373,6 +378,14 @@ class SettingsMixin:
                 if not state["open"]:
                     return
                 state["open"] = False
+                for widget, key in ((win, "win_click_bind"), (self.root, "root_click_bind")):
+                    bind_id = state.get(key)
+                    if bind_id:
+                        try:
+                            widget.unbind("<ButtonPress-1>", str(bind_id))
+                        except tk.TclError:
+                            pass
+                        state[key] = None
                 popup = state.get("popup")
                 state["popup"] = None
                 state["listbox"] = None
@@ -496,6 +509,35 @@ class SettingsMixin:
                 popup.bind("<Escape>", lambda _event: close_dropdown() or "break")
                 popup.lift()
                 popup.after_idle(lambda: (update_scrollbar(*listbox.yview()), listbox.focus_set()))
+                popup.after_idle(bind_outside_click)
+
+            def widget_contains_pointer(widget: tk.Widget | None, event) -> bool:
+                if widget is None:
+                    return False
+                try:
+                    x = event.x_root
+                    y = event.y_root
+                    left = widget.winfo_rootx()
+                    top = widget.winfo_rooty()
+                    return left <= x < left + widget.winfo_width() and top <= y < top + widget.winfo_height()
+                except tk.TclError:
+                    return False
+
+            def close_if_outside(event) -> None:
+                if not state["open"]:
+                    return
+                popup = state.get("popup")
+                if widget_contains_pointer(shell, event) or widget_contains_pointer(popup, event):
+                    return
+                close_dropdown()
+
+            def bind_outside_click() -> None:
+                if not state["open"]:
+                    return
+                if state.get("win_click_bind") is None:
+                    state["win_click_bind"] = win.bind("<ButtonPress-1>", close_if_outside, add="+")
+                if state.get("root_click_bind") is None:
+                    state["root_click_bind"] = self.root.bind("<ButtonPress-1>", close_if_outside, add="+")
 
             def choose_index(index: int) -> str:
                 values_now = list(state["values"])
@@ -1143,6 +1185,7 @@ class SettingsMixin:
             try:
                 panel_width = int(e_width.get().strip())
                 explorer_width = int(e_explorer.get().strip())
+                nav_width = int(e_nav.get().strip())
             except ValueError:
                 return
             work_width = max(1, self.work_right - self.work_left)
@@ -1150,12 +1193,16 @@ class SettingsMixin:
             explorer_min, explorer_max = explorer_width_limits(work_width)
             if not panel_min <= panel_width <= panel_max or not explorer_min <= explorer_width <= explorer_max:
                 return
-            if panel_width == self.panel_w and explorer_width == self.explorer_w:
+            if not 4 <= nav_width <= 24:
+                return
+            if panel_width == self.panel_w and explorer_width == self.explorer_w and nav_width == self.nav_w:
                 return
             self.panel_w = panel_width
             self.explorer_w = explorer_width
+            self.nav_w = nav_width
             self.config.width = panel_width
             self.config.explorer_width = explorer_width
+            self.config.nav_width = nav_width
             self._apply_live_width_layout()
             self._refresh_after_width_drag()
             msg.config(text=t("settings.msg.width_preview"), fg=globals()["TEXT"])
@@ -1171,7 +1218,7 @@ class SettingsMixin:
                     pass
             width_preview_after = win.after(140, apply_width_preview)
 
-        for width_entry in (e_width, e_explorer):
+        for width_entry in (e_width, e_explorer, e_nav):
             width_entry.bind("<KeyRelease>", schedule_width_preview)
             width_entry.bind("<Return>", lambda _event: apply_width_preview())
             width_entry.bind("<FocusOut>", lambda _event: apply_width_preview())
@@ -1536,7 +1583,7 @@ class SettingsMixin:
                     fg=_g["DANGER"],
                 )
                 return False
-            if not 8 <= nav_width <= 32:
+            if not 4 <= nav_width <= 24:
                 msg.config(text=t("settings.msg.nav_width_range"), fg=_g["DANGER"])
                 return False
             if not 0.30 <= alpha <= 1.0:
@@ -1566,6 +1613,11 @@ class SettingsMixin:
             except OSError as exc:
                 msg.config(text=t("settings.msg.startup_failed", exc=exc), fg=_g["DANGER"])
                 return False
+            try:
+                win.withdraw()
+                win.update_idletasks()
+            except tk.TclError:
+                pass
             workspace_changed = apply_workspace_only()
             previous_position = self.config.app_position
             previous_panel_width = self.panel_w
@@ -1644,6 +1696,11 @@ class SettingsMixin:
                 if not save_settings():
                     return
             else:
+                try:
+                    win.withdraw()
+                    win.update_idletasks()
+                except tk.TclError:
+                    pass
                 discard_settings()
             try:
                 canvas.unbind_all("<MouseWheel>")

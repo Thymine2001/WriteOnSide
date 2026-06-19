@@ -123,9 +123,7 @@ def load_config() -> AppConfig:
         clamp_int(merged["explorer_width"], explorer_min, explorer_max, default_explorer_width(work_width)),
         work_width,
     )
-    merged["nav_width"] = clamp_int(merged["nav_width"], 8, 32, cfg.nav_width)
-    if merged["nav_width"] == 10:
-        merged["nav_width"] = cfg.nav_width
+    merged["nav_width"] = clamp_int(merged["nav_width"], 4, 24, cfg.nav_width)
     merged["auto_save_delay_ms"] = clamp_int(
         merged["auto_save_delay_ms"], 300, 5000, cfg.auto_save_delay_ms
     )

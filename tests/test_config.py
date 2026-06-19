@@ -52,6 +52,18 @@ class ConfigTests(unittest.TestCase):
                 config = load_config()
             self.assertEqual("mid_night", config.theme)
 
+    def test_load_config_preserves_nav_width_setting(self) -> None:
+        for nav_width in (4, 10, 24):
+            with self.subTest(nav_width=nav_width), tempfile.TemporaryDirectory() as temp_dir:
+                config_dir = Path(temp_dir)
+                config_file = config_dir / "config.json"
+                config_file.write_text(json.dumps({"nav_width": nav_width}), encoding="utf-8")
+                with patch("writeonside_app.config.APP_DATA_DIR", config_dir), patch(
+                    "writeonside_app.config.CONFIG_FILE", config_file
+                ):
+                    config = load_config()
+                self.assertEqual(nav_width, config.nav_width)
+
     def test_save_config_writes_valid_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = Path(temp_dir)

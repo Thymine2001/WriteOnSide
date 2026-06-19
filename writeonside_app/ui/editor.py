@@ -1760,10 +1760,50 @@ class EditorMixin:
         y = max(self.work_top + 8, min(y, self.work_bottom - height - 8))
         popup.geometry(f"{width}x{height}+{x}+{y}")
         popup.bind("<Escape>", lambda _e: self._close_outline_popup() or "break")
+        popup.after_idle(lambda: self._bind_outline_outside_click(popup))
         popup.focus_force()
+
+    def _bind_outline_outside_click(self, popup: tk.Toplevel) -> None:
+        if getattr(self, "_outline_popup", None) is not popup:
+            return
+
+        def widget_contains_pointer(widget: tk.Widget | None, event) -> bool:
+            if widget is None:
+                return False
+            try:
+                x = event.x_root
+                y = event.y_root
+                left = widget.winfo_rootx()
+                top = widget.winfo_rooty()
+                return left <= x < left + widget.winfo_width() and top <= y < top + widget.winfo_height()
+            except tk.TclError:
+                return False
+
+        def close_if_outside(event) -> None:
+            current = getattr(self, "_outline_popup", None)
+            if current is None:
+                return
+            if widget_contains_pointer(current, event) or widget_contains_pointer(self.outline_btn, event):
+                return
+            self._close_outline_popup()
+
+        bindings: list[tuple[tk.Widget, str, str]] = []
+        for widget in (self.root, popup):
+            try:
+                bind_id = widget.bind("<ButtonPress-1>", close_if_outside, add="+")
+                bindings.append((widget, "<ButtonPress-1>", bind_id))
+            except tk.TclError:
+                pass
+        self._outline_outside_bindings = bindings
 
     def _close_outline_popup(self) -> None:
         popup = getattr(self, "_outline_popup", None)
+        for widget, sequence, bind_id in getattr(self, "_outline_outside_bindings", []):
+            try:
+                widget.unbind(sequence, bind_id)
+            except tk.TclError:
+                pass
+        self._outline_outside_bindings = []
         if popup is not None:
             try:
                 popup.destroy()
