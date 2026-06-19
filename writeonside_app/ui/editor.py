@@ -1637,25 +1637,119 @@ class EditorMixin:
         if not headings:
             tk.Label(list_frame, text="No headings", bg=g["SURFACE_2"], fg=g["MUTED"], font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=8, pady=10)
         else:
-            for item in headings[:80]:
+            outline_list = tk.Listbox(
+                list_frame,
+                bg=g["SURFACE_2"],
+                fg=g["TEXT"],
+                selectbackground=g["ACCENT"],
+                selectforeground=self._contrast_text(g["ACCENT"]),
+                activestyle="none",
+                relief="flat",
+                borderwidth=0,
+                highlightthickness=0,
+                font=("Segoe UI", 9),
+                exportselection=False,
+            )
+            scroll_canvas = tk.Canvas(
+                list_frame,
+                bg=g["SURFACE_2"],
+                width=12,
+                highlightthickness=0,
+                borderwidth=0,
+                cursor="sb_v_double_arrow",
+            )
+            scroll_thumb = {
+                "id": None,
+                "drag_y": 0,
+                "first": 0.0,
+                "last": 1.0,
+            }
+
+            def update_scrollbar(first: str, last: str) -> None:
+                start = float(first)
+                end = float(last)
+                scroll_thumb["first"] = start
+                scroll_thumb["last"] = end
+                if start <= 0 and end >= 1:
+                    scroll_canvas.pack_forget()
+                    return
+                if not scroll_canvas.winfo_ismapped():
+                    scroll_canvas.pack(side="right", fill="y")
+                scroll_canvas.delete("all")
+                height_now = max(1, scroll_canvas.winfo_height())
+                y1 = max(3, int(start * height_now))
+                y2 = min(height_now - 3, max(y1 + 18, int(end * height_now)))
+                scroll_canvas.create_line(
+                    6,
+                    4,
+                    6,
+                    height_now - 4,
+                    fill=g["BORDER"],
+                    width=4,
+                    capstyle=tk.ROUND,
+                )
+                scroll_thumb["id"] = scroll_canvas.create_line(
+                    6,
+                    y1,
+                    6,
+                    y2,
+                    fill=g["ACCENT"],
+                    width=5,
+                    capstyle=tk.ROUND,
+                )
+
+            def redraw_scrollbar(_event=None) -> None:
+                update_scrollbar(str(scroll_thumb["first"]), str(scroll_thumb["last"]))
+
+            def scrollbar_to_pointer(event) -> str:
+                height_now = max(1, scroll_canvas.winfo_height())
+                outline_list.yview_moveto(max(0.0, min(1.0, event.y / height_now)))
+                return "break"
+
+            def start_scroll_drag(event) -> str:
+                first, _last = outline_list.yview()
+                scroll_thumb["drag_y"] = event.y_root
+                scroll_thumb["first"] = first
+                return "break"
+
+            def drag_scroll_thumb(event) -> str:
+                height_now = max(1, scroll_canvas.winfo_height())
+                delta = (event.y_root - scroll_thumb["drag_y"]) / height_now
+                outline_list.yview_moveto(max(0.0, min(1.0, scroll_thumb["first"] + delta)))
+                return "break"
+
+            outline_list.configure(yscrollcommand=update_scrollbar)
+            scroll_canvas.bind("<Configure>", redraw_scrollbar)
+            scroll_canvas.bind("<Button-1>", scrollbar_to_pointer)
+            scroll_canvas.bind("<ButtonPress-1>", start_scroll_drag, add="+")
+            scroll_canvas.bind("<B1-Motion>", drag_scroll_thumb)
+            outline_list.pack(side="left", fill="both", expand=True)
+
+            outline_items: list[tuple[int, str]] = []
+            for item in headings:
                 level = int(item["level"])
                 title = str(item["title"])
                 line = int(item["line"])
-                label = tk.Label(
-                    list_frame,
-                    text=title,
-                    bg=g["SURFACE_2"],
-                    fg=g["TEXT"] if level <= 2 else g["TEXT_SOFT"],
-                    font=("Segoe UI", 9, "bold" if level == 1 else "normal"),
-                    anchor="w",
-                    cursor="hand2",
-                    padx=8 + (level - 1) * 12,
-                    pady=4,
-                )
-                label.pack(fill="x")
-                label.bind("<Button-1>", lambda _e, target=line, name=title: self._jump_to_outline(target, name))
-                label.bind("<Enter>", lambda _e, w=label: w.config(bg=globals()["BORDER"]))
-                label.bind("<Leave>", lambda _e, w=label: w.config(bg=globals()["SURFACE_2"]))
+                outline_items.append((line, title))
+                outline_list.insert(tk.END, f"{'  ' * max(0, level - 1)}{title}")
+
+            def jump_selected(_event=None) -> str:
+                selection = outline_list.curselection()
+                if not selection:
+                    return "break"
+                line, title = outline_items[int(selection[0])]
+                self._jump_to_outline(line, title)
+                return "break"
+
+            outline_list.bind("<ButtonRelease-1>", jump_selected)
+            outline_list.bind("<Return>", jump_selected)
+            outline_list.bind("<Escape>", lambda _event: self._close_outline_popup() or "break")
+
+            # The old Label-per-heading UI became very expensive for large files.
+            # Listbox keeps thousands of headings lightweight while preserving click-to-jump.
+            if headings:
+                outline_list.selection_set(0)
+                outline_list.activate(0)
 
         popup.update_idletasks()
         width = min(300, max(240, self.panel_w - 24))
@@ -1681,9 +1775,17 @@ class EditorMixin:
         self._close_outline_popup()
         g = globals()
         if self.view_mode == "edit":
+            if self._is_large_editor_document():
+                self._jump_to_editor_source_line(line_no, fast=True)
+                return
             widget = self.text
             index = f"{line_no}.0"
             widget.focus_set()
+        elif getattr(self, "_read_content_limited", False) or (
+            self.current_note_path is not None and is_markdown_note(self.current_note_path)
+        ):
+            self._jump_to_outline_source_line(line_no)
+            return
         else:
             widget = self.read_text
             index = self._find_rendered_heading_index(line_no, title)
@@ -1697,6 +1799,44 @@ class EditorMixin:
             widget.mark_set(tk.INSERT, index)
             widget.see(index)
             self.root.after(1600, lambda w=widget: w.tag_remove("outline_current", "1.0", tk.END))
+        except tk.TclError:
+            pass
+
+    def _jump_to_outline_source_line(self, line_no: int) -> None:
+        if self.view_mode != "edit":
+            self.view_mode = "edit"
+            self.config.view_mode = "edit"
+            self.read_frame.pack_forget()
+            self.edit_frame.pack(fill="both", expand=True)
+            self._update_view_buttons()
+            save_config(self.config)
+        self._jump_to_editor_source_line(line_no, fast=True)
+
+    def _jump_to_editor_source_line(self, line_no: int, *, fast: bool = False) -> None:
+        index = f"{line_no}.0"
+        if fast:
+            self._fast_scroll_editor_to_line(line_no)
+        try:
+            self.text.tag_remove("outline_current", "1.0", tk.END)
+            self.text.tag_configure("outline_current", background=globals()["OUTLINE_CURRENT"], foreground=globals()["TEXT"])
+            self.text.tag_add("outline_current", index, f"{index} lineend")
+            self.text.mark_set(tk.INSERT, index)
+            if fast:
+                self._schedule_live_render()
+            else:
+                self.text.see(index)
+            self.text.focus_set()
+            self.root.after(1600, lambda: self.text.tag_remove("outline_current", "1.0", tk.END))
+        except tk.TclError:
+            pass
+
+    def _fast_scroll_editor_to_line(self, line_no: int) -> None:
+        metrics = self._editor_document_metrics()
+        if metrics.lines <= 1:
+            return
+        ratio = max(0.0, min(1.0, (line_no - 2) / max(1, metrics.lines - 1)))
+        try:
+            self.text.yview_moveto(ratio)
         except tk.TclError:
             pass
 

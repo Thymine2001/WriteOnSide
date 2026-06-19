@@ -82,6 +82,113 @@ class DocumentPerformanceTests(unittest.TestCase):
             [item["title"] for item in editor._cached_active_heading_stack(4)],
         )
 
+    def test_outline_cache_keeps_more_than_eighty_headings(self) -> None:
+        editor = EditorMixin()
+        editor._rebuild_outline_cache("\n".join(f"## Heading {index}" for index in range(120)))
+        outline = editor._parse_outline()
+        self.assertEqual(120, len(outline))
+        self.assertEqual("Heading 119", outline[-1]["title"])
+
+    def test_limited_read_outline_jump_uses_source_line_without_rendered_search(self) -> None:
+        class Harness(EditorMixin):
+            view_mode = "read"
+            _read_content_limited = True
+            jumped_line = 0
+            searched = False
+
+            def _close_outline_popup(self) -> None:
+                return None
+
+            def _jump_to_outline_source_line(self, line_no: int) -> None:
+                self.jumped_line = line_no
+
+            def _find_rendered_heading_index(self, _line_no: int, _title: str) -> str | None:
+                self.searched = True
+                return "1.0"
+
+        app = Harness()
+        app._jump_to_outline(500, "Heading")
+        self.assertEqual(500, app.jumped_line)
+        self.assertFalse(app.searched)
+
+    def test_read_markdown_outline_jump_uses_source_line_without_rendered_search(self) -> None:
+        class Harness(EditorMixin):
+            view_mode = "read"
+            _read_content_limited = False
+            jumped_line = 0
+            searched = False
+
+            def __init__(self) -> None:
+                from pathlib import Path
+
+                self.current_note_path = Path("large.md")
+
+            def _close_outline_popup(self) -> None:
+                return None
+
+            def _jump_to_outline_source_line(self, line_no: int) -> None:
+                self.jumped_line = line_no
+
+            def _find_rendered_heading_index(self, _line_no: int, _title: str) -> str | None:
+                self.searched = True
+                return "1.0"
+
+        app = Harness()
+        app._jump_to_outline(500, "Heading")
+        self.assertEqual(500, app.jumped_line)
+        self.assertFalse(app.searched)
+
+    def test_fast_outline_jump_avoids_text_see_for_large_editor_document(self) -> None:
+        class TextSpy:
+            def __init__(self) -> None:
+                self.see_called = False
+                self.moved_to: float | None = None
+
+            def tag_remove(self, *_args) -> None:
+                return None
+
+            def tag_configure(self, *_args, **_kwargs) -> None:
+                return None
+
+            def tag_add(self, *_args) -> None:
+                return None
+
+            def mark_set(self, *_args) -> None:
+                return None
+
+            def see(self, *_args) -> None:
+                self.see_called = True
+
+            def focus_set(self) -> None:
+                return None
+
+            def yview_moveto(self, ratio: float) -> None:
+                self.moved_to = ratio
+
+        class RootSpy:
+            def after(self, _delay: int, _callback) -> str:
+                return "after-id"
+
+        class Harness(EditorMixin):
+            def __init__(self) -> None:
+                self.text = TextSpy()
+                self.root = RootSpy()
+                self.view_mode = "edit"
+                self._live_render_after = None
+
+            def _editor_document_metrics(self):
+                from writeonside_app.document_performance import DocumentMetrics
+
+                return DocumentMetrics(2_000_000, 20_000)
+
+            def _apply_live_render(self) -> None:
+                return None
+
+        app = Harness()
+        app._jump_to_editor_source_line(10_000, fast=True)
+        self.assertFalse(app.text.see_called)
+        self.assertIsNotNone(app.text.moved_to)
+
 
 if __name__ == "__main__":
     unittest.main()
