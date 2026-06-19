@@ -105,6 +105,74 @@ def get_work_area() -> tuple[int, int, int, int]:
     return 0, 0, 0, 0
 
 
+def window_clip_rect(
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    bounds: tuple[int, int, int, int],
+) -> tuple[int, int, int, int]:
+    """Return the visible bounds relative to a window, suitable for SetWindowRgn."""
+    left, top, right, bottom = bounds
+    relative_left = max(0, left - x)
+    relative_top = max(0, top - y)
+    relative_right = min(max(0, width), right - x)
+    relative_bottom = min(max(0, height), bottom - y)
+    if relative_right <= relative_left or relative_bottom <= relative_top:
+        return 0, 0, 0, 0
+    return relative_left, relative_top, relative_right, relative_bottom
+
+
+def clip_window_to_bounds(
+    hwnd: int,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    bounds: tuple[int, int, int, int],
+    *,
+    redraw: bool = True,
+) -> bool:
+    """Clip a native window to one monitor so animation cannot leak next door."""
+    if not hwnd:
+        return False
+    try:
+        clip = window_clip_rect(x, y, width, height, bounds)
+        gdi32 = ctypes.windll.gdi32
+        user32 = ctypes.windll.user32
+        create_region = gdi32.CreateRectRgn
+        create_region.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        create_region.restype = wintypes.HANDLE
+        set_window_region = user32.SetWindowRgn
+        set_window_region.argtypes = [wintypes.HWND, wintypes.HANDLE, wintypes.BOOL]
+        set_window_region.restype = ctypes.c_int
+        region = create_region(*clip)
+        if not region:
+            return False
+        if set_window_region(wintypes.HWND(hwnd), region, redraw):
+            # Windows owns the region after a successful SetWindowRgn call.
+            return True
+        delete_object = gdi32.DeleteObject
+        delete_object.argtypes = [wintypes.HANDLE]
+        delete_object.restype = wintypes.BOOL
+        delete_object(region)
+    except (AttributeError, OSError):
+        pass
+    return False
+
+
+def clear_window_clip(hwnd: int) -> None:
+    if not hwnd:
+        return
+    try:
+        set_window_region = ctypes.windll.user32.SetWindowRgn
+        set_window_region.argtypes = [wintypes.HWND, wintypes.HANDLE, wintypes.BOOL]
+        set_window_region.restype = ctypes.c_int
+        set_window_region(wintypes.HWND(hwnd), None, True)
+    except (AttributeError, OSError):
+        pass
+
+
 def enable_per_monitor_dpi() -> None:
     """Enable per-monitor DPI awareness so Tk text renders sharply on HiDPI displays."""
     try:
@@ -399,6 +467,21 @@ def redraw_window(hwnd: int) -> None:
             None,
             None,
             RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW,
+        )
+    except (AttributeError, OSError):
+        pass
+
+
+def invalidate_window(hwnd: int) -> None:
+    """Queue a child-inclusive repaint without blocking for WM_PAINT completion."""
+    if not hwnd:
+        return
+    try:
+        ctypes.windll.user32.RedrawWindow(
+            wintypes.HWND(hwnd),
+            None,
+            None,
+            RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN,
         )
     except (AttributeError, OSError):
         pass

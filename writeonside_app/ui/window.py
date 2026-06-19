@@ -10,7 +10,15 @@ from ..layout_metrics import (
     explorer_width_limits,
     panel_width_limits,
 )
-from ..platform import get_work_area, hide_window_from_taskbar, move_windows_atomically, set_timer_resolution
+from ..platform import (
+    clear_window_clip,
+    clip_window_to_bounds,
+    get_work_area,
+    hide_window_from_taskbar,
+    invalidate_window,
+    move_windows_atomically,
+    set_timer_resolution,
+)
 from ..i18n import t
 from ..theme import *  # noqa: F401,F403
 
@@ -283,6 +291,7 @@ class WindowMixin:
         if getattr(self, "_timer_res_active", False):
             set_timer_resolution(False)
             self._timer_res_active = False
+        self._clear_animation_clips()
 
     def _raise_nav_bar(self) -> None:
         if not hasattr(self, "nav"):
@@ -440,20 +449,135 @@ class WindowMixin:
         explorer_width: int,
         include_explorer: bool,
     ) -> None:
+        panel_move_x, explorer_move_x, nav_move_x, explorer_move_width, panel_clip_bounds, explorer_clip_bounds = (
+            self._safe_animation_layout(panel_x, explorer_x, nav_x, explorer_width, include_explorer)
+        )
+        frame_state = (
+            panel_move_x,
+            explorer_move_x,
+            nav_move_x,
+            explorer_move_width,
+            include_explorer,
+            panel_clip_bounds,
+            explorer_clip_bounds,
+        )
+        if frame_state == getattr(self, "_last_animation_frame", None):
+            return
+        self._apply_animation_clips(
+            panel_move_x,
+            explorer_move_x,
+            explorer_move_width,
+            include_explorer,
+            panel_clip_bounds=panel_clip_bounds,
+            explorer_clip_bounds=explorer_clip_bounds,
+        )
+        root_handle = self._window_handle(self.root)
+        nav_handle = self._window_handle(self.nav)
+        explorer_handle = self._window_handle(self.explorer) if include_explorer else None
         layouts = [
-            (self._window_handle(self.root), panel_x, self.panel_y, self.panel_w, self.panel_h),
-            (self._window_handle(self.nav), nav_x, self.panel_y, self.nav_w, self.panel_h),
+            (root_handle, panel_move_x, self.panel_y, self.panel_w, self.panel_h),
+            (nav_handle, nav_move_x, self.panel_y, self.nav_w, self.panel_h),
         ]
         if include_explorer:
             layouts.append(
-                (self._window_handle(self.explorer), explorer_x, self.panel_y, max(1, explorer_width), self.panel_h)
+                (
+                    explorer_handle,
+                    explorer_move_x,
+                    self.panel_y,
+                    max(1, explorer_move_width),
+                    self.panel_h,
+                )
             )
-        if move_windows_atomically(layouts):
-            return
-        self.root.geometry(self._panel_geometry(panel_x))
-        self.nav.geometry(f"{self.nav_w}x{self.panel_h}+{int(nav_x)}+{self.panel_y}")
+        if not move_windows_atomically(layouts):
+            self.root.geometry(self._panel_geometry(panel_move_x))
+            self.nav.geometry(f"{self.nav_w}x{self.panel_h}+{int(nav_move_x)}+{self.panel_y}")
+            if include_explorer:
+                self._set_explorer_geometry(explorer_move_x, explorer_move_width)
+        # Queue repaint after navigation reaches this frame, but do not force
+        # synchronous WM_PAINT. Windows can coalesce both content windows into
+        # the compositor frame instead of blocking Tk's 16 ms animation timer.
+        invalidate_window(root_handle)
+        if explorer_handle is not None:
+            invalidate_window(explorer_handle)
+        self._last_animation_frame = frame_state
+
+    def _safe_animation_layout(
+        self,
+        panel_x: int,
+        explorer_x: int,
+        nav_x: int,
+        explorer_width: int,
+        include_explorer: bool,
+    ) -> tuple[int, int, int, int, tuple[int, int, int, int], tuple[int, int, int, int]]:
+        work_bounds = (self.work_left, self.work_top, self.work_right, self.work_bottom)
+        explorer_move_width = max(1, explorer_width)
+        # The nav position is the single animation anchor. Derive both content
+        # windows from it so every window receives the same translation delta;
+        # independent interpolation to one screen edge creates a growing gap.
+        if self.config.app_position == "right":
+            if include_explorer:
+                explorer_move_x = nav_x + self.nav_w
+                panel_move_x = explorer_move_x + explorer_move_width
+            else:
+                explorer_move_x = explorer_x
+                panel_move_x = nav_x + self.nav_w
+        else:
+            if include_explorer:
+                explorer_move_x = nav_x - explorer_move_width
+                panel_move_x = explorer_move_x - self.panel_w
+            else:
+                explorer_move_x = explorer_x
+                panel_move_x = nav_x - self.panel_w
+        return (
+            panel_move_x,
+            explorer_move_x,
+            nav_x,
+            explorer_move_width,
+            work_bounds,
+            work_bounds,
+        )
+
+    def _apply_animation_clips(
+        self,
+        panel_x: int,
+        explorer_x: int,
+        explorer_width: int,
+        include_explorer: bool,
+        *,
+        panel_clip_bounds: tuple[int, int, int, int] | None = None,
+        explorer_clip_bounds: tuple[int, int, int, int] | None = None,
+    ) -> None:
+        bounds = (self.work_left, self.work_top, self.work_right, self.work_bottom)
+        clip_window_to_bounds(
+            self._window_handle(self.root),
+            panel_x,
+            self.panel_y,
+            self.panel_w,
+            self.panel_h,
+            panel_clip_bounds or bounds,
+            redraw=False,
+        )
         if include_explorer:
-            self._set_explorer_geometry(explorer_x, explorer_width)
+            clip_window_to_bounds(
+                self._window_handle(self.explorer),
+                explorer_x,
+                self.panel_y,
+                max(1, explorer_width),
+                self.panel_h,
+                explorer_clip_bounds or bounds,
+                redraw=False,
+            )
+
+    def _clear_animation_clips(self) -> None:
+        self._last_animation_frame = None
+        for window_name in ("root", "explorer"):
+            window = getattr(self, window_name, None)
+            if window is None:
+                continue
+            try:
+                clear_window_clip(self._window_handle(window))
+            except tk.TclError:
+                pass
 
     def _animate_layout(self, opened: bool, callback: Callable[[], None] | None = None, duration_ms: int = 190) -> None:
         self._layout_animation_id += 1
@@ -470,14 +594,13 @@ class WindowMixin:
         panel_target, explorer_target, nav_target, explorer_width_target = self._layout_positions(opened)
         animate_explorer = self.explorer_visible and explorer_width_target > 0
         if opened:
-            # Only needed when windows are being revealed; on close they are
-            # already visible/styled and these Win32 calls would stall frame 1
+            # Native styles and clipping were prepared while fully transparent
+            # in open_panel. Reapplying styles here can reset SetWindowRgn after
+            # alpha is restored and leak one frame onto an adjacent monitor.
             self.nav.deiconify()
-            self._apply_no_taskbar_styles()
             self.nav.lift()
             if animate_explorer:
                 self.explorer.deiconify()
-                self._apply_no_taskbar_styles()
                 self.explorer.lift()
         frame_ms = 16
         started_at = time.perf_counter()
@@ -495,6 +618,7 @@ class WindowMixin:
         def step_once() -> None:
             if animation_id != self._layout_animation_id:
                 return
+            frame_started_at = time.perf_counter()
             elapsed_ms = (time.perf_counter() - started_at) * 1000
             progress = min(1.0, elapsed_ms / max(1, duration_ms))
             eased = ease_in_out(progress)
@@ -515,10 +639,15 @@ class WindowMixin:
                     self._timer_res_active = False
                 if callback:
                     callback()
+                # On close the callback withdraws the off-screen windows. Clear
+                # the empty region only afterwards or the adjacent monitor can
+                # receive one fully visible compositor frame.
+                self._clear_animation_clips()
                 self._raise_nav_bar()
                 self._refresh_nav_bar_visual()
                 return
-            self.root.after(frame_ms, step_once)
+            frame_work_ms = (time.perf_counter() - frame_started_at) * 1000
+            self.root.after(max(1, round(frame_ms - frame_work_ms)), step_once)
 
         step_once()
 
@@ -581,6 +710,7 @@ class WindowMixin:
         def step_once() -> None:
             if animation_id != self._layout_animation_id:
                 return
+            frame_started_at = time.perf_counter()
             elapsed_ms = (time.perf_counter() - started_at) * 1000
             progress = min(1.0, elapsed_ms / max(1, duration_ms))
             eased = ease_mirror_motion(progress)
@@ -592,7 +722,8 @@ class WindowMixin:
                 include_explorer,
             )
             if progress < 1.0:
-                self.root.after(16, step_once)
+                frame_work_ms = (time.perf_counter() - frame_started_at) * 1000
+                self.root.after(max(1, round(16 - frame_work_ms)), step_once)
                 return
             self._move_animation_frame(
                 panel_target,
@@ -608,6 +739,7 @@ class WindowMixin:
             self._update_width_resize_handles()
             if callback:
                 callback()
+            self._clear_animation_clips()
             self._raise_nav_bar()
             self._refresh_nav_bar_visual()
 
@@ -625,6 +757,12 @@ class WindowMixin:
         self._set_nav_x(nav_x)
         if self.explorer_visible:
             self._set_explorer_geometry(explorer_x, max(1, explorer_width))
+        self._apply_animation_clips(
+            panel_x,
+            explorer_x,
+            max(1, explorer_width),
+            self.explorer_visible,
+        )
         self.root.update_idletasks()
         self.explorer.update_idletasks()
         self.root.deiconify()
@@ -633,6 +771,16 @@ class WindowMixin:
         self.root.update_idletasks()
         self.explorer.update_idletasks()
         self._apply_no_taskbar_styles()
+        # Deiconify/style changes can recreate the native wrapper HWND and clear
+        # its region. Apply the closed-position clip again while alpha is still
+        # zero, then expose the windows only after that native state is final.
+        self._move_animation_frame(
+            panel_x,
+            explorer_x,
+            nav_x,
+            max(1, explorer_width),
+            self.explorer_visible,
+        )
         self._apply_content_opacity(alpha)
         self.nav.update_idletasks()
         self.is_open = True

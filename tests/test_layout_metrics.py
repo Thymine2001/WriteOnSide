@@ -6,9 +6,20 @@ from writeonside_app.layout_metrics import (
     default_panel_width,
     panel_width_limits,
 )
+from writeonside_app.platform import window_clip_rect
 
 
 class LayoutMetricsTests(unittest.TestCase):
+    def test_right_edge_animation_is_clipped_before_adjacent_monitor(self) -> None:
+        bounds = (0, 0, 1920, 1080)
+        self.assertEqual((0, 0, 120, 1080), window_clip_rect(1800, 0, 520, 1080, bounds))
+        self.assertEqual((0, 0, 0, 0), window_clip_rect(1920, 0, 520, 1080, bounds))
+
+    def test_left_edge_animation_is_clipped_before_adjacent_monitor(self) -> None:
+        bounds = (0, 0, 1920, 1080)
+        self.assertEqual((200, 0, 520, 1080), window_clip_rect(-200, 0, 520, 1080, bounds))
+        self.assertEqual((0, 0, 0, 0), window_clip_rect(-520, 0, 520, 1080, bounds))
+
     def test_panel_limits_scale_with_work_area(self) -> None:
         minimum, maximum = panel_width_limits(2000)
         self.assertEqual(360, minimum)
