@@ -88,6 +88,7 @@ class WriteOnSideApp(
         self._document_newline = "\n"
         self._preview_previous_mode: str | None = None
         self._preview_render_after: str | None = None
+        self._read_content_limited = False
         self.explorer_visible = self.config.explorer_open
         self._showing_placeholder = False
         self._ignore_tree_events = False

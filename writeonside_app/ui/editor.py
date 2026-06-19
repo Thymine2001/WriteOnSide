@@ -26,6 +26,7 @@ from ..live_highlight import (
 )
 from ..document_performance import (
     DocumentMetrics,
+    SOURCE_HIGHLIGHT_FULL_CHAR_LIMIT,
     VISIBLE_HIGHLIGHT_MARGIN,
     limit_read_mode_content,
     metrics_for_content,
@@ -44,6 +45,14 @@ _MD_EDITOR_TAGS: tuple[str, ...] = MD_EDITOR_TAGS
 def _literal_find_pattern(needle: str, case_sensitive: bool) -> re.Pattern[str]:
     flags = 0 if case_sensitive else re.IGNORECASE
     return re.compile(re.escape(needle), flags)
+
+
+def _literal_count(haystack: str, needle: str, case_sensitive: bool) -> int:
+    if not needle:
+        return 0
+    if case_sensitive:
+        return haystack.count(needle)
+    return haystack.casefold().count(needle.casefold())
 
 
 class EditorMixin:
@@ -102,27 +111,79 @@ class EditorMixin:
             self.text.tag_remove(tag, "1.0", tk.END)
         self._editor_color_tags.clear()
 
-    def _apply_source_file_highlight(self, content: str) -> None:
+    def _clear_editor_markdown_only_tags(self) -> None:
+        self._clear_editor_image_previews()
+        for tag in _MD_EDITOR_TAGS:
+            self.text.tag_remove(tag, "1.0", tk.END)
+
+    def _clear_editor_source_tags(self, start: str, end: str) -> None:
+        for tag in ("source_code", *getattr(self, "_editor_color_tags", set())):
+            self.text.tag_remove(tag, start, end)
+
+    def _apply_source_spans(
+        self,
+        content: str,
+        *,
+        base_index: str,
+        tag_start: str,
+        tag_end: str,
+    ) -> None:
         if self.current_note_path is None:
             return
         spans = source_token_spans(content, self.current_note_path, background=globals()["BG"])
-        if not spans:
-            return
-        self.text.tag_configure(
-            "source_code",
-            font=("Consolas", max(9, self.config.font_size + 2)),
-            foreground=globals()["TEXT"],
-        )
-        self.text.tag_add("source_code", "1.0", tk.END)
+        code_font = ("Consolas", max(9, self.config.font_size + 2))
+        self.text.tag_configure("source_code", font=code_font, foreground=globals()["TEXT"])
+        self.text.tag_add("source_code", tag_start, tag_end)
         for span in spans:
             tag = syntax_tag_name("source_syntax", span.color)
-            self.text.tag_configure(
-                tag,
-                foreground=span.color,
-                font=("Consolas", max(9, self.config.font_size + 2)),
-            )
+            self.text.tag_configure(tag, foreground=span.color, font=code_font)
             self._editor_color_tags.add(tag)
-            self.text.tag_add(tag, f"1.0+{span.start}c", f"1.0+{span.end}c")
+            self.text.tag_add(tag, f"{base_index}+{span.start}c", f"{base_index}+{span.end}c")
+
+    def _should_fragment_source_highlight(self, metrics: DocumentMetrics) -> bool:
+        return metrics.is_large or metrics.characters > SOURCE_HIGHLIGHT_FULL_CHAR_LIMIT
+
+    def _should_refresh_live_render_on_scroll(self) -> bool:
+        metrics = self._editor_document_metrics()
+        if metrics.is_large:
+            return True
+        return bool(
+            self.current_note_path
+            and not is_markdown_note(self.current_note_path)
+            and metrics.characters > SOURCE_HIGHLIGHT_FULL_CHAR_LIMIT
+        )
+
+    def _apply_source_file_highlight(self) -> None:
+        if self.current_note_path is None:
+            return
+        metrics = self._editor_document_metrics()
+        if self._should_fragment_source_highlight(metrics):
+            start_line, end_line = self._visible_editor_line_range()
+            content = self.text.get(f"{start_line}.0", f"{end_line}.end")
+            previous_range = getattr(self, "_large_highlight_range", None)
+            clear_range = (start_line, end_line)
+            if previous_range is not None:
+                clear_range = (
+                    min(previous_range[0], start_line),
+                    max(previous_range[1], end_line),
+                )
+            self._clear_editor_source_tags(f"{clear_range[0]}.0", f"{clear_range[1]}.end")
+            self._apply_source_spans(
+                content,
+                base_index=f"{start_line}.0",
+                tag_start=f"{start_line}.0",
+                tag_end=f"{end_line}.end",
+            )
+            self._large_highlight_range = (start_line, end_line)
+            return
+
+        previous_range = getattr(self, "_large_highlight_range", None)
+        if previous_range is not None:
+            self._clear_editor_source_tags(f"{previous_range[0]}.0", f"{previous_range[1]}.end")
+        self._large_highlight_range = None
+        self._clear_editor_source_tags("1.0", tk.END)
+        content = self.text.get("1.0", "end-1c")
+        self._apply_source_spans(content, base_index="1.0", tag_start="1.0", tag_end=tk.END)
 
     def _is_markdown_document(self) -> bool:
         return bool(self.current_note_path and is_markdown_note(self.current_note_path))
@@ -166,9 +227,8 @@ class EditorMixin:
         if self.view_mode != "edit" or self._showing_placeholder:
             return
         if not self.current_note_path or not is_markdown_note(self.current_note_path):
-            self._clear_editor_markdown_tags()
-            content = self.text.get("1.0", "end-1c")
-            self._apply_source_file_highlight(content)
+            self._clear_editor_markdown_only_tags()
+            self._apply_source_file_highlight()
             for tag in ("find_match", "find_current", "outline_current", "sel"):
                 try:
                     self.text.tag_raise(tag)
@@ -1268,6 +1328,15 @@ class EditorMixin:
             return self.read_text
         return self.text if self.view_mode == "edit" else self.read_text
 
+    def _full_read_mode_find_count(self, needle: str) -> int | None:
+        if (
+            self.preview_path is not None
+            or self.view_mode != "read"
+            or not getattr(self, "_read_content_limited", False)
+        ):
+            return None
+        return _literal_count(self._get_editor_content(), needle, self.find_case_sensitive_var.get())
+
     def _toggle_find_panel(self, replace: bool = False) -> None:
         if self.find_panel.winfo_ismapped():
             self._hide_find_panel()
@@ -1341,7 +1410,9 @@ class EditorMixin:
             widget.tag_add("find_match", idx, end)
             matches.append((idx, length))
             pos = end
-        self.find_count_label.config(text=f"{len(matches)}" if matches else "0")
+        total_matches = self._full_read_mode_find_count(needle)
+        display_count = len(matches) if total_matches is None else total_matches
+        self.find_count_label.config(text=f"{display_count}" if display_count else "0")
         if matches and select_first:
             self._select_find_result(matches[0][0], matches[0][1])
 
@@ -1662,6 +1733,7 @@ class EditorMixin:
         if not hasattr(self, "read_text"):
             return
         if self.preview_path is not None:
+            self._read_content_limited = False
             # Fix #10: pass user font settings so preview matches the rest of the UI
             render_file_preview(
                 self.read_text,
@@ -1671,6 +1743,7 @@ class EditorMixin:
             )
         else:
             content, limited = limit_read_mode_content(self._get_editor_content())
+            self._read_content_limited = limited
             render_markdown(
                 self.read_text,
                 content,

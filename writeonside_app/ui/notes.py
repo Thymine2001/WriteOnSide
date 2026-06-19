@@ -20,7 +20,7 @@ from ..diagnostics import get_logger
 from ..i18n import t
 from ..live_highlight import MD_EDITOR_TAGS, apply_live_highlight_plan, plan_live_highlight
 from ..live_highlight import plan_live_highlight_fragment
-from ..document_performance import DocumentMetrics, VISIBLE_HIGHLIGHT_MARGIN
+from ..document_performance import DocumentMetrics, SOURCE_HIGHLIGHT_FULL_CHAR_LIMIT, VISIBLE_HIGHLIGHT_MARGIN
 from ..preview import render_file_preview
 from ..notes.service import rename_target, unique_note_path
 from ..storage import read_text_file, safe_write_text
@@ -740,6 +740,90 @@ class NotesMixin:
         if isinstance(color_tags, set):
             color_tags.clear()
 
+    def _clear_split_markdown_only_tags(self, note: dict[str, object]) -> None:
+        text = note.get("text")
+        if not isinstance(text, tk.Text):
+            return
+        for tag in MD_EDITOR_TAGS:
+            try:
+                text.tag_remove(tag, "1.0", tk.END)
+            except tk.TclError:
+                pass
+
+    def _clear_split_source_tags(self, note: dict[str, object], start: str, end: str) -> None:
+        text = note.get("text")
+        if not isinstance(text, tk.Text):
+            return
+        color_tags = note.setdefault("color_tags", set())
+        for tag in ("source_code", *(color_tags if isinstance(color_tags, set) else set())):
+            try:
+                text.tag_remove(tag, start, end)
+            except tk.TclError:
+                pass
+
+    def _split_document_metrics(self, text: tk.Text) -> DocumentMetrics:
+        try:
+            return DocumentMetrics(
+                int(text.count("1.0", "end-1c", "chars")[0]),
+                int(str(text.index("end-1c")).split(".")[0]),
+            )
+        except (tk.TclError, TypeError, ValueError):
+            return DocumentMetrics(0, 1)
+
+    def _visible_split_line_range(self, text: tk.Text, metrics: DocumentMetrics) -> tuple[int, int]:
+        try:
+            top = int(str(text.index("@0,0")).split(".")[0])
+            bottom = int(str(text.index(f"@0,{max(1, text.winfo_height())}")).split(".")[0])
+        except (tk.TclError, TypeError, ValueError):
+            top, bottom = 1, min(metrics.lines, 200)
+        return (
+            max(1, top - VISIBLE_HIGHLIGHT_MARGIN),
+            min(metrics.lines, bottom + VISIBLE_HIGHLIGHT_MARGIN),
+        )
+
+    def _apply_split_source_file_highlight(self, note: dict[str, object], text: tk.Text, path: Path) -> None:
+        metrics = self._split_document_metrics(text)
+        use_fragment = metrics.is_large or metrics.characters > SOURCE_HIGHLIGHT_FULL_CHAR_LIMIT
+        if use_fragment:
+            start_line, end_line = self._visible_split_line_range(text, metrics)
+            content = text.get(f"{start_line}.0", f"{end_line}.end")
+            previous_range = note.get("large_highlight_range")
+            clear_range = (start_line, end_line)
+            if isinstance(previous_range, tuple) and len(previous_range) == 2:
+                clear_range = (
+                    min(int(previous_range[0]), start_line),
+                    max(int(previous_range[1]), end_line),
+                )
+            self._clear_split_source_tags(note, f"{clear_range[0]}.0", f"{clear_range[1]}.end")
+            base_index = f"{start_line}.0"
+            tag_start = f"{start_line}.0"
+            tag_end = f"{end_line}.end"
+            note["large_highlight_range"] = (start_line, end_line)
+        else:
+            previous_range = note.get("large_highlight_range")
+            if isinstance(previous_range, tuple) and len(previous_range) == 2:
+                self._clear_split_source_tags(note, f"{int(previous_range[0])}.0", f"{int(previous_range[1])}.end")
+            note["large_highlight_range"] = None
+            self._clear_split_source_tags(note, "1.0", tk.END)
+            content = text.get("1.0", "end-1c")
+            base_index = "1.0"
+            tag_start = "1.0"
+            tag_end = tk.END
+
+        code_font = ("Consolas", max(9, self.config.font_size + 2))
+        text.tag_configure("source_code", font=code_font, foreground=globals()["TEXT"])
+        text.tag_add("source_code", tag_start, tag_end)
+        color_tags = note.setdefault("color_tags", set())
+        if not isinstance(color_tags, set):
+            color_tags = set()
+            note["color_tags"] = color_tags
+        for span in source_token_spans(content, path, background=globals()["BG"]):
+            tag = syntax_tag_name("source_syntax", span.color)
+            text.tag_configure(tag, foreground=span.color, font=code_font)
+            color_tags.add(tag)
+            text.tag_add(tag, f"{base_index}+{span.start}c", f"{base_index}+{span.end}c")
+        text.tag_raise("sel")
+
     def _schedule_split_live_render(self, note: dict[str, object]) -> None:
         previous = note.get("live_render_after")
         if previous is not None:
@@ -758,41 +842,14 @@ class NotesMixin:
         if not isinstance(text, tk.Text):
             return
         if not is_markdown_note(path):
-            self._clear_split_markdown_tags(note)
+            self._clear_split_markdown_only_tags(note)
             self._clear_split_image_previews(note)
-            content = text.get("1.0", "end-1c")
-            spans = source_token_spans(content, path, background=globals()["BG"])
-            if spans:
-                code_font = ("Consolas", max(9, self.config.font_size + 2))
-                text.tag_configure("source_code", font=code_font, foreground=globals()["TEXT"])
-                text.tag_add("source_code", "1.0", tk.END)
-                color_tags = note.setdefault("color_tags", set())
-                if not isinstance(color_tags, set):
-                    color_tags = set()
-                    note["color_tags"] = color_tags
-                for span in spans:
-                    tag = syntax_tag_name("source_syntax", span.color)
-                    text.tag_configure(tag, foreground=span.color, font=code_font)
-                    color_tags.add(tag)
-                    text.tag_add(tag, f"1.0+{span.start}c", f"1.0+{span.end}c")
-                text.tag_raise("sel")
+            self._apply_split_source_file_highlight(note, text, path)
             return
         self._configure_split_markdown_tags(text)
-        try:
-            metrics = DocumentMetrics(
-                int(text.count("1.0", "end-1c", "chars")[0]),
-                int(str(text.index("end-1c")).split(".")[0]),
-            )
-        except (tk.TclError, TypeError, ValueError):
-            metrics = DocumentMetrics(0, 1)
+        metrics = self._split_document_metrics(text)
         if metrics.is_large:
-            try:
-                top = int(str(text.index("@0,0")).split(".")[0])
-                bottom = int(str(text.index(f"@0,{max(1, text.winfo_height())}")).split(".")[0])
-            except (tk.TclError, TypeError, ValueError):
-                top, bottom = 1, min(metrics.lines, 200)
-            start_line = max(1, top - VISIBLE_HIGHLIGHT_MARGIN)
-            end_line = min(metrics.lines, bottom + VISIBLE_HIGHLIGHT_MARGIN)
+            start_line, end_line = self._visible_split_line_range(text, metrics)
             fragment = text.get(f"{start_line}.0", f"{end_line}.end")
             plan = plan_live_highlight_fragment(fragment, start_line=start_line, simplified=True)
             previous_range = note.get("large_highlight_range")

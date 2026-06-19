@@ -33,7 +33,7 @@ class EditorStructureMixin:
 
     def _on_editor_scroll(self) -> None:
         self._schedule_editor_structure_refresh()
-        if getattr(self, "_is_large_editor_document", lambda: False)():
+        if getattr(self, "_should_refresh_live_render_on_scroll", lambda: False)():
             self._schedule_live_render()
 
     def _schedule_editor_structure_refresh(self, reapply_folds: bool = False) -> None:

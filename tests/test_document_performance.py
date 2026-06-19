@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
 from writeonside_app.document_performance import (
     LARGE_DOCUMENT_CHAR_THRESHOLD,
@@ -42,6 +43,30 @@ class DocumentPerformanceTests(unittest.TestCase):
         self.assertEqual((500, 502), plan.line_range)
         self.assertEqual([500, 501], [item.line for item in plan.line_tags])
         self.assertTrue(plan.partial)
+
+    def test_limited_read_mode_find_count_uses_full_editor_content(self) -> None:
+        class Harness(EditorMixin):
+            preview_path = None
+            view_mode = "read"
+            _read_content_limited = True
+            find_case_sensitive_var = SimpleNamespace(get=lambda: False)
+
+            def _get_editor_content(self) -> str:
+                return "Done\nhidden done\nDONE\n"
+
+        self.assertEqual(3, Harness()._full_read_mode_find_count("done"))
+
+    def test_unlimited_read_mode_find_count_does_not_override_rendered_matches(self) -> None:
+        class Harness(EditorMixin):
+            preview_path = None
+            view_mode = "read"
+            _read_content_limited = False
+            find_case_sensitive_var = SimpleNamespace(get=lambda: False)
+
+            def _get_editor_content(self) -> str:
+                return "Done\nhidden done\n"
+
+        self.assertIsNone(Harness()._full_read_mode_find_count("done"))
 
     def test_outline_cache_tracks_sections_code_ranges_and_parent_stack(self) -> None:
         editor = EditorMixin()
