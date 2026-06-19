@@ -1,11 +1,14 @@
 import tempfile
 import unittest
+import os
 from pathlib import Path
+from unittest.mock import patch
 
 from writeonside_app.wikilinks import (
     WikiLinkIndex,
     find_notes_linking_to,
     refresh_wiki_index,
+    rename_note_and_rewrite_wikilinks,
     rewrite_wikilinks_after_rename,
 )
 
@@ -61,6 +64,45 @@ class WikiLinkRenameTests(unittest.TestCase):
             next_index, next_state = refresh_wiki_index(root, state)
             self.assertEqual(2, len(next_index.notes))
             self.assertEqual("updated body with [[One]]", next_state.notes[second_note.resolve()].path.read_text(encoding="utf-8"))
+
+    def test_transaction_rolls_back_rename_and_partial_link_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            target = root / "Old.md"
+            first = root / "First.md"
+            second = root / "Second.md"
+            target.write_text("# Old", encoding="utf-8")
+            first.write_text("[[Old]]", encoding="utf-8")
+            second.write_text("[[Old]]", encoding="utf-8")
+            index = WikiLinkIndex.build(root)
+            candidates = find_notes_linking_to(index, target.resolve())
+            real_replace = os.replace
+            updated_commits = 0
+
+            def fail_second_updated(source, destination):
+                nonlocal updated_commits
+                if ".updated." in Path(source).name:
+                    updated_commits += 1
+                    if updated_commits == 2:
+                        raise OSError("simulated transaction failure")
+                return real_replace(source, destination)
+
+            with patch("writeonside_app.wikilinks.os.replace", side_effect=fail_second_updated):
+                with self.assertRaises(OSError):
+                    rename_note_and_rewrite_wikilinks(
+                        root,
+                        target,
+                        root / "New.md",
+                        old_title="Old",
+                        old_aliases=(),
+                        index=index,
+                        candidate_paths=candidates,
+                    )
+
+            self.assertTrue(target.exists())
+            self.assertFalse((root / "New.md").exists())
+            self.assertEqual("[[Old]]", first.read_text(encoding="utf-8"))
+            self.assertEqual("[[Old]]", second.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

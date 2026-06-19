@@ -1,6 +1,6 @@
 import unittest
 
-from writeonside_app.ui.editor import EditorMixin, _literal_find_pattern
+from writeonside_app.ui.editor import EditorMixin, _literal_find_pattern, _toggle_inline_wrapping
 
 
 class _Value:
@@ -12,6 +12,38 @@ class _Value:
 
 
 class FindReplaceTests(unittest.TestCase):
+    def test_multiline_inline_format_wraps_each_nonempty_line(self) -> None:
+        updated, unwrapped = _toggle_inline_wrapping("first\nsecond\n\nthird", "==", "==")
+        self.assertEqual("==first==\n==second==\n\n==third==", updated)
+        self.assertFalse(unwrapped)
+
+    def test_multiline_inline_format_toggles_off_per_line(self) -> None:
+        updated, unwrapped = _toggle_inline_wrapping("~~first~~\n~~second~~\n", "~~", "~~")
+        self.assertEqual("first\nsecond\n", updated)
+        self.assertTrue(unwrapped)
+
+    def test_find_panel_uses_floating_overlay_geometry(self) -> None:
+        class Panel:
+            def __init__(self) -> None:
+                self.placed = None
+                self.lifted = False
+
+            def place(self, **kwargs) -> None:
+                self.placed = kwargs
+
+            def lift(self) -> None:
+                self.lifted = True
+
+        editor = EditorMixin()
+        editor.find_panel = Panel()
+
+        editor._place_find_panel()
+
+        self.assertEqual(8, editor.find_panel.placed["x"])
+        self.assertEqual(-16, editor.find_panel.placed["width"])
+        self.assertEqual(1.0, editor.find_panel.placed["relwidth"])
+        self.assertTrue(editor.find_panel.lifted)
+
     def test_literal_pattern_is_case_insensitive_by_default(self) -> None:
         pattern = _literal_find_pattern("Note", case_sensitive=False)
         self.assertEqual(("Note", "note", "NOTE"), tuple(pattern.findall("Note note NOTE")))

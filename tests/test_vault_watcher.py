@@ -17,6 +17,7 @@ class _WatcherHarness(VaultWatcherMixin):
         self._dirty = False
         self._vault_pending_paths: set[Path] = set()
         self._vault_pending_moves: dict[Path, Path] = {}
+        self._vault_pending_directories: set[Path] = set()
         self._vault_internal_writes: dict[Path, float] = {}
         self.reloaded: list[Path] = []
         self.status_keys: list[str] = []
@@ -39,7 +40,12 @@ class _WatcherHarness(VaultWatcherMixin):
     def _reload_main_editor_from_disk(self, path: Path) -> None:
         self.reloaded.append(path)
 
-    def _reload_split_notes_after_external_change(self, paths: set[Path], moves: dict[Path, Path]) -> None:
+    def _reload_split_notes_after_external_change(
+        self,
+        paths: set[Path],
+        moves: dict[Path, Path],
+        directories: set[Path] | None = None,
+    ) -> None:
         return
 
     def _set_status_key(self, key: str, **_kwargs: object) -> None:
@@ -96,6 +102,55 @@ class VaultWatcherTests(unittest.TestCase):
 
             self.assertEqual([], app.reloaded)
             self.assertEqual(0, app.explorer_refreshes)
+
+    def test_sibling_file_change_does_not_reload_current_note(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            current = root / "Note.txt"
+            sibling = root / "Other.txt"
+            current.write_text("current", encoding="utf-8")
+            sibling.write_text("changed", encoding="utf-8")
+            app = _WatcherHarness(root)
+            app.current_note_path = current
+            app._vault_pending_paths = {_resolve_event_path(sibling)}
+
+            app._process_vault_filesystem_changes()
+
+            self.assertEqual([], app.reloaded)
+
+    def test_parent_directory_modified_event_does_not_reload_current_note(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            current = root / "Note.txt"
+            current.write_text("current", encoding="utf-8")
+            app = _WatcherHarness(root)
+            app.current_note_path = current
+            # Directory modified/created events are queued as paths for index
+            # refresh, but not as destructive directory events.
+            app._vault_pending_paths = {_resolve_event_path(root)}
+
+            app._process_vault_filesystem_changes()
+
+            self.assertEqual([], app.reloaded)
+
+    def test_directory_move_relocates_current_note(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            old_folder = root / "Old"
+            new_folder = root / "New"
+            old_folder.mkdir()
+            current = old_folder / "Note.txt"
+            current.write_text("current", encoding="utf-8")
+            app = _WatcherHarness(root)
+            app.current_note_path = current
+            old_folder.rename(new_folder)
+            app._vault_pending_paths = {_resolve_event_path(old_folder), _resolve_event_path(new_folder)}
+            app._vault_pending_directories = {_resolve_event_path(old_folder), _resolve_event_path(new_folder)}
+            app._vault_pending_moves = {_resolve_event_path(old_folder): _resolve_event_path(new_folder)}
+
+            app._process_vault_filesystem_changes()
+
+            self.assertEqual([_resolve_event_path(new_folder / "Note.txt")], app.reloaded)
 
 
 if __name__ == "__main__":

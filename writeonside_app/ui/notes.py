@@ -5,14 +5,14 @@ import re
 import shutil
 import time
 from pathlib import Path
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog
 from urllib.parse import quote
 
 import tkinter as tk
 from PIL import Image, ImageGrab
 from tkinterdnd2 import DND_FILES, DND_TEXT
 
-from ..config import APP_NAME, save_config
+from ..config import save_config
 from ..dragdrop import is_image_path, is_image_url, is_url, local_path_from_drop, split_drop_data
 from ..editor_images import EDITOR_IMAGE_ELIDE_TAG, load_preview_photo, plan_editor_image_blocks
 from ..frontmatter import note_template, parse_front_matter
@@ -27,7 +27,7 @@ from ..storage import read_text_file, safe_write_text
 from ..syntax_highlight import source_token_spans, syntax_tag_name
 from ..text_files import is_editable_text_path, is_markdown_note, read_editable_text
 from ..theme import *  # noqa: F401,F403
-from ..wikilinks import find_notes_linking_to, rewrite_wikilinks_after_rename
+from ..wikilinks import find_notes_linking_to, rename_note_and_rewrite_wikilinks
 
 
 class NotesMixin:
@@ -39,106 +39,7 @@ class NotesMixin:
         return unique_note_path(self._workspace_dir(), suggested)
 
     def _ask_new_item_name(self, title: str, prompt: str, initial_value: str = "") -> str | None:
-        g = globals()
-        win = tk.Toplevel(self.root)
-        win.title(title)
-        win.configure(bg=g["BG"])
-        win.transient(self.root)
-        win.attributes("-topmost", True)
-        win.resizable(False, False)
-
-        width = 390
-        height = 188
-        try:
-            x = self.root.winfo_rootx() + max(0, (self.root.winfo_width() - width) // 2)
-            y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - height) // 2)
-        except tk.TclError:
-            x = self.work_left + max(0, (self.work_right - self.work_left - width) // 2)
-            y = self.work_top + max(0, (self.work_bottom - self.work_top - height) // 2)
-        win.geometry(f"{width}x{height}+{x}+{y}")
-
-        shell = tk.Frame(win, bg=g["BG"], padx=18, pady=16)
-        shell.pack(fill="both", expand=True)
-        tk.Label(
-            shell,
-            text=title,
-            bg=g["BG"],
-            fg=g["TEXT"],
-            font=("Segoe UI", 14, "bold"),
-            anchor="w",
-        ).pack(fill="x")
-        tk.Label(
-            shell,
-            text=prompt,
-            bg=g["BG"],
-            fg=g["TEXT_SOFT"],
-            font=("Segoe UI", 9),
-            anchor="w",
-        ).pack(fill="x", pady=(4, 10))
-
-        entry_wrap = tk.Frame(shell, bg=g["ACCENT"], padx=1, pady=1)
-        entry_wrap.pack(fill="x")
-        entry = tk.Entry(
-            entry_wrap,
-            bg=g["SURFACE"],
-            fg=g["TEXT"],
-            insertbackground=g["TEXT"],
-            relief="flat",
-            font=("Segoe UI", 11),
-        )
-        entry.insert(0, initial_value)
-        entry.pack(fill="x", ipady=7, padx=0, pady=0)
-        entry.selection_range(0, tk.END)
-
-        actions = tk.Frame(shell, bg=g["BG"])
-        actions.pack(fill="x", pady=(16, 0))
-        result = {"value": None}
-
-        def close(value: str | None) -> None:
-            result["value"] = value
-            win.grab_release()
-            win.destroy()
-
-        def submit(_event=None) -> str:
-            value = entry.get().strip()
-            if value:
-                close(value)
-            else:
-                entry.focus_set()
-            return "break"
-
-        cancel_btn = tk.Label(
-            actions,
-            text=t("dialog.cancel"),
-            bg=g["SURFACE"],
-            fg=g["TEXT_SOFT"],
-            font=("Segoe UI", 10),
-            padx=14,
-            pady=7,
-            cursor="hand2",
-        )
-        create_btn = tk.Label(
-            actions,
-            text=t("dialog.create"),
-            bg=g["ACCENT"],
-            fg=self._contrast_text(g["ACCENT"]),
-            font=("Segoe UI", 10, "bold"),
-            padx=15,
-            pady=7,
-            cursor="hand2",
-        )
-        create_btn.pack(side="right")
-        cancel_btn.pack(side="right", padx=(0, 8))
-        cancel_btn.bind("<Button-1>", lambda _event: close(None))
-        create_btn.bind("<Button-1>", submit)
-        entry.bind("<Return>", submit)
-        win.bind("<Escape>", lambda _event: close(None) or "break")
-        win.protocol("WM_DELETE_WINDOW", lambda: close(None))
-
-        entry.focus_set()
-        win.grab_set()
-        self.root.wait_window(win)
-        return result["value"]
+        return self._ask_text_dialog(title, prompt, initial_value)
 
     def _ask_new_note_name(self) -> str | None:
         return self._ask_new_item_name(
@@ -166,12 +67,17 @@ class NotesMixin:
     def _rename_note(self, path: Path) -> None:
         if not path.exists():
             return
-        new_name = simpledialog.askstring(t("dialog.rename_note_title"), t("dialog.rename_note_prompt"), parent=self.root, initialvalue=path.name)
+        new_name = self._ask_text_dialog(
+            t("dialog.rename_note_title"),
+            t("dialog.rename_note_prompt"),
+            path.name,
+            confirm_text=t("explorer.menu.rename"),
+        )
         if not new_name:
             return
         target = rename_target(path, new_name, markdown=is_markdown_note(path))
         if target.exists() and target != path:
-            messagebox.showerror(APP_NAME, t("dialog.note_exists"))
+            self._show_message_dialog(t("dialog.note_exists"), danger=True)
             return
         old_path = path.resolve()
         link_sources: set[Path] = set()
@@ -189,23 +95,26 @@ class NotesMixin:
             self._refresh_wiki_index()
             pre_index = self._wiki_index
             link_sources = find_notes_linking_to(pre_index, old_path)
+        new_path = target.resolve()
+        changed_notes: list[Path] = []
         try:
-            path.rename(target)
+            if is_markdown_note(new_path) and pre_index is not None:
+                changed_notes = rename_note_and_rewrite_wikilinks(
+                    self._workspace_dir(),
+                    old_path,
+                    new_path,
+                    old_title=old_title,
+                    old_aliases=old_aliases,
+                    index=pre_index,
+                    candidate_paths=link_sources,
+                )
+            else:
+                path.rename(target)
         except OSError as exc:
             self._set_error(t("error.rename_failed", exc=exc))
             return
-        new_path = target.resolve()
-        changed_notes: list[Path] = []
-        if is_markdown_note(new_path) and link_sources and pre_index is not None:
-            changed_notes = rewrite_wikilinks_after_rename(
-                self._workspace_dir(),
-                old_path,
-                new_path,
-                old_title=old_title,
-                old_aliases=old_aliases,
-                index=pre_index,
-                candidate_paths=link_sources,
-            )
+        for changed_path in (old_path, new_path, *changed_notes):
+            self._mark_vault_internal_write(changed_path)
         if self.current_note_path and self.current_note_path.resolve() == old_path:
             self.current_note_path = new_path
             self.config.current_note_path = str(new_path) if is_markdown_note(new_path) else ""
@@ -219,7 +128,11 @@ class NotesMixin:
             self._set_status_key("status.renamed_links", count=len(changed_notes))
 
     def _delete_note(self, path: Path) -> None:
-        if not messagebox.askyesno(APP_NAME, t("dialog.delete_note", name=path.name)):
+        if not self._ask_confirmation_dialog(
+            t("dialog.delete_note", name=path.name),
+            confirm_text=t("explorer.menu.delete"),
+            danger=True,
+        ):
             return
         attachment_error: OSError | None = None
         try:

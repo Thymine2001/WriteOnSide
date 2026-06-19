@@ -4,12 +4,12 @@ import re
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import ttk
 from tkinterdnd2 import COPY, DND_FILES
 
 from PIL import Image, ImageDraw, ImageTk
 
-from ..config import APP_NAME, save_config
+from ..config import save_config
 from ..dragdrop import compact_paths, format_paths_for_drag, local_path_from_drop, split_drop_data
 from ..frontmatter import ensure_front_matter
 from ..i18n import t
@@ -1304,7 +1304,11 @@ class ExplorerMixin:
         import shutil
 
         if path.is_dir():
-            if not messagebox.askyesno(APP_NAME, t("dialog.delete_folder", name=path.name)):
+            if not self._ask_confirmation_dialog(
+                t("dialog.delete_folder", name=path.name),
+                confirm_text=t("explorer.menu.delete"),
+                danger=True,
+            ):
                 return
             try:
                 shutil.rmtree(path)
@@ -1341,7 +1345,11 @@ class ExplorerMixin:
         if len(paths) == 1:
             self._delete_explorer_item(paths[0])
             return
-        if not messagebox.askyesno(APP_NAME, t("dialog.delete_items", count=len(paths))):
+        if not self._ask_confirmation_dialog(
+            t("dialog.delete_items", count=len(paths)),
+            confirm_text=t("explorer.menu.delete"),
+            danger=True,
+        ):
             return
         deleted = 0
         for path in paths:

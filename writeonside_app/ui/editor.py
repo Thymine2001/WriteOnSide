@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 import tkinter as tk
-from tkinter import colorchooser, messagebox
+from tkinter import colorchooser
 
 from ..config import APP_NAME, save_config
 from ..format_icons import FORMAT_MDL2_FONT, FORMAT_MDL2_ICONS, format_menu_label
@@ -126,6 +126,32 @@ def _build_outline_cache_data(
 def _literal_find_pattern(needle: str, case_sensitive: bool) -> re.Pattern[str]:
     flags = 0 if case_sensitive else re.IGNORECASE
     return re.compile(re.escape(needle), flags)
+
+
+def _toggle_inline_wrapping(text: str, before: str, after: str) -> tuple[str, bool]:
+    """Wrap each selected line, or unwrap all lines when already formatted."""
+    if "\n" not in text:
+        wrapped = text.startswith(before) and text.endswith(after) and len(text) >= len(before) + len(after)
+        if wrapped:
+            return text[len(before):len(text) - len(after) if after else None], True
+        return before + text + after, False
+
+    lines = text.split("\n")
+    nonempty = [line for line in lines if line]
+    all_wrapped = bool(nonempty) and all(
+        line.startswith(before) and line.endswith(after) and len(line) >= len(before) + len(after)
+        for line in nonempty
+    )
+
+    def transform(line: str) -> str:
+        if not line:
+            return line
+        wrapped = line.startswith(before) and line.endswith(after) and len(line) >= len(before) + len(after)
+        if all_wrapped:
+            return line[len(before):len(line) - len(after) if after else None] if wrapped else line
+        return line if wrapped else before + line + after
+
+    return "\n".join(transform(line) for line in lines), all_wrapped
 
 
 def _literal_count(haystack: str, needle: str, case_sensitive: bool) -> int:
@@ -988,12 +1014,17 @@ class EditorMixin:
             return
         self._clear_placeholder()
         start, end, selected = self._selection_range(placeholder)
+        updated, unwrapped = _toggle_inline_wrapping(selected, before, after)
         self.text.delete(start, end)
-        self.text.insert(start, before + selected + after)
-        inner_start = f"{start}+{len(before)}c"
-        inner_end = f"{start}+{len(before) + len(selected)}c"
-        self.text.tag_add(tk.SEL, inner_start, inner_end)
-        self.text.mark_set(tk.INSERT, inner_end)
+        self.text.insert(start, updated)
+        if "\n" in selected or unwrapped:
+            selection_start = start
+            selection_end = f"{start}+{len(updated)}c"
+        else:
+            selection_start = f"{start}+{len(before)}c"
+            selection_end = f"{start}+{len(before) + len(selected)}c"
+        self.text.tag_add(tk.SEL, selection_start, selection_end)
+        self.text.mark_set(tk.INSERT, selection_end)
         self.text.focus_set()
 
     def _line_prefix(self, prefix: str) -> None:
@@ -1430,7 +1461,7 @@ class EditorMixin:
         g = globals()
         self._find_tooltip_buttons: dict[str, tk.Label] = {}
         self.find_panel = tk.Frame(
-            self.root,
+            self.main_body,
             bg=g["SURFACE"],
             highlightthickness=1,
             highlightbackground=g["BORDER"],
@@ -1601,7 +1632,9 @@ class EditorMixin:
 
     def _open_find_panel(self, replace: bool = False) -> None:
         if not self.find_panel.winfo_ismapped():
-            self.find_panel.pack(fill="x", after=self.toolbar)
+            self._place_find_panel()
+        else:
+            self.find_panel.lift()
         self._set_replace_visible(replace or self._find_replace_visible)
         selection = self._selected_text(self._active_text_widget())
         if selection and "\n" not in selection and len(selection) <= 120:
@@ -1609,6 +1642,13 @@ class EditorMixin:
         self.find_entry.focus_set()
         self.find_entry.selection_range(0, tk.END)
         self._refresh_find_matches(True)
+
+    def _place_find_panel(self) -> None:
+        # Overlay the editor instead of inserting another row into the root
+        # layout. relwidth plus a negative width keeps an 8 px margin on both
+        # sides and follows panel resizing without a Configure callback.
+        self.find_panel.place(x=8, y=8, relwidth=1.0, width=-16, anchor="nw")
+        self.find_panel.lift()
 
     def _set_replace_visible(self, visible: bool) -> None:
         self._find_replace_visible = visible
@@ -1619,10 +1659,12 @@ class EditorMixin:
             self.replace_row.pack(fill="x", padx=7, pady=(0, 6))
         else:
             self.replace_row.pack_forget()
+        if self.find_panel.winfo_ismapped():
+            self.find_panel.lift()
 
     def _hide_find_panel(self) -> None:
         if hasattr(self, "find_panel"):
-            self.find_panel.pack_forget()
+            self.find_panel.place_forget()
         self._clear_find_tags()
         self._find_current_index = None
         if self.view_mode == "edit":

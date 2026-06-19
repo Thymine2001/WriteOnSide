@@ -23,6 +23,7 @@ from .platform import (
 from .theme import *  # noqa: F401,F403
 
 from .ui.theme_utils import ThemeMixin
+from .ui.dialogs import DialogMixin
 from .ui.window import WindowMixin
 from .ui.tray_manager import TrayMixin
 from .ui.editor import EditorMixin
@@ -39,6 +40,7 @@ from .ui.vault_watcher import VaultWatcherMixin
 
 class WriteOnSideApp(
     ThemeMixin,
+    DialogMixin,
     WindowMixin,
     TrayMixin,
     EditorMixin,
@@ -161,6 +163,7 @@ class WriteOnSideApp(
         self._vault_refresh_after: str | None = None
         self._vault_pending_paths: set[Path] = set()
         self._vault_pending_moves: dict[Path, Path] = {}
+        self._vault_pending_directories: set[Path] = set()
         self._vault_internal_writes: dict[Path, float] = {}
         self._initial_file = initial_file
 
@@ -330,10 +333,10 @@ class WriteOnSideApp(
         self.open_file_btn.pack(side="right", padx=2, pady=6)
 
         tk.Frame(self.root, bg=g["BORDER"], height=1).pack(fill="x")
-        self._build_find_panel()
 
         self.main_body = tk.Frame(self.root, bg=g["BG"])
         self.main_body.pack(fill="both", expand=True)
+        self._build_find_panel()
 
         self.explorer = tk.Toplevel(self.root)
         self.explorer.overrideredirect(True)

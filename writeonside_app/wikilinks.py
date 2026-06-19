@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import os
+import logging
 import re
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .frontmatter import parse_front_matter, split_front_matter
 from .note_index import is_hidden_relative
-from .storage import safe_write_text
 
 
 WIKI_LINK_PATTERN = re.compile(r"(!)?\[\[([^\[\]\n]+?)\]\]")
@@ -46,6 +48,21 @@ class WikiNote:
     aliases: tuple[str, ...]
     headings: tuple[str, ...]
     links: tuple[WikiLink, ...]
+
+
+@dataclass(frozen=True)
+class WikiLinkRewrite:
+    path: Path
+    original: str
+    updated: str
+
+
+@dataclass
+class _StagedWikiLinkRewrite:
+    rewrite: WikiLinkRewrite
+    destination: Path
+    updated_temp: Path
+    rollback_temp: Path
 
 
 def normalize_wiki_name(value: str) -> str:
@@ -212,7 +229,7 @@ def find_notes_linking_to(index: WikiLinkIndex, target_path: Path) -> set[Path]:
     return candidates
 
 
-def rewrite_wikilinks_after_rename(
+def plan_wikilink_rewrites_after_rename(
     root: Path,
     old_path: Path,
     new_path: Path,
@@ -222,20 +239,20 @@ def rewrite_wikilinks_after_rename(
     new_title: str | None = None,
     index: WikiLinkIndex | None = None,
     candidate_paths: set[Path] | None = None,
-) -> list[Path]:
+) -> tuple[WikiLinkRewrite, ...]:
     root = root.resolve()
     old_path = old_path.resolve()
     new_path = new_path.resolve()
     if new_path.suffix.casefold() != ".md":
-        return []
+        return ()
     old_keys = collect_identifier_keys(old_path, root, old_title, old_aliases)
     if not old_keys:
-        return []
+        return ()
     if new_title is None:
         try:
             content = new_path.read_text(encoding="utf-8-sig")
             new_title = parse_front_matter(content, new_path.stem).title or new_path.stem
-        except OSError:
+        except (OSError, UnicodeError):
             new_title = new_path.stem
     new_default = new_title or new_path.stem
     index = index or WikiLinkIndex.build(root)
@@ -247,12 +264,17 @@ def rewrite_wikilinks_after_rename(
                 for note in index.notes.values()
                 if any(normalize_wiki_name(link.target) in old_keys for link in note.links)
             }
-    changed_paths: list[Path] = []
+    planned: list[WikiLinkRewrite] = []
     for note_path in sorted(candidate_paths):
+        note_path = note_path.resolve()
         try:
+            note_path.relative_to(root)
             content = note_path.read_text(encoding="utf-8-sig")
-        except (OSError, UnicodeError):
-            continue
+            # Validate write access before any rename or replacement occurs.
+            with note_path.open("r+b"):
+                pass
+        except (OSError, UnicodeError, ValueError) as exc:
+            raise OSError(f"Cannot prepare Wiki link update for {note_path}: {exc}") from exc
         links = parse_wiki_links(content)
         if not links:
             continue
@@ -272,9 +294,173 @@ def rewrite_wikilinks_after_rename(
         for start, end, replacement in sorted(replacements, key=lambda item: item[0], reverse=True):
             updated = updated[:start] + replacement + updated[end:]
         if updated != content:
-            safe_write_text(note_path, updated, workspace_root=root)
-            changed_paths.append(note_path)
-    return changed_paths
+            planned.append(WikiLinkRewrite(note_path, content, updated))
+    return tuple(planned)
+
+
+def _write_transaction_temp(destination: Path, content: str, label: str) -> Path:
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.{label}.",
+        suffix=".tmp",
+        dir=str(destination.parent),
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        return temp_path
+    except Exception:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _apply_wikilink_transaction(
+    plan: tuple[WikiLinkRewrite, ...],
+    *,
+    rename_from: Path | None = None,
+    rename_to: Path | None = None,
+) -> list[Path]:
+    logger = logging.getLogger("writeonside")
+    logging_ready = bool(logger.handlers)
+    rename_from = rename_from.resolve() if rename_from is not None else None
+    rename_to = rename_to.resolve() if rename_to is not None else None
+    staged: list[_StagedWikiLinkRewrite] = []
+    committed: list[_StagedWikiLinkRewrite] = []
+    renamed = False
+    try:
+        if (rename_from is None) != (rename_to is None):
+            raise ValueError("rename_from and rename_to must be provided together")
+        if rename_from is not None and rename_to is not None:
+            if not rename_from.is_file():
+                raise OSError(f"Rename source does not exist: {rename_from}")
+            if rename_to.exists() and rename_to != rename_from:
+                raise FileExistsError(rename_to)
+
+        destinations: set[Path] = set()
+        for rewrite in plan:
+            destination = rename_to if rename_from is not None and rewrite.path == rename_from else rewrite.path
+            if destination in destinations:
+                raise OSError(f"Duplicate Wiki link transaction destination: {destination}")
+            destinations.add(destination)
+            updated_temp = _write_transaction_temp(destination, rewrite.updated, "updated")
+            try:
+                rollback_temp = _write_transaction_temp(destination, rewrite.original, "rollback")
+            except Exception:
+                updated_temp.unlink(missing_ok=True)
+                raise
+            staged.append(
+                _StagedWikiLinkRewrite(
+                    rewrite=rewrite,
+                    destination=destination,
+                    updated_temp=updated_temp,
+                    rollback_temp=rollback_temp,
+                )
+            )
+
+        if logging_ready:
+            logger.info(
+                "Wiki rename transaction prepared: %s -> %s; rewrites=%d",
+                rename_from,
+                rename_to,
+                len(staged),
+            )
+        if rename_from is not None and rename_to is not None and rename_from != rename_to:
+            rename_from.rename(rename_to)
+            renamed = True
+        for item in staged:
+            os.replace(item.updated_temp, item.destination)
+            committed.append(item)
+
+        for item in staged:
+            item.rollback_temp.unlink(missing_ok=True)
+        if logging_ready:
+            logger.info("Wiki rename transaction committed; rewrites=%d", len(committed))
+        return [item.destination for item in staged]
+    except Exception:
+        if logging_ready:
+            logger.exception(
+                "Wiki rename transaction failed; rolling back: %s -> %s; committed=%d",
+                rename_from,
+                rename_to,
+                len(committed),
+            )
+        for item in reversed(committed):
+            try:
+                os.replace(item.rollback_temp, item.destination)
+            except OSError:
+                if logging_ready:
+                    logger.exception("Unable to roll back Wiki link file: %s", item.destination)
+        if renamed and rename_from is not None and rename_to is not None:
+            try:
+                if rename_to.exists() and not rename_from.exists():
+                    rename_to.rename(rename_from)
+            except OSError:
+                if logging_ready:
+                    logger.exception("Unable to roll back note rename: %s -> %s", rename_to, rename_from)
+        raise
+    finally:
+        for item in staged:
+            for temp_path in (item.updated_temp, item.rollback_temp):
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+
+def rewrite_wikilinks_after_rename(
+    root: Path,
+    old_path: Path,
+    new_path: Path,
+    *,
+    old_title: str,
+    old_aliases: tuple[str, ...],
+    new_title: str | None = None,
+    index: WikiLinkIndex | None = None,
+    candidate_paths: set[Path] | None = None,
+) -> list[Path]:
+    plan = plan_wikilink_rewrites_after_rename(
+        root,
+        old_path,
+        new_path,
+        old_title=old_title,
+        old_aliases=old_aliases,
+        new_title=new_title,
+        index=index,
+        candidate_paths=candidate_paths,
+    )
+    return _apply_wikilink_transaction(plan)
+
+
+def rename_note_and_rewrite_wikilinks(
+    root: Path,
+    old_path: Path,
+    new_path: Path,
+    *,
+    old_title: str,
+    old_aliases: tuple[str, ...],
+    index: WikiLinkIndex,
+    candidate_paths: set[Path],
+) -> list[Path]:
+    plan = plan_wikilink_rewrites_after_rename(
+        root,
+        old_path,
+        new_path,
+        old_title=old_title,
+        old_aliases=old_aliases,
+        new_title=new_path.stem,
+        index=index,
+        candidate_paths=candidate_paths,
+    )
+    return _apply_wikilink_transaction(
+        plan,
+        rename_from=old_path,
+        rename_to=new_path,
+    )
 
 
 def is_markdown_note_path(path: Path) -> bool:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 from typing import Callable
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 import tkinter as tk
 import tkinter.font as tkfont
 from PIL import Image, ImageDraw, ImageTk
@@ -1697,10 +1697,10 @@ class SettingsMixin:
 
         def close_settings() -> None:
             nonlocal width_preview_after
-            choice = messagebox.askyesnocancel(APP_NAME, t("dialog.save_settings"), parent=win)
+            choice = self._ask_save_discard_dialog(t("dialog.save_settings"), parent=win)
             if choice is None:
                 return
-            if choice:
+            if choice == "save":
                 if not save_settings():
                     return
             else:
