@@ -469,6 +469,8 @@ class WriteOnSideApp(
     def _icon_label(self, parent: tk.Widget, text: str, command: Callable[[], None], tooltip: str = "") -> tk.Label:
         g = globals()
         label = tk.Label(parent, text=text, bg=g["SURFACE"], fg=g["MUTED"], font=("Segoe UI", 15), cursor="hand2", width=2, padx=2)
+        label._normal_bg = g["SURFACE"]
+        label._normal_fg = g["MUTED"]
         label._tooltip_text = tooltip
         label.bind("<Button-1>", lambda _e: command())
         label.bind(
@@ -478,7 +480,7 @@ class WriteOnSideApp(
                 self._show_tooltip(label, getattr(label, "_tooltip_text", tooltip)),
             ),
         )
-        label.bind("<Leave>", lambda _e: (label.config(bg=globals()["SURFACE"], fg=globals()["MUTED"]), self._hide_tooltip()))
+        label.bind("<Leave>", lambda _e: (label.config(bg=getattr(label, "_normal_bg", globals()["SURFACE"]), fg=getattr(label, "_normal_fg", globals()["MUTED"])), self._hide_tooltip()))
         return label
 
     def _footer_action(self, parent: tk.Widget, text: str, command: Callable[[], None], tooltip: str = "") -> tk.Label:

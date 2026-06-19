@@ -27,6 +27,11 @@ SWP_NOMOVE = 0x0002
 SWP_NOZORDER = 0x0004
 SWP_NOACTIVATE = 0x0010
 SWP_FRAMECHANGED = 0x0020
+WM_SETREDRAW = 0x000B
+RDW_INVALIDATE = 0x0001
+RDW_ERASE = 0x0004
+RDW_ALLCHILDREN = 0x0080
+RDW_UPDATENOW = 0x0100
 
 
 class _RECT(ctypes.Structure):
@@ -365,3 +370,35 @@ def move_windows_atomically(layouts: list[tuple[int, int, int, int, int]]) -> bo
         if not batch:
             return False
     return bool(user32.EndDeferWindowPos(batch))
+
+
+def set_window_redraw(hwnd: int, enabled: bool) -> bool:
+    """Pause or resume painting for a native window and all of its children."""
+    if not hwnd:
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        user32.SendMessageW(
+            wintypes.HWND(hwnd),
+            WM_SETREDRAW,
+            wintypes.WPARAM(1 if enabled else 0),
+            wintypes.LPARAM(0),
+        )
+        return True
+    except (AttributeError, OSError):
+        return False
+
+
+def redraw_window(hwnd: int) -> None:
+    """Invalidate a resumed window once, including every child control."""
+    if not hwnd:
+        return
+    try:
+        ctypes.windll.user32.RedrawWindow(
+            wintypes.HWND(hwnd),
+            None,
+            None,
+            RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW,
+        )
+    except (AttributeError, OSError):
+        pass

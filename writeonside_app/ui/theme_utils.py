@@ -5,6 +5,7 @@ import tkinter.font as tkfont
 from tkinter import ttk
 
 from .. import theme as theme_module
+from ..platform import redraw_window, set_window_redraw
 from ..theme import *  # noqa: F401,F403  – initial palette values; updated by _set_theme_globals
 
 
@@ -174,9 +175,77 @@ class ThemeMixin:
         except tk.TclError:
             children = []
         for child in children:
+            # Toplevels are themed as independent roots in _apply_theme. Walking
+            # them here would recolor every dialog/explorer widget twice.
+            if isinstance(child, tk.Toplevel):
+                continue
             self._recolor_widget_tree(child, old_palette, new_palette, sidebar)
 
-    def _apply_theme(self, name: str) -> None:
+    def _apply_top_chrome_theme(self, palette: dict[str, str]) -> None:
+        pairs = (
+            ("header", {"bg": "SURFACE"}),
+            ("title_group", {"bg": "SURFACE"}),
+            ("app_title_label", {"bg": "SURFACE", "fg": "TEXT"}),
+            ("note_title", {"bg": "SURFACE", "fg": "MUTED"}),
+            ("menu_btn", {"bg": "SURFACE", "fg": "MUTED", "_normal_bg": "SURFACE", "_normal_fg": "MUTED"}),
+            ("close_btn", {"bg": "SURFACE", "fg": "MUTED", "_normal_bg": "SURFACE", "_normal_fg": "MUTED"}),
+            ("settings_btn", {"bg": "SURFACE", "fg": "MUTED", "_normal_bg": "SURFACE", "_normal_fg": "MUTED"}),
+            ("toolbar", {"bg": "SURFACE_2"}),
+            ("toolbar_top", {"bg": "SURFACE_2"}),
+            ("toolbar_bottom", {"bg": "SURFACE_2"}),
+            ("toolbar_sep", {"bg": "BORDER"}),
+        )
+        for name, option_map in pairs:
+            widget = getattr(self, name, None)
+            if widget is None:
+                continue
+            updates = {
+                option: palette[color_key]
+                for option, color_key in option_map.items()
+                if not option.startswith("_") and color_key in palette
+            }
+            try:
+                if updates:
+                    widget.configure(**updates)
+            except tk.TclError:
+                pass
+            for option, color_key in option_map.items():
+                if option.startswith("_") and color_key in palette:
+                    setattr(widget, option, palette[color_key])
+        for btn in getattr(self, "_md_tool_buttons", []):
+            try:
+                btn.configure(bg=palette["SURFACE_2"], fg=palette["MUTED"])
+                btn._normal_bg = palette["SURFACE_2"]
+                btn._normal_fg = palette["MUTED"]
+            except tk.TclError:
+                pass
+
+    def _suspend_theme_redraw(self, roots: list[tk.Misc]) -> list[int]:
+        window_handle = getattr(self, "_window_handle", None)
+        if window_handle is None:
+            return []
+        handles: list[int] = []
+        for window in roots:
+            try:
+                handle = int(window_handle(window))
+            except (TypeError, ValueError, tk.TclError):
+                continue
+            if handle and set_window_redraw(handle, False):
+                handles.append(handle)
+        return handles
+
+    @staticmethod
+    def _resume_theme_redraw(handles: list[int]) -> None:
+        # Resume all neighbouring top-levels before invalidating any of them,
+        # so Windows cannot compose a frame containing mixed theme colors.
+        for handle in handles:
+            set_window_redraw(handle, True)
+        for handle in handles:
+            redraw_window(handle)
+
+    def _apply_theme(self, name: str, *, rerender_read: bool = True, flush: bool = True) -> None:
+        if name == getattr(self, "_active_theme", None) and rerender_read and flush:
+            return
         old_palette = {key: globals()[key] for key in theme_module.PALETTE_KEYS}
         new_palette = self._set_theme_globals(name)
         if not hasattr(self, "root"):
@@ -191,6 +260,13 @@ class ThemeMixin:
             roots.extend(child for child in self.root.winfo_children() if isinstance(child, tk.Toplevel))
         except tk.TclError:
             pass
+
+        redraw_handles = self._suspend_theme_redraw(roots)
+        if redraw_handles:
+            # Scheduling the release first also guarantees redraw is restored if
+            # a later widget has already been destroyed and raises unexpectedly.
+            self.root.after_idle(lambda handles=redraw_handles: self._resume_theme_redraw(handles))
+        self._apply_top_chrome_theme(new_palette)
 
         seen: set[str] = set()
         for widget in roots:
@@ -225,18 +301,19 @@ class ThemeMixin:
             self.text.tag_configure("outline_current", background=new_palette["OUTLINE_CURRENT"], foreground=new_palette["TEXT"])
         if hasattr(self, "read_text"):
             self.read_text.configure(bg=new_palette["BG"], fg=new_palette["TEXT"])
-            self._render_read_content()
+            if rerender_read:
+                self._render_read_content()
             self.read_text.tag_configure("find_match", background=new_palette["FIND_MATCH"], foreground=new_palette["TEXT"])
             self.read_text.tag_configure("find_current", background=new_palette["ACCENT"], foreground=self._contrast_text(new_palette["ACCENT"]))
             self.read_text.tag_configure("outline_current", background=new_palette["OUTLINE_CURRENT"], foreground=new_palette["TEXT"])
         if hasattr(self, "note_split"):
             self.note_split.configure(bg=new_palette["BORDER"])
         if hasattr(self, "_refresh_split_note_panes"):
-            self._refresh_split_note_panes()
+            self._refresh_split_note_panes(rerender=rerender_read)
         if hasattr(self, "status_label"):
             self.status_label.configure(fg=new_palette["MUTED"])
         if hasattr(self, "view_toggle_btn"):
-            self._update_view_buttons()
+            self._update_view_buttons(relayout=False)
         if hasattr(self, "panel_resize_handle"):
             active_kind = getattr(self, "_width_resize_kind", None)
             self.panel_resize_handle.configure(
@@ -247,7 +324,8 @@ class ThemeMixin:
             )
         if hasattr(self, "line_number_canvas"):
             self._schedule_editor_structure_refresh()
-        self.root.update_idletasks()
+        if flush:
+            self.root.update_idletasks()
 
     def _apply_header_alignment(self) -> None:
         if not hasattr(self, "title_group"):

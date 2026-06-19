@@ -51,6 +51,10 @@ class SettingsMixin:
         }
 
         win = tk.Toplevel(self.root)
+        # Keep the native window hidden until all controls have been laid out.
+        # Mapping a half-built Toplevel exposes several intermediate frames on
+        # Windows and looks like a delayed/dragging title area.
+        win.withdraw()
         win.title(t("settings.window_title", app=APP_NAME))
         work_width = max(320, self.work_right - self.work_left)
         work_height = max(320, self.work_bottom - self.work_top)
@@ -62,7 +66,6 @@ class SettingsMixin:
         win.minsize(min(420, settings_w), min(320, settings_h))
         win.configure(bg=g["BG"])
         win.transient(self.root)
-        win.lift(self.root)
         win.resizable(True, True)
 
         content_shell = tk.Frame(win, bg=g["BG"])
@@ -959,9 +962,10 @@ class SettingsMixin:
         def select_theme(value: str) -> None:
             if value not in theme_module.THEMES:
                 return
+            if value == theme_var.get() and value == getattr(self, "_active_theme", None):
+                return
             theme_var.set(value)
-            self._apply_theme(value)
-            select_position(position_var.get())
+            self._apply_theme(value, rerender_read=False, flush=False)
             refresh_theme_tiles()
             refresh_setting_toggles()
             refresh_page_nav()
@@ -1028,7 +1032,10 @@ class SettingsMixin:
         typography_panel.pack(fill="x")
         controls_row = tk.Frame(typography_panel, bg=g["SURFACE"])
         controls_row.pack(fill="x")
-        available_fonts = sorted(set(tkfont.families(self.root)), key=str.casefold)
+        available_fonts = getattr(self, "_available_font_families", None)
+        if available_fonts is None:
+            available_fonts = tuple(sorted(set(tkfont.families(self.root)), key=str.casefold))
+            self._available_font_families = available_fonts
         font_family_var = tk.StringVar(value=self.config.font_family)
         font_shell = tk.Frame(controls_row, bg=g["SURFACE"], highlightthickness=1, highlightbackground=g["BORDER"])
         font_shell.pack(side="left", fill="x", expand=True, padx=(0, 8))
@@ -1632,7 +1639,8 @@ class SettingsMixin:
             self._preview_alpha = None
             self.config.app_position = position_var.get() if position_var.get() in {"left", "right"} else "right"
             self.config.theme = theme_var.get() if theme_var.get() in theme_module.THEMES else theme_module.DEFAULT_THEME
-            self._apply_theme(self.config.theme)
+            if self.config.theme != getattr(self, "_active_theme", None):
+                self._apply_theme(self.config.theme)
             self.config.font_family = font_family_var.get().strip() or "Segoe UI"
             self.config.font_size = font_size
             self.config.attachments_folder = attachments_folder
@@ -1719,6 +1727,9 @@ class SettingsMixin:
 
         win.protocol("WM_DELETE_WINDOW", close_settings)
         update_scroll_region()
+        win.update_idletasks()
+        win.deiconify()
+        win.lift(self.root)
 
     def _browse_into(self, entry: tk.Entry, browse: Callable[[], str], after: Callable[[], None] | None = None) -> None:
         value = browse()

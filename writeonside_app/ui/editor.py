@@ -2369,7 +2369,7 @@ class EditorMixin:
         else:
             self._switch_to_edit()
 
-    def _update_view_buttons(self) -> None:
+    def _update_view_buttons(self, *, relayout: bool = True) -> None:
         g = globals()
         if self.current_note_path is not None and not self._is_markdown_document() and self.preview_path is None:
             self.view_toggle_btn.config(
@@ -2384,7 +2384,8 @@ class EditorMixin:
             for btn in self._md_tool_buttons:
                 btn.config(fg=g["DISABLED"])
                 btn._normal_fg = g["DISABLED"]
-            self._relayout_toolbar(force=True)
+            if relayout:
+                self._relayout_toolbar(force=True)
             self._update_command_tooltips()
             return
         if self.preview_path is not None:
@@ -2400,7 +2401,8 @@ class EditorMixin:
             for btn in self._md_tool_buttons:
                 btn.config(fg=g["DISABLED"])
                 btn._normal_fg = g["DISABLED"]
-            self._relayout_toolbar(force=True)
+            if relayout:
+                self._relayout_toolbar(force=True)
             self._update_command_tooltips()
             return
         if self.view_mode == "edit":
@@ -2416,7 +2418,8 @@ class EditorMixin:
             for btn in self._md_tool_buttons:
                 btn.config(fg=g["MUTED"])
                 btn._normal_fg = g["MUTED"]
-            self._relayout_toolbar(force=True)
+            if relayout:
+                self._relayout_toolbar(force=True)
         else:
             self.view_toggle_btn.config(
                 text="",
@@ -2430,7 +2433,8 @@ class EditorMixin:
             for btn in self._md_tool_buttons:
                 btn.config(fg=g["DISABLED"])
                 btn._normal_fg = g["DISABLED"]
-            self._relayout_toolbar(force=True)
+            if relayout:
+                self._relayout_toolbar(force=True)
         self._update_command_tooltips()
 
     # ── Read mode copy ───────────────────────────────────────────────────────

@@ -659,7 +659,7 @@ class NotesMixin:
         self._update_split_note_title(note)
         self._apply_split_live_render(note)
 
-    def _refresh_split_note_panes(self) -> None:
+    def _refresh_split_note_panes(self, *, rerender: bool = True) -> None:
         for note in getattr(self, "_split_notes", []):
             for key in ("frame", "body"):
                 widget = note.get(key)
@@ -682,7 +682,13 @@ class NotesMixin:
                     font=(self.config.font_family or "Segoe UI", self.config.font_size + 3),
                 )
             self._update_split_note_title(note, active=note is getattr(self, "_last_focused_split_note", None))
-            self._apply_split_live_render(note)
+            if rerender:
+                self._apply_split_live_render(note)
+            elif isinstance(text, tk.Text):
+                # Theme previews only need to update tag colors. Rebuilding the
+                # complete highlight plan here makes every theme click scale with
+                # the size and number of open split notes.
+                self._configure_split_markdown_tags(text)
 
     def _configure_split_markdown_tags(self, text: tk.Text) -> None:
         family = self.config.font_family or "Segoe UI"
