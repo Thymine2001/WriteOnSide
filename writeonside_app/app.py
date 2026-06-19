@@ -139,7 +139,6 @@ class WriteOnSideApp(
         self._editor_color_tags: set[str] = set()
         self._editor_image_editing_keys: set[str] = set()
         self._editor_image_previews: dict[str, dict] = {}
-        self._editor_preview_photos: list[object] = []
         self._editor_image_blocks: dict[str, EditorImageBlock] = {}
         self._editor_image_width_after: str | None = None
         self._editor_image_last_width: int | None = None
@@ -153,6 +152,8 @@ class WriteOnSideApp(
         self._outline_code_ranges: tuple[tuple[int, int, str], ...] = ()
         self._outline_cache_valid = False
         self._outline_cache_after: str | None = None
+        self._outline_cache_generation = 0
+        self._outline_cache_building = False
         self._large_highlight_range: tuple[int, int] | None = None
         self._backlinks_popup = None
         self._vault_observer = None

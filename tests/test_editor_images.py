@@ -5,6 +5,7 @@ from pathlib import Path
 from PIL import Image
 
 from writeonside_app.editor_images import plan_editor_image_blocks
+from writeonside_app.image_safety import ImageTooLargeError, open_image_checked
 
 
 class EditorImageBlockTests(unittest.TestCase):
@@ -49,6 +50,13 @@ class EditorImageBlockTests(unittest.TestCase):
             blocks = plan_editor_image_blocks(content, directory / "note.md")
             self.assertEqual("1.2", blocks[0].start)
             self.assertEqual("1.23", blocks[0].end)
+
+    def test_rejects_image_above_pixel_limit_before_preview_decode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "large.png"
+            Image.new("RGB", (12, 12), "#224466").save(image_path)
+            with self.assertRaises(ImageTooLargeError):
+                open_image_checked(image_path, pixel_limit=100)
 
 
 if __name__ == "__main__":

@@ -68,6 +68,15 @@ class TextFileTests(unittest.TestCase):
             self.assertIn(b"\r\n", data)
             self.assertNotIn(b"\r\r\n", data)
 
+    def test_utf8_lf_read_preserves_content_and_newline_style(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "example.md"
+            path.write_bytes(b"one\ntwo\n")
+            content, encoding, newline = read_editable_text(path)
+            self.assertEqual("one\ntwo\n", content)
+            self.assertEqual("utf-8", encoding)
+            self.assertEqual("\n", newline)
+
     def test_external_file_save_updates_original_path_and_preserves_newlines(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

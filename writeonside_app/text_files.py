@@ -50,8 +50,9 @@ def read_editable_text(path: Path) -> tuple[str, str, str]:
     for encoding in encodings:
         try:
             content = data.decode(encoding)
-            newline = "\r\n" if b"\r\n" in data else "\r" if b"\r" in data else "\n"
-            normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+            has_cr = b"\r" in data
+            newline = "\r\n" if has_cr and b"\r\n" in data else "\r" if has_cr else "\n"
+            normalized = content.replace("\r\n", "\n").replace("\r", "\n") if has_cr else content
             return normalized, encoding, newline
         except UnicodeError:
             continue

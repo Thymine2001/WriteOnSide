@@ -184,8 +184,10 @@ class TrayMixin:
         self.tray = pystray.Icon(APP_NAME, self._make_tray_icon(), APP_NAME, menu)
         threading.Thread(target=self.tray.run, daemon=True).start()
 
-    def _quit(self) -> None:
+    def _shutdown(self) -> None:
         self._save_note(False)
+        if hasattr(self, "_save_all_split_notes"):
+            self._save_all_split_notes()
         self._stop_vault_watcher()
         self._unregister_command_shortcuts()
         self._unregister_hotkey()
@@ -222,3 +224,6 @@ class TrayMixin:
             except tk.TclError:
                 pass
         self.root.quit()
+
+    def _quit(self) -> None:
+        self._shutdown()

@@ -114,6 +114,7 @@ class EditorStructureMixin:
             return
         g = globals()
         canvas.configure(bg=g["SURFACE"])
+        self._fit_line_number_gutter()
         headings = {int(item["line"]): item for item in self._heading_sections()}
         top_line = int(self.text.index("@0,0").split(".")[0])
         bottom_line = int(self.text.index(f"@0,{max(1, self.text.winfo_height())}").split(".")[0]) + 1
@@ -131,8 +132,9 @@ class EditorStructureMixin:
                 continue
             if visible_line != line:
                 continue
+            canvas_width = max(1, canvas.winfo_width())
             canvas.create_text(
-                43,
+                canvas_width - 9,
                 y,
                 anchor="ne",
                 text=str(line),
@@ -159,6 +161,24 @@ class EditorStructureMixin:
             max(1, canvas.winfo_height()),
             fill=g["BORDER"],
         )
+
+    def _fit_line_number_gutter(self) -> None:
+        try:
+            total_lines = int(str(self.text.index("end-1c")).split(".")[0])
+        except (ValueError, tk.TclError):
+            total_lines = 1
+        digits = max(2, len(str(max(1, total_lines))))
+        font_size = max(8, self.config.font_size - 1)
+        try:
+            import tkinter.font as tkfont
+
+            font = tkfont.Font(self.line_number_canvas, font=("Consolas", font_size))
+            digit_width = max(7, font.measure("0"))
+        except (AttributeError, tk.TclError):
+            digit_width = 8
+        desired = max(52, 18 + digits * digit_width)
+        if abs(int(self.line_number_canvas.winfo_width()) - desired) > 1:
+            self.line_number_canvas.configure(width=desired)
 
     def _on_line_number_click(self, event) -> str:
         tags = self.line_number_canvas.gettags("current")

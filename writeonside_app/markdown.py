@@ -5,7 +5,7 @@ from typing import Callable
 from urllib.parse import unquote
 import tkinter as tk
 import tkinter.font as tkfont
-from PIL import Image, ImageTk
+from PIL import ImageTk
 
 from . import theme
 from .frontmatter import split_front_matter
@@ -19,6 +19,7 @@ from .obsidian_md import (
     is_footnote_definition_line,
     strip_obsidian_comments,
 )
+from .image_safety import ImageTooLargeError, load_thumbnail_image
 from .syntax_highlight import insert_syntax_highlighted_code_block
 from .wikilinks import WIKI_LINK_PATTERN, WikiLink, parse_wiki_links
 
@@ -465,13 +466,10 @@ def insert_markdown_image(widget: tk.Text, alt: str, raw_path: str, base_path: P
     if not path or not path.exists() or not path.is_file():
         return False
     try:
-        img = Image.open(path)
         max_w = max(180, widget.winfo_width() - 48)
-        if img.width > max_w:
-            ratio = max_w / img.width
-            img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
+        img = load_thumbnail_image(path, (max_w, max_w * 4))
         photo = ImageTk.PhotoImage(img)
-    except Exception:
+    except (OSError, ImageTooLargeError):
         return False
     if not hasattr(widget, "_markdown_images"):
         widget._markdown_images = []

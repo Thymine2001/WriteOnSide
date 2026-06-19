@@ -4,10 +4,11 @@ import mimetypes
 from pathlib import Path
 import tkinter as tk
 
-from PIL import Image, ImageOps, ImageTk
+from PIL import ImageTk
 
 from . import theme
 from .dragdrop import is_image_path
+from .image_safety import ImageTooLargeError, open_image_checked, load_thumbnail_image
 from .i18n import t
 from .text_files import EDITABLE_TEXT_SUFFIXES
 
@@ -107,14 +108,13 @@ def render_file_preview(
 
     if is_image_path(path):
         try:
-            with Image.open(path) as source:
-                image = ImageOps.exif_transpose(source).copy()
-                dimensions = f"{image.width} x {image.height}"
-                max_width = max(160, widget.winfo_width() - 44)
-                max_height = max(160, widget.winfo_height() - 130)
-                image.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
-                photo = ImageTk.PhotoImage(image)
-        except Exception as exc:
+            checked = open_image_checked(path)
+            dimensions = f"{checked.width} x {checked.height}"
+            max_width = max(160, widget.winfo_width() - 44)
+            max_height = max(160, widget.winfo_height() - 130)
+            image = load_thumbnail_image(path, (max_width, max_height))
+            photo = ImageTk.PhotoImage(image)
+        except (OSError, ValueError, ImageTooLargeError) as exc:
             widget.insert(tk.END, t("preview.image_unavailable", exc=exc) + "\n", "preview_meta")
             widget.configure(state=tk.DISABLED)
             return "info"

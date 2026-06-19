@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from PIL import Image, ImageTk
+from PIL import ImageTk
 
 from .dragdrop import IMAGE_SUFFIXES
+from .image_safety import ImageTooLargeError, load_thumbnail_image
 from .markdown import IMAGE_MD, resolve_markdown_path
 from .wikilinks import parse_wiki_links
 
@@ -88,12 +89,8 @@ def _is_previewable_image(path: Path | None) -> bool:
 
 def load_preview_photo(path: Path, max_width: int) -> ImageTk.PhotoImage | None:
     try:
-        with Image.open(path) as source:
-            image = source.copy()
         width = max(120, max_width)
-        if image.width > width:
-            ratio = width / image.width
-            image = image.resize((int(image.width * ratio), int(image.height * ratio)), Image.LANCZOS)
+        image = load_thumbnail_image(path, (width, width * 4))
         return ImageTk.PhotoImage(image)
-    except OSError:
+    except (OSError, ImageTooLargeError):
         return None

@@ -596,7 +596,6 @@ class NotesMixin:
             "live_render_after": None,
             "color_tags": set(),
             "image_previews": {},
-            "preview_photos": [],
             "image_blocks": {},
             "image_preview_state": None,
             "image_last_width": None,
@@ -958,7 +957,6 @@ class NotesMixin:
         if isinstance(previews, dict):
             for key in list(previews.keys()):
                 self._remove_split_image_preview(note, key)
-        note["preview_photos"] = []
         note["image_blocks"] = {}
         note["image_preview_state"] = None
         note["image_last_width"] = None
@@ -1047,9 +1045,6 @@ class NotesMixin:
         photo = load_preview_photo(block.image_path, max_width)
         if photo is None:
             return
-        photos = note.setdefault("preview_photos", [])
-        if isinstance(photos, list):
-            photos.append(photo)
         g = globals()
         outer = tk.Frame(text, bg=g["BG"], highlightthickness=2, highlightbackground=g["BG"])
         image_label = tk.Label(outer, image=photo, bg=g["BG"], cursor="hand2", borderwidth=0)
@@ -1128,6 +1123,7 @@ class NotesMixin:
                     "markdown": block.markdown,
                     "max_width": max_width,
                     "image_path": str(block.image_path),
+                    "photo": photo,
                 }
         except tk.TclError:
             for mark in (window_mark, source_start_mark, source_end_mark):

@@ -4,8 +4,9 @@ import math
 from pathlib import Path
 import tkinter as tk
 
-from PIL import Image, ImageOps, ImageTk
+from PIL import Image, ImageTk
 
+from ..image_safety import ImageTooLargeError, open_image_checked
 from ..i18n import t
 from ..theme import *  # noqa: F401,F403
 
@@ -28,9 +29,8 @@ class ImageViewerMixin:
 
     def _open_image_viewer(self, path: Path) -> None:
         try:
-            with Image.open(path) as source:
-                original = ImageOps.exif_transpose(source).convert("RGBA")
-        except (OSError, ValueError) as exc:
+            original = open_image_checked(path).convert("RGBA")
+        except (OSError, ValueError, ImageTooLargeError) as exc:
             self._set_error(t("error.image_preview_failed", exc=exc))
             return
 

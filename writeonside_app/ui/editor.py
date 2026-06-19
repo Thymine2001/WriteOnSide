@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from bisect import bisect_right
 from pathlib import Path
 from typing import Callable
@@ -46,6 +47,80 @@ READ_MODE_PAGE_LINES = 600
 TYPE_COMPLETION_MIN_PREFIX = 3
 TYPE_COMPLETION_MAX_SCAN_CHARS = 600_000
 TYPE_COMPLETION_WORD_RE = re.compile(r"[A-Za-z][A-Za-z'-]{2,}[A-Za-z]")
+
+
+def _plain_heading_text_value(text: str) -> str:
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"</?(?:u|sup|sub)>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?:~~|==)", "", text)
+    text = text.replace("**", "").replace("__", "").replace("*", "").replace("_", "")
+    return text.strip()
+
+
+def _build_outline_cache_data(
+    content: str,
+) -> tuple[
+    tuple[dict[str, int | str], ...],
+    tuple[int, ...],
+    tuple[tuple[int, ...], ...],
+    tuple[tuple[int, int, str], ...],
+    DocumentMetrics,
+]:
+    headings: list[dict[str, int | str]] = []
+    code_ranges: list[tuple[int, int, str]] = []
+    code_start: int | None = None
+    code_language = ""
+    _header, body = split_front_matter(content)
+    body_offset = content[: len(content) - len(body)].count("\n")
+    total_lines = content.count("\n") + 1
+    for body_line_no, line in enumerate(body.splitlines(), start=1):
+        line_no = body_line_no + body_offset
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if code_start is None:
+                code_start = line_no
+                code_language = stripped[3:].strip()
+            else:
+                code_ranges.append((code_start, line_no, code_language))
+                code_start = None
+                code_language = ""
+            continue
+        if code_start is not None:
+            continue
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line)
+        if not match:
+            continue
+        title = _plain_heading_text_value(match.group(2)).strip()
+        if title:
+            headings.append({"level": len(match.group(1)), "title": title, "line": line_no})
+    if code_start is not None:
+        code_ranges.append((code_start, total_lines, code_language))
+
+    occurrences: dict[tuple[int, str], int] = {}
+    stack: list[int] = []
+    outline_stacks: list[tuple[int, ...]] = []
+    for index, heading in enumerate(headings):
+        level = int(heading["level"])
+        identity = (level, str(heading["title"]))
+        occurrences[identity] = occurrences.get(identity, 0) + 1
+        heading["occurrence"] = occurrences[identity]
+        heading["end_line"] = total_lines
+        while stack and int(headings[stack[-1]]["level"]) >= level:
+            previous = stack.pop()
+            headings[previous]["end_line"] = int(heading["line"]) - 1
+        stack.append(index)
+        outline_stacks.append(tuple(stack[-4:]))
+
+    outline_cache = tuple(dict(item) for item in headings)
+    return (
+        outline_cache,
+        tuple(int(item["line"]) for item in headings),
+        tuple(outline_stacks),
+        tuple(code_ranges),
+        metrics_for_content(content),
+    )
 
 
 def _literal_find_pattern(needle: str, case_sensitive: bool) -> re.Pattern[str]:
@@ -368,7 +443,6 @@ class EditorMixin:
             return
         for key in list(getattr(self, "_editor_image_previews", {}).keys()):
             self._remove_editor_image_preview(key)
-        self._editor_preview_photos = []
         self._editor_image_last_width = None
         self._editor_image_preview_state = None
         try:
@@ -438,7 +512,6 @@ class EditorMixin:
         photo = load_preview_photo(block.image_path, max_width)
         if photo is None:
             return
-        self._editor_preview_photos.append(photo)
         g = globals()
         outer = tk.Frame(
             self.text,
@@ -524,6 +597,7 @@ class EditorMixin:
                 "markdown": block.markdown,
                 "max_width": max_width,
                 "image_path": str(block.image_path),
+                "photo": photo,
             }
         except tk.TclError:
             for mark in (window_mark, source_start_mark, source_end_mark):
@@ -647,6 +721,13 @@ class EditorMixin:
 
     def _set_editor_content(self, content: str) -> None:
         self._cancel_large_read_fragment()
+        after_id = getattr(self, "_outline_cache_after", None)
+        if after_id is not None:
+            try:
+                self.root.after_cancel(after_id)
+            except tk.TclError:
+                pass
+            self._outline_cache_after = None
         self._read_fragment_active = False
         self._read_fragment_start_line = 1
         self._read_fragment_end_line = 1
@@ -660,7 +741,11 @@ class EditorMixin:
         self.text.edit_modified(False)
         self.text.config(fg=globals()["TEXT"])
         self._maybe_show_placeholder()
-        self._rebuild_outline_cache(content)
+        metrics = metrics_for_content(content)
+        if metrics.is_large:
+            self._schedule_outline_cache_rebuild(content)
+        else:
+            self._rebuild_outline_cache(content)
         self._apply_live_render()
         self._schedule_editor_structure_refresh(reapply_folds=True)
 
@@ -1681,62 +1766,67 @@ class EditorMixin:
             except tk.TclError:
                 pass
         delay = 400 if self._is_large_editor_document() else 180
-        self._outline_cache_after = self.root.after(delay, self._rebuild_outline_cache)
+        self._outline_cache_after = self.root.after(delay, self._rebuild_outline_cache_after_idle)
+
+    def _rebuild_outline_cache_after_idle(self) -> None:
+        self._outline_cache_after = None
+        content = self._get_editor_content()
+        if metrics_for_content(content).is_large:
+            self._schedule_outline_cache_rebuild(content)
+        else:
+            self._rebuild_outline_cache(content)
 
     def _rebuild_outline_cache(self, content: str | None = None) -> None:
         self._outline_cache_after = None
         if content is None:
             content = self._get_editor_content()
-        headings: list[dict[str, int | str]] = []
-        code_ranges: list[tuple[int, int, str]] = []
-        code_start: int | None = None
-        code_language = ""
-        _header, body = split_front_matter(content)
-        body_offset = content[: len(content) - len(body)].count("\n")
-        total_lines = content.count("\n") + 1
-        for body_line_no, line in enumerate(body.splitlines(), start=1):
-            line_no = body_line_no + body_offset
-            stripped = line.strip()
-            if stripped.startswith("```"):
-                if code_start is None:
-                    code_start = line_no
-                    code_language = stripped[3:].strip()
-                else:
-                    code_ranges.append((code_start, line_no, code_language))
-                    code_start = None
-                    code_language = ""
-                continue
-            if code_start is not None:
-                continue
-            match = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line)
-            if not match:
-                continue
-            title = self._plain_heading_text(match.group(2)).strip()
-            if title:
-                headings.append({"level": len(match.group(1)), "title": title, "line": line_no})
-        if code_start is not None:
-            code_ranges.append((code_start, total_lines, code_language))
+        self._apply_outline_cache_data(_build_outline_cache_data(content))
 
-        occurrences: dict[tuple[int, str], int] = {}
-        stack: list[int] = []
-        outline_stacks: list[tuple[int, ...]] = []
-        for index, heading in enumerate(headings):
-            level = int(heading["level"])
-            identity = (level, str(heading["title"]))
-            occurrences[identity] = occurrences.get(identity, 0) + 1
-            heading["occurrence"] = occurrences[identity]
-            heading["end_line"] = total_lines
-            while stack and int(headings[stack[-1]]["level"]) >= level:
-                previous = stack.pop()
-                headings[previous]["end_line"] = int(heading["line"]) - 1
-            stack.append(index)
-            outline_stacks.append(tuple(stack[-4:]))
+    def _schedule_outline_cache_rebuild(self, content: str) -> None:
+        self._outline_cache_valid = False
+        self._outline_cache_generation = getattr(self, "_outline_cache_generation", 0) + 1
+        generation = self._outline_cache_generation
+        self._outline_cache_building = True
 
-        self._outline_cache = tuple(dict(item) for item in headings)
-        self._outline_cache_lines = tuple(int(item["line"]) for item in headings)
-        self._outline_parent_stacks = tuple(outline_stacks)
-        self._outline_code_ranges = tuple(code_ranges)
-        self._outline_cache_metrics = metrics_for_content(content)
+        def worker() -> None:
+            data = _build_outline_cache_data(content)
+            self._post_ui(lambda: self._finish_async_outline_cache(generation, data))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_async_outline_cache(
+        self,
+        generation: int,
+        data: tuple[
+            tuple[dict[str, int | str], ...],
+            tuple[int, ...],
+            tuple[tuple[int, ...], ...],
+            tuple[tuple[int, int, str], ...],
+            DocumentMetrics,
+        ],
+    ) -> None:
+        if generation != getattr(self, "_outline_cache_generation", 0):
+            return
+        self._outline_cache_building = False
+        self._apply_outline_cache_data(data)
+
+    def _apply_outline_cache_data(
+        self,
+        data: tuple[
+            tuple[dict[str, int | str], ...],
+            tuple[int, ...],
+            tuple[tuple[int, ...], ...],
+            tuple[tuple[int, int, str], ...],
+            DocumentMetrics,
+        ],
+    ) -> None:
+        (
+            self._outline_cache,
+            self._outline_cache_lines,
+            self._outline_parent_stacks,
+            self._outline_code_ranges,
+            self._outline_cache_metrics,
+        ) = data
         self._outline_cache_valid = True
         if hasattr(self, "line_number_canvas"):
             self._schedule_editor_structure_refresh()
@@ -1744,7 +1834,10 @@ class EditorMixin:
     def _parse_outline(self) -> list[dict[str, int | str]]:
         cache = getattr(self, "_outline_cache", ())
         if not getattr(self, "_outline_cache_valid", False):
-            if not cache or not self._is_large_editor_document():
+            if self._is_large_editor_document():
+                if not getattr(self, "_outline_cache_building", False):
+                    self._schedule_outline_cache_rebuild(self._get_editor_content())
+            elif not cache:
                 self._rebuild_outline_cache()
                 cache = getattr(self, "_outline_cache", ())
         return [dict(item) for item in cache]
@@ -1769,13 +1862,7 @@ class EditorMixin:
         return [dict(cache[item]) for item in stacks[index]]
 
     def _plain_heading_text(self, text: str) -> str:
-        text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
-        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-        text = re.sub(r"`([^`]+)`", r"\1", text)
-        text = re.sub(r"</?(?:u|sup|sub)>", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"(?:~~|==)", "", text)
-        text = text.replace("**", "").replace("__", "").replace("*", "").replace("_", "")
-        return text.strip()
+        return _plain_heading_text_value(text)
 
     def _show_outline_popup(self) -> None:
         self._hide_tooltip()
