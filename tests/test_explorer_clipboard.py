@@ -63,6 +63,20 @@ class ExplorerClipboardTests(unittest.TestCase):
             file_path.write_text("x", encoding="utf-8")
             self.assertEqual((str(file_path.resolve()),), format_paths_for_drag([file_path]))
 
+    def test_copy_into_same_explorer_folder_is_noop(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            file_path = root / "Brito_Machine_learning.md"
+            file_path.write_text("x", encoding="utf-8")
+
+            class Harness(ExplorerMixin):
+                def _ensure_imported_note_template(self, _path: Path) -> None:
+                    self.fail("same-folder drop should not rewrite the note")
+
+            app = Harness()
+            self.assertIsNone(app._copy_into_explorer(file_path, root))
+            self.assertEqual("x", file_path.read_text(encoding="utf-8"))
+
     def test_reveal_in_file_explorer_opens_folder(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             folder = Path(temp_dir)

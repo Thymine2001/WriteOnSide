@@ -1554,12 +1554,12 @@ class ExplorerMixin:
                 return candidate
         raise OSError(f"Unable to create a unique copy of {name}.")
 
-    def _copy_into_explorer(self, source: Path, destination: Path) -> Path:
+    def _copy_into_explorer(self, source: Path, destination: Path) -> Path | None:
         import shutil
         source = source.resolve()
         destination = destination.resolve()
         if source.parent == destination:
-            raise OSError(f"{source.name} is already in this folder.")
+            return None
         if source.is_dir():
             try:
                 destination.relative_to(source)
@@ -1605,8 +1605,8 @@ class ExplorerMixin:
             if source is None or not source.exists():
                 continue
             try:
-                self._copy_into_explorer(source, destination)
-                copied += 1
+                if self._copy_into_explorer(source, destination) is not None:
+                    copied += 1
             except OSError as exc:
                 errors.append(str(exc))
         if copied:

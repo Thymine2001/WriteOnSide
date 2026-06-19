@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import codecs
 from pathlib import Path
+
+READ_CHUNK_SIZE = 1024 * 1024
 
 
 EDITABLE_TEXT_SUFFIXES = {
@@ -37,21 +40,43 @@ def requested_file_from_args(args: list[str] | tuple[str, ...]) -> Path | None:
     return None
 
 
+def _read_file_prefix(path: Path) -> bytes:
+    with path.open("rb") as handle:
+        return handle.read(4096)
+
+
+def _read_text_incremental(path: Path, encoding: str) -> str:
+    decoder = codecs.getincrementaldecoder(encoding)(errors="strict")
+    parts: list[str] = []
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(READ_CHUNK_SIZE)
+            if not chunk:
+                break
+            decoded = decoder.decode(chunk, final=False)
+            if decoded:
+                parts.append(decoded)
+        final = decoder.decode(b"", final=True)
+        if final:
+            parts.append(final)
+    return "".join(parts)
+
+
 def read_editable_text(path: Path) -> tuple[str, str, str]:
-    data = path.read_bytes()
-    if b"\x00" in data[:4096] and not data.startswith((b"\xff\xfe", b"\xfe\xff")):
+    first_chunk = _read_file_prefix(path)
+    if b"\x00" in first_chunk and not first_chunk.startswith((b"\xff\xfe", b"\xfe\xff")):
         raise UnicodeError("The selected file appears to be binary.")
-    if data.startswith(b"\xef\xbb\xbf"):
+    if first_chunk.startswith(b"\xef\xbb\xbf"):
         encodings = ("utf-8-sig",)
-    elif data.startswith((b"\xff\xfe", b"\xfe\xff")):
+    elif first_chunk.startswith((b"\xff\xfe", b"\xfe\xff")):
         encodings = ("utf-16",)
     else:
         encodings = ("utf-8", "gb18030")
     for encoding in encodings:
         try:
-            content = data.decode(encoding)
-            has_cr = b"\r" in data
-            newline = "\r\n" if has_cr and b"\r\n" in data else "\r" if has_cr else "\n"
+            content = _read_text_incremental(path, encoding)
+            has_cr = "\r" in content
+            newline = "\r\n" if has_cr and "\r\n" in content else "\r" if has_cr else "\n"
             normalized = content.replace("\r\n", "\n").replace("\r", "\n") if has_cr else content
             return normalized, encoding, newline
         except UnicodeError:

@@ -8,11 +8,12 @@ from writeonside_app.document_performance import (
     LARGE_DOCUMENT_CHAR_THRESHOLD,
     LARGE_DOCUMENT_LINE_THRESHOLD,
     READ_MODE_RENDER_BYTE_LIMIT,
+    VERY_LARGE_DOCUMENT_CHAR_THRESHOLD,
     limit_read_mode_content,
     metrics_for_content,
 )
 from writeonside_app.live_highlight import plan_live_highlight_fragment
-from writeonside_app.ui.editor import EditorMixin
+from writeonside_app.ui.editor import EditorMixin, _iter_lines_without_list
 
 
 class DocumentPerformanceTests(unittest.TestCase):
@@ -44,6 +45,13 @@ class DocumentPerformanceTests(unittest.TestCase):
         self.assertEqual((500, 502), plan.line_range)
         self.assertEqual([500, 501], [item.line for item in plan.line_tags])
         self.assertTrue(plan.partial)
+
+    def test_outline_line_iterator_matches_splitlines(self) -> None:
+        for content in ("", "one", "one\n", "one\n\nthree", "\nleading"):
+            self.assertEqual(
+                list(enumerate(content.splitlines(), start=1)),
+                list(_iter_lines_without_list(content)),
+            )
 
     def test_limited_read_mode_find_count_uses_full_editor_content(self) -> None:
         class Harness(EditorMixin):
@@ -143,6 +151,72 @@ class DocumentPerformanceTests(unittest.TestCase):
         app._set_editor_content("x" * LARGE_DOCUMENT_CHAR_THRESHOLD)
         self.assertTrue(app.scheduled)
         self.assertFalse(app.rebuilt)
+
+    def test_very_large_set_editor_content_temporarily_disables_undo(self) -> None:
+        class TextSpy:
+            def __init__(self) -> None:
+                self.events: list[tuple[object, ...]] = []
+
+            def cget(self, option: str) -> bool:
+                self.events.append(("cget", option))
+                return True
+
+            def configure(self, **kwargs: object) -> None:
+                self.events.append(("configure", kwargs))
+
+            def delete(self, start: str, end: object) -> None:
+                self.events.append(("delete", start, end))
+
+            def insert(self, start: str, value: str) -> None:
+                self.events.append(("insert", start, len(value)))
+
+            def edit_reset(self) -> None:
+                self.events.append(("edit_reset",))
+
+            def edit_modified(self, value: bool) -> None:
+                self.events.append(("edit_modified", value))
+
+            def config(self, **kwargs: object) -> None:
+                self.events.append(("config", kwargs))
+
+            def get(self, *_args) -> str:
+                return ""
+
+        class Harness(EditorMixin):
+            def __init__(self) -> None:
+                self.text = TextSpy()
+                self.view_mode = "edit"
+                self._showing_placeholder = False
+                self._editor_image_editing_keys = set()
+                self._editor_image_preview_state = None
+                self._read_fragment_after = None
+
+            def _cancel_large_read_fragment(self) -> None:
+                return None
+
+            def _maybe_show_placeholder(self) -> None:
+                return None
+
+            def _schedule_outline_cache_rebuild(self, _content: str) -> None:
+                return None
+
+            def _rebuild_outline_cache(self, _content: str | None = None) -> None:
+                return None
+
+            def _apply_live_render(self) -> None:
+                return None
+
+            def _schedule_editor_structure_refresh(self, **_kwargs) -> None:
+                return None
+
+        app = Harness()
+        app._set_editor_content("x" * VERY_LARGE_DOCUMENT_CHAR_THRESHOLD)
+        self.assertIn(("configure", {"undo": False}), app.text.events)
+        self.assertIn(("configure", {"undo": True}), app.text.events)
+        self.assertLess(
+            app.text.events.index(("configure", {"undo": False})),
+            app.text.events.index(("insert", "1.0", VERY_LARGE_DOCUMENT_CHAR_THRESHOLD)),
+        )
 
     def test_limited_read_outline_jump_uses_source_line_without_rendered_search(self) -> None:
         class Harness(EditorMixin):

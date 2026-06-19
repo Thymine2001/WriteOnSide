@@ -77,6 +77,31 @@ class TextFileTests(unittest.TestCase):
             self.assertEqual("utf-8", encoding)
             self.assertEqual("\n", newline)
 
+    def test_read_editable_text_supports_utf16_and_crlf(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "example.md"
+            path.write_text("one\r\ntwo\r\n", encoding="utf-16", newline="")
+            content, encoding, newline = read_editable_text(path)
+            self.assertEqual("one\ntwo\n", content)
+            self.assertEqual("utf-16", encoding)
+            self.assertEqual("\r\n", newline)
+
+    def test_read_editable_text_falls_back_to_gb18030(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "example.md"
+            path.write_bytes("中文\rend".encode("gb18030"))
+            content, encoding, newline = read_editable_text(path)
+            self.assertEqual("中文\nend", content)
+            self.assertEqual("gb18030", encoding)
+            self.assertEqual("\r", newline)
+
+    def test_read_editable_text_rejects_binary_prefix(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "example.txt"
+            path.write_bytes(b"text\x00more")
+            with self.assertRaisesRegex(UnicodeError, "binary"):
+                read_editable_text(path)
+
     def test_external_file_save_updates_original_path_and_preserves_newlines(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

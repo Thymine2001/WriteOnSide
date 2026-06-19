@@ -20,7 +20,7 @@ from ..diagnostics import get_logger
 from ..i18n import t
 from ..live_highlight import MD_EDITOR_TAGS, apply_live_highlight_plan, plan_live_highlight
 from ..live_highlight import plan_live_highlight_fragment
-from ..document_performance import DocumentMetrics, SOURCE_HIGHLIGHT_FULL_CHAR_LIMIT, VISIBLE_HIGHLIGHT_MARGIN
+from ..document_performance import DocumentMetrics, SOURCE_HIGHLIGHT_FULL_CHAR_LIMIT, VISIBLE_HIGHLIGHT_MARGIN, metrics_for_content
 from ..preview import render_file_preview
 from ..notes.service import rename_target, unique_note_path
 from ..storage import read_text_file, safe_write_text
@@ -565,8 +565,23 @@ class NotesMixin:
         note["encoding"] = encoding
         note["newline"] = newline
         note["dirty"] = False
-        text.delete("1.0", tk.END)
-        text.insert("1.0", content)
+        metrics = metrics_for_content(content)
+        previous_undo = None
+        if metrics.is_very_large:
+            try:
+                previous_undo = text.cget("undo")
+                text.configure(undo=False)
+            except tk.TclError:
+                previous_undo = None
+        try:
+            text.delete("1.0", tk.END)
+            text.insert("1.0", content)
+        finally:
+            if previous_undo is not None:
+                try:
+                    text.configure(undo=previous_undo)
+                except tk.TclError:
+                    pass
         text.edit_reset()
         text.edit_modified(False)
         note["loading"] = False

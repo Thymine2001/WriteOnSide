@@ -59,6 +59,38 @@ def _plain_heading_text_value(text: str) -> str:
     return text.strip()
 
 
+def _iter_lines_without_list(content: str):
+    line_no = 1
+    start = 0
+    length = len(content)
+    while start < length:
+        end = content.find("\n", start)
+        if end < 0:
+            yield line_no, content[start:]
+            return
+        yield line_no, content[start:end]
+        start = end + 1
+        line_no += 1
+
+
+def _set_text_undo_temporarily(widget: tk.Text, enabled: bool) -> object | None:
+    try:
+        previous = widget.cget("undo")
+        widget.configure(undo=enabled)
+        return previous
+    except (AttributeError, tk.TclError):
+        return None
+
+
+def _restore_text_undo(widget: tk.Text, previous: object | None) -> None:
+    if previous is None:
+        return
+    try:
+        widget.configure(undo=previous)
+    except (AttributeError, tk.TclError):
+        pass
+
+
 def _build_outline_cache_data(
     content: str,
 ) -> tuple[
@@ -75,7 +107,7 @@ def _build_outline_cache_data(
     _header, body = split_front_matter(content)
     body_offset = content[: len(content) - len(body)].count("\n")
     total_lines = content.count("\n") + 1
-    for body_line_no, line in enumerate(body.splitlines(), start=1):
+    for body_line_no, line in _iter_lines_without_list(body):
         line_no = body_line_no + body_offset
         stripped = line.strip()
         if stripped.startswith("```"):
@@ -785,9 +817,14 @@ class EditorMixin:
         self._showing_placeholder = False
         self._editor_image_editing_keys.clear()
         self._editor_image_preview_state = None
+        metrics = metrics_for_content(content)
         if reset_undo:
-            self.text.delete("1.0", tk.END)
-            self.text.insert("1.0", content)
+            previous_undo = _set_text_undo_temporarily(self.text, False) if metrics.is_very_large else None
+            try:
+                self.text.delete("1.0", tk.END)
+                self.text.insert("1.0", content)
+            finally:
+                _restore_text_undo(self.text, previous_undo)
             self.text.edit_reset()
             self.text.edit_modified(False)
         else:
@@ -795,7 +832,6 @@ class EditorMixin:
             self.text.edit_modified(True)
         self.text.config(fg=globals()["TEXT"])
         self._maybe_show_placeholder()
-        metrics = metrics_for_content(content)
         if metrics.is_large:
             self._schedule_outline_cache_rebuild(content)
         else:
