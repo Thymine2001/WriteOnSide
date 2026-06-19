@@ -7,6 +7,19 @@ datas = [
 ]
 binaries = []
 hiddenimports = []
+excludes = [
+    'IPython',
+    'jupyter',
+    'matplotlib',
+    'numpy',
+    'pandas',
+    'PyQt5',
+    'PyQt6',
+    'PySide2',
+    'PySide6',
+    'pytest',
+    'scipy',
+]
 tmp_ret = collect_all('keyboard')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('pystray')
@@ -28,9 +41,9 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=excludes,
     noarchive=False,
-    optimize=0,
+    optimize=1,
 )
 pyz = PYZ(a.pure)
 

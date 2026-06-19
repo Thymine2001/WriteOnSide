@@ -210,11 +210,12 @@ class WriteOnSideApp(
         if self._initial_file is not None:
             self._open_file_in_editor(
                 self._initial_file,
-                reveal_panel=True,
+                reveal_panel=False,
                 prefer_split=False,
             )
         else:
             self._load_initial_note(refresh_explorer=False)
+        self._show_initial_panel()
         # Build the complete tag index/file tree after the editor has usable
         # content. Large workspaces no longer block the first visible frame.
         self.root.after(80, self._refresh_explorer)

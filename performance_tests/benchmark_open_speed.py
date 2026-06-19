@@ -23,6 +23,43 @@ DEFAULT_FILES = (
     Path(__file__).with_name("test_10mb.md"),
     Path(__file__).with_name("test_20mb.md"),
 )
+DEFAULT_FILE_SIZES_MB = {
+    "test_5mb.md": 5,
+    "test_10mb.md": 10,
+    "test_20mb.md": 20,
+}
+
+
+def generate_benchmark_file(path: Path, size_mb: int) -> None:
+    target_bytes = int(size_mb * 1024 * 1024)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = (
+        f"# Benchmark document ({size_mb} MB)\n\n"
+        "This generated file is intentionally large for WriteOnSide performance tests.\n\n"
+    )
+    block = (
+        "## Section {index}\n"
+        "Regular paragraph with [[links]], **bold**, ==highlight==, and `inline code`.\n"
+        "- [ ] Task item for rendering and source highlighting\n"
+        "- [x] Completed task item for rendering and source highlighting\n\n"
+    )
+    written = 0
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(header)
+        written += len(header.encode("utf-8"))
+        index = 1
+        while written < target_bytes:
+            text = block.format(index=index)
+            handle.write(text)
+            written += len(text.encode("utf-8"))
+            index += 1
+
+
+def ensure_default_benchmark_files(files: list[Path]) -> None:
+    for path in files:
+        size_mb = DEFAULT_FILE_SIZES_MB.get(path.name)
+        if size_mb is not None and not path.exists():
+            generate_benchmark_file(path, size_mb)
 
 
 def summarize(values: list[float]) -> str:
@@ -92,6 +129,11 @@ def main() -> int:
     parser.add_argument("files", nargs="*", type=Path, default=list(DEFAULT_FILES))
     parser.add_argument("--runs", type=int, default=5, help="Number of read runs; UI runs are capped at 3.")
     args = parser.parse_args()
+
+    default_paths = [path.resolve() for path in DEFAULT_FILES]
+    requested_paths = [path.resolve() for path in args.files]
+    if requested_paths == default_paths:
+        ensure_default_benchmark_files(args.files)
 
     missing = [path for path in args.files if not path.exists()]
     if missing:

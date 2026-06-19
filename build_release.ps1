@@ -22,25 +22,27 @@ $currentText = if (Test-Path -LiteralPath $versionFile) {
 } else {
     "0.0.0"
 }
+$versionPattern = '^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$'
 
 if ($Version) {
-    if ($Version -notmatch '^(\d+)\.(\d+)\.(\d+)$') {
-        throw "Version must use semantic version format such as 0.1.0."
+    if ($Version -notmatch $versionPattern) {
+        throw "Version must use version format such as 0.1.0 or 0.1.0.0."
     }
     $nextVersion = $Version
 } else {
-    if ($currentText -notmatch '^(\d+)\.(\d+)\.(\d+)$') {
-        throw "VERSION must use semantic version format such as 0.0.1."
+    if ($currentText -notmatch $versionPattern) {
+        throw "VERSION must use version format such as 0.0.1 or 0.0.1.0."
     }
     $nextVersion = "$($Matches[1]).$($Matches[2]).$([int]$Matches[3] + 1)"
 }
 
-if ($nextVersion -notmatch '^(\d+)\.(\d+)\.(\d+)$') {
-    throw "Resolved version must use semantic version format such as 0.1.0."
+if ($nextVersion -notmatch $versionPattern) {
+    throw "Resolved version must use version format such as 0.1.0 or 0.1.0.0."
 }
 $major = [int]$Matches[1]
 $minor = [int]$Matches[2]
 $patch = [int]$Matches[3]
+$build = if ($Matches[4]) { [int]$Matches[4] } else { 0 }
 $releaseName = "dist-native-tree-v$nextVersion"
 $releaseDir = Join-Path $projectRoot $releaseName
 $workDir = Join-Path $projectRoot "build-release-v$nextVersion"
@@ -50,7 +52,7 @@ if (Test-Path -LiteralPath $releaseDir) {
     throw "Release directory already exists: $releaseDir"
 }
 
-$versionTuple = "$major, $minor, $patch, 0"
+$versionTuple = "$major, $minor, $patch, $build"
 $versionInfoText = @"
 VSVersionInfo(
   ffi=FixedFileInfo(
@@ -106,16 +108,17 @@ try {
     Set-Content -LiteralPath $versionFile -Value $nextVersion -Encoding ascii
 
     $releases = Get-ChildItem -LiteralPath $projectRoot -Directory |
-        Where-Object { $_.Name -match '^dist-native-tree-v(\d+)\.(\d+)\.(\d+)$' } |
+        Where-Object { $_.Name -match '^dist-native-tree-v(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$' } |
         ForEach-Object {
+            $releaseBuild = if ($Matches[4]) { [int]$Matches[4] } else { 0 }
             [pscustomobject]@{
                 Directory = $_
-                Version = [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])"
+                Version = [version]"$($Matches[1]).$($Matches[2]).$($Matches[3]).$releaseBuild"
             }
         } |
         Sort-Object Version -Descending
 
-    foreach ($oldRelease in ($releases | Select-Object -Skip 3)) {
+    foreach ($oldRelease in ($releases | Where-Object { $_.Directory.FullName -ne $releaseDir } | Select-Object -Skip 3)) {
         $resolved = (Resolve-Path -LiteralPath $oldRelease.Directory.FullName).Path
         $expectedPrefix = $projectRoot + [IO.Path]::DirectorySeparatorChar + "dist-native-tree-v"
         if (-not $resolved.StartsWith($expectedPrefix, [StringComparison]::OrdinalIgnoreCase)) {

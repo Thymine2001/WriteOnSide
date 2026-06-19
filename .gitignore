@@ -9,6 +9,7 @@ __pycache__/
 *.bak
 .pytest_cache/
 *.log
+performance_tests/test_*mb.md
 素材/
 .idea/
 .vscode/

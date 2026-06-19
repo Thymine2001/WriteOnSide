@@ -745,6 +745,38 @@ class WindowMixin:
 
         step_once()
 
+    def _show_initial_panel(self) -> None:
+        """Show the first fully-open layout without a startup slide animation."""
+        if self.is_open:
+            return
+        alpha = self._preview_alpha if self._preview_alpha is not None else self.config.alpha
+        self.root.attributes("-alpha", 0.0)
+        self.explorer.attributes("-alpha", 0.0)
+        self._clear_animation_clips()
+        self._refresh_panel_bounds()
+        panel_x, explorer_x, nav_x, explorer_width = self._layout_positions(True)
+        self.root.geometry(self._panel_geometry(panel_x))
+        self.nav.geometry(f"{self.nav_w}x{self.panel_h}+{int(nav_x)}+{self.panel_y}")
+        if self.explorer_visible and explorer_width > 0:
+            self._set_explorer_geometry(explorer_x, explorer_width)
+            self.explorer.deiconify()
+        else:
+            self.explorer.withdraw()
+        self.root.deiconify()
+        self.root.update_idletasks()
+        self.explorer.update_idletasks()
+        self.nav.update_idletasks()
+        self._apply_no_taskbar_styles()
+        self._apply_content_opacity(alpha)
+        self.is_open = True
+        self._update_width_resize_handles()
+        if self.explorer_visible and explorer_width > 0:
+            self.explorer.lift()
+        self.root.lift()
+        self._raise_nav_bar()
+        self._refresh_nav_bar_visual()
+        self.text.focus_set() if self.view_mode == "edit" else self.read_text.focus_set()
+
     def open_panel(self) -> None:
         if self.animating or self.is_open:
             return

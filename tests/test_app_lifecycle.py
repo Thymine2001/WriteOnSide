@@ -43,13 +43,15 @@ class AppLifecycleTests(unittest.TestCase):
         app._initial_file = None
         app._apply_typography = lambda: calls.append("typography")
         app._load_initial_note = lambda **kwargs: calls.append(("note", kwargs))
+        app._show_initial_panel = lambda: calls.append("show")
         app._refresh_explorer = lambda: None
 
         app._finish_startup_content()
 
         self.assertEqual("typography", calls[0])
         self.assertEqual(("note", {"refresh_explorer": False}), calls[1])
-        self.assertEqual(80, calls[2][0])
+        self.assertEqual("show", calls[2])
+        self.assertEqual(80, calls[3][0])
 
     def test_keyboard_interrupt_uses_normal_quit_path(self) -> None:
         app = object.__new__(WriteOnSideApp)
