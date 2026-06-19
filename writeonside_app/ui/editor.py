@@ -745,7 +745,31 @@ class EditorMixin:
             return ""
         return self.text.get("1.0", "end-1c")
 
-    def _set_editor_content(self, content: str) -> None:
+    def _replace_text_atomic(
+        self,
+        start,
+        end,
+        replacement: str,
+        *,
+        widget: tk.Text | None = None,
+    ) -> None:
+        """Record a delete+insert replacement as one Tk undo transaction."""
+        target = widget if widget is not None else self.text
+        try:
+            auto_separators = target.cget("autoseparators")
+        except tk.TclError:
+            auto_separators = True
+        target.edit_separator()
+        try:
+            target.configure(autoseparators=False)
+            target.delete(start, end)
+            if replacement:
+                target.insert(start, replacement)
+        finally:
+            target.configure(autoseparators=auto_separators)
+            target.edit_separator()
+
+    def _set_editor_content(self, content: str, *, reset_undo: bool = True) -> None:
         self._cancel_large_read_fragment()
         after_id = getattr(self, "_outline_cache_after", None)
         if after_id is not None:
@@ -761,10 +785,14 @@ class EditorMixin:
         self._showing_placeholder = False
         self._editor_image_editing_keys.clear()
         self._editor_image_preview_state = None
-        self.text.delete("1.0", tk.END)
-        self.text.insert("1.0", content)
-        self.text.edit_reset()
-        self.text.edit_modified(False)
+        if reset_undo:
+            self.text.delete("1.0", tk.END)
+            self.text.insert("1.0", content)
+            self.text.edit_reset()
+            self.text.edit_modified(False)
+        else:
+            self._replace_text_atomic("1.0", tk.END, content)
+            self.text.edit_modified(True)
         self.text.config(fg=globals()["TEXT"])
         self._maybe_show_placeholder()
         metrics = metrics_for_content(content)
@@ -1015,8 +1043,7 @@ class EditorMixin:
         self._clear_placeholder()
         start, end, selected = self._selection_range(placeholder)
         updated, unwrapped = _toggle_inline_wrapping(selected, before, after)
-        self.text.delete(start, end)
-        self.text.insert(start, updated)
+        self._replace_text_atomic(start, end, updated)
         if "\n" in selected or unwrapped:
             selection_start = start
             selection_end = f"{start}+{len(updated)}c"
@@ -1056,8 +1083,7 @@ class EditorMixin:
         lines = content.splitlines()
         prefix = "#" * level + " " if level else ""
         updated = [prefix + re.sub(r"^#{1,6}\s+", "", line) for line in lines]
-        self.text.delete(start, end)
-        self.text.insert(start, "\n".join(updated))
+        self._replace_text_atomic(start, end, "\n".join(updated))
         self.text.focus_set()
 
     def _apply_list_format(self, kind: str) -> None:
@@ -1074,8 +1100,7 @@ class EditorMixin:
             updated = [f"- [ ] {line}" for line in cleaned]
         else:
             updated = [f"- {line}" for line in cleaned]
-        self.text.delete(start, end)
-        self.text.insert(start, "\n".join(updated))
+        self._replace_text_atomic(start, end, "\n".join(updated))
         self.text.focus_set()
 
     def _on_editor_return(self, _event=None) -> str | None:
@@ -1110,8 +1135,7 @@ class EditorMixin:
             return
         self._clear_placeholder()
         block = f"```\n{selected.strip()}\n```"
-        self.text.delete(start, end)
-        self.text.insert(start, block)
+        self._replace_text_atomic(start, end, block)
         self.text.mark_set(tk.INSERT, f"{start}+{len(block)}c")
         self.text.focus_set()
 
@@ -1135,8 +1159,7 @@ class EditorMixin:
         header, body = split_front_matter(content)
         if header is None:
             content, _created = ensure_front_matter(content, self.current_note_path.stem)
-            self.text.delete("1.0", tk.END)
-            self.text.insert("1.0", content)
+            self._replace_text_atomic("1.0", tk.END, content)
             self.text.edit_modified(False)
             self._dirty = True
             self._schedule_live_render()
@@ -1171,8 +1194,7 @@ class EditorMixin:
         cleaned = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"\1", cleaned, flags=re.DOTALL)
         cleaned = re.sub(r"`([^`]+)`", r"\1", cleaned, flags=re.DOTALL)
         cleaned = re.sub(r"(?m)^(?:#{1,6}\s+|[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+\.\s+|>\s+)", "", cleaned)
-        self.text.delete(start, end)
-        self.text.insert(start, cleaned)
+        self._replace_text_atomic(start, end, cleaned)
         cleaned_end = f"{start}+{len(cleaned)}c"
         self.text.tag_add(tk.SEL, start, cleaned_end)
         self.text.mark_set(tk.INSERT, cleaned_end)
@@ -1770,8 +1792,7 @@ class EditorMixin:
             if len(ranges) < 2:
                 return
         start, end = ranges[0], ranges[1]
-        widget.delete(start, end)
-        widget.insert(start, replacement)
+        self._replace_text_atomic(start, end, replacement, widget=widget)
         widget.mark_set(tk.INSERT, f"{start}+{len(replacement)}c")
         self._dirty = True
         self._set_status_key("status.unsaved")
@@ -1791,7 +1812,7 @@ class EditorMixin:
         new_content, count = pattern.subn(self.replace_var.get(), content)
         if count == 0:
             return
-        self._set_editor_content(new_content)
+        self._set_editor_content(new_content, reset_undo=False)
         self._dirty = True
         self._set_status_key("status.replaced", count=count)
         self._schedule_autosave()
