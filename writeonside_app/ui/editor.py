@@ -43,6 +43,9 @@ _MD_EDITOR_TAGS: tuple[str, ...] = MD_EDITOR_TAGS
 READ_MODE_FRAGMENT_LINES = 1_200
 READ_MODE_WHEEL_LINES = 80
 READ_MODE_PAGE_LINES = 600
+TYPE_COMPLETION_MIN_PREFIX = 3
+TYPE_COMPLETION_MAX_SCAN_CHARS = 600_000
+TYPE_COMPLETION_WORD_RE = re.compile(r"[A-Za-z][A-Za-z'-]{2,}[A-Za-z]")
 
 
 def _literal_find_pattern(needle: str, case_sensitive: bool) -> re.Pattern[str]:
@@ -672,6 +675,166 @@ class EditorMixin:
         self._set_status_key("status.unsaved")
         self._schedule_live_render()
         self._schedule_autosave()
+
+    # ── Lightweight type completion ─────────────────────────────────────────
+
+    def _schedule_type_completion(self, event=None) -> None:
+        if self.view_mode != "edit" or self._showing_placeholder:
+            self._hide_type_completion()
+            return
+        keysym = getattr(event, "keysym", "")
+        if keysym in {
+            "Tab", "Return", "Escape", "Delete", "Left", "Right", "Up", "Down",
+            "Home", "End", "Prior", "Next",
+        }:
+            self._hide_type_completion()
+            return
+        char = getattr(event, "char", "")
+        if char and not char.isalpha() and char not in {"'", "-"}:
+            self._hide_type_completion()
+            return
+        if getattr(event, "state", 0) & 0x4:
+            self._hide_type_completion()
+            return
+        if self._type_completion_after is not None:
+            try:
+                self.root.after_cancel(self._type_completion_after)
+            except tk.TclError:
+                pass
+        self._type_completion_after = self.root.after(90, self._refresh_type_completion)
+
+    def _refresh_type_completion(self) -> None:
+        self._type_completion_after = None
+        prefix = self._current_type_completion_prefix()
+        if len(prefix) < TYPE_COMPLETION_MIN_PREFIX:
+            self._hide_type_completion()
+            return
+        candidate = self._continued_type_completion_candidate(prefix)
+        if candidate is None:
+            candidate = self._find_type_completion_candidate(prefix)
+        if not candidate or len(candidate) <= len(prefix):
+            self._hide_type_completion()
+            return
+        suffix = candidate[len(prefix) :]
+        if not suffix:
+            self._hide_type_completion()
+            return
+        self._show_type_completion(prefix, suffix)
+
+    def _continued_type_completion_candidate(self, prefix: str) -> str | None:
+        candidate = getattr(self, "_type_completion_candidate", "")
+        if not candidate:
+            return None
+        if len(candidate) <= len(prefix):
+            return None
+        if not candidate.casefold().startswith(prefix.casefold()):
+            return None
+        return prefix + candidate[len(prefix) :]
+
+    def _current_type_completion_prefix(self) -> str:
+        try:
+            line_start = self.text.index("insert linestart")
+            before = self.text.get(line_start, tk.INSERT)
+        except tk.TclError:
+            return ""
+        match = re.search(r"[A-Za-z][A-Za-z'-]*$", before)
+        return match.group(0) if match else ""
+
+    def _type_completion_source_text(self) -> str:
+        try:
+            if self._is_large_editor_document():
+                start_line, end_line = self._visible_editor_line_range()
+                return self.text.get(f"{start_line}.0", f"{end_line}.end")
+            content = self._get_editor_content()
+            if len(content) > TYPE_COMPLETION_MAX_SCAN_CHARS:
+                return content[:TYPE_COMPLETION_MAX_SCAN_CHARS]
+            return content
+        except tk.TclError:
+            return ""
+
+    def _find_type_completion_candidate(self, prefix: str) -> str | None:
+        prefix_folded = prefix.casefold()
+        seen: set[str] = set()
+        for match in TYPE_COMPLETION_WORD_RE.finditer(self._type_completion_source_text()):
+            word = match.group(0).strip("'-")
+            folded = word.casefold()
+            if folded in seen:
+                continue
+            seen.add(folded)
+            if len(word) > len(prefix) and folded.startswith(prefix_folded):
+                return prefix + word[len(prefix) :]
+        return None
+
+    def _show_type_completion(self, prefix: str, suffix: str) -> None:
+        self._type_completion_prefix = prefix
+        self._type_completion_suffix = suffix
+        self._type_completion_candidate = prefix + suffix
+        completion_font = (
+            self.config.font_family or "Segoe UI",
+            max(1, int(self.config.font_size) - 1),
+        )
+        popup = getattr(self, "_type_completion_popup", None)
+        if popup is None or not popup.winfo_exists():
+            popup = tk.Toplevel(self.root)
+            popup.overrideredirect(True)
+            popup.attributes("-topmost", True)
+            popup.configure(bg=globals()["BG"])
+            label = tk.Label(
+                popup,
+                bg=globals()["BG"],
+                fg=globals()["MUTED"],
+                font=completion_font,
+                padx=0,
+                pady=0,
+                borderwidth=0,
+            )
+            label.pack()
+            setattr(popup, "_completion_label", label)
+            self._type_completion_popup = popup
+        label = getattr(popup, "_completion_label")
+        label.configure(text=suffix, bg=globals()["BG"], fg=globals()["MUTED"], font=completion_font)
+        try:
+            bbox = self.text.bbox("insert-1c")
+            if bbox is None:
+                self._hide_type_completion()
+                return
+            x, y, width, height = bbox
+            popup.geometry(f"+{self.text.winfo_rootx() + x + width}+{self.text.winfo_rooty() + y}")
+            popup.deiconify()
+            popup.lift()
+        except tk.TclError:
+            self._hide_type_completion()
+
+    def _hide_type_completion(self) -> None:
+        self._type_completion_suffix = ""
+        self._type_completion_prefix = ""
+        self._type_completion_candidate = ""
+        if self._type_completion_after is not None:
+            try:
+                self.root.after_cancel(self._type_completion_after)
+            except tk.TclError:
+                pass
+            self._type_completion_after = None
+        popup = getattr(self, "_type_completion_popup", None)
+        if popup is not None:
+            try:
+                popup.withdraw()
+            except tk.TclError:
+                self._type_completion_popup = None
+
+    def _accept_type_completion(self, _event=None) -> str | None:
+        if getattr(self, "_wiki_completion", None) is not None:
+            try:
+                if self._wiki_completion.winfo_exists():
+                    return None
+            except tk.TclError:
+                pass
+        suffix = getattr(self, "_type_completion_suffix", "")
+        if not suffix:
+            return None
+        self.text.insert(tk.INSERT, suffix)
+        self._hide_type_completion()
+        return "break"
 
     # ── Placeholder ──────────────────────────────────────────────────────────
 

@@ -267,6 +267,77 @@ class DocumentPerformanceTests(unittest.TestCase):
         self.assertEqual("break", app._read_text_key_filter(Event()))
         self.assertEqual(601, app.rendered_anchor)
 
+    def test_type_completion_matches_english_words_case_insensitively(self) -> None:
+        class Harness(EditorMixin):
+            def _type_completion_source_text(self) -> str:
+                return "The HERITABILITY estimate is stable."
+
+        app = Harness()
+        self.assertEqual("herITABILITY", app._find_type_completion_candidate("her"))
+
+    def test_type_completion_continues_as_prefix_grows(self) -> None:
+        class Harness(EditorMixin):
+            pass
+
+        app = Harness()
+        app._type_completion_candidate = "herITABILITY"
+        self.assertEqual("heriTABILITY", app._continued_type_completion_candidate("heri"))
+
+    def test_type_completion_switches_when_prefix_disambiguates(self) -> None:
+        class Harness(EditorMixin):
+            def _type_completion_source_text(self) -> str:
+                return "breed bread"
+
+        app = Harness()
+        app._type_completion_candidate = "breED"
+        self.assertIsNone(app._continued_type_completion_candidate("brea"))
+        self.assertEqual("bread", app._find_type_completion_candidate("brea"))
+
+    def test_type_completion_requires_three_letter_prefix(self) -> None:
+        class TextSpy:
+            def index(self, index: str) -> str:
+                return index
+
+            def get(self, _start: str, _end: str) -> str:
+                return "he"
+
+        class Harness(EditorMixin):
+            pass
+
+        app = Harness()
+        app.text = TextSpy()
+        self.assertEqual("he", app._current_type_completion_prefix())
+        self.assertLess(len(app._current_type_completion_prefix()), 3)
+
+    def test_large_type_completion_uses_visible_fragment_only(self) -> None:
+        class TextSpy:
+            def count(self, *_args) -> tuple[str]:
+                return ("2000000",)
+
+            def index(self, index: str) -> str:
+                if index == "end-1c":
+                    return "20000.0"
+                if index == "@0,0":
+                    return "500.0"
+                if index.startswith("@0,"):
+                    return "520.0"
+                return index
+
+            def winfo_height(self) -> int:
+                return 240
+
+            def get(self, start: str, _end: str) -> str:
+                if start == "400.0":
+                    return "VISIBLEWORD hidden"
+                raise AssertionError("large completion should only read the visible fragment")
+
+        class Harness(EditorMixin):
+            pass
+
+        app = Harness()
+        app.text = TextSpy()
+        self.assertEqual("visIBLEWORD", app._find_type_completion_candidate("vis"))
+
 
 if __name__ == "__main__":
     unittest.main()

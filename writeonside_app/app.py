@@ -120,6 +120,11 @@ class WriteOnSideApp(
         self._quick_format_after: str | None = None
         self._read_copy_btn_hide_after: str | None = None
         self._read_copy_btn_block: dict | None = None
+        self._type_completion_popup: tk.Toplevel | None = None
+        self._type_completion_suffix = ""
+        self._type_completion_prefix = ""
+        self._type_completion_candidate = ""
+        self._type_completion_after: str | None = None
         self._active_icon_asset = ""
         self._icon_poll_after: str | None = None
         self._image_viewer_window: tk.Toplevel | None = None
@@ -414,15 +419,18 @@ class WriteOnSideApp(
 
         self.text.bind("<<Modified>>", self._on_text_modified)
         self.text.bind("<FocusIn>", lambda _e: self._clear_placeholder())
-        self.text.bind("<FocusOut>", lambda _e: self._maybe_show_placeholder())
+        self.text.bind("<FocusOut>", lambda _e: (self._hide_type_completion(), self._maybe_show_placeholder()))
         self.text.bind("<Return>", self._on_editor_return)
         self.text.bind("<Control-v>", self._paste_from_clipboard)
         self.text.bind("<Control-V>", self._paste_from_clipboard)
         self.text.bind("<Escape>", lambda _e: self._on_escape())
         self.text.bind("<ButtonPress-1>", lambda _e: self._hide_quick_format(), add="+")
+        self.text.bind("<ButtonPress-1>", lambda _e: self._hide_type_completion(), add="+")
         self.text.bind("<ButtonRelease-1>", self._on_editor_image_click_outside, add="+")
         self.text.bind("<ButtonRelease-1>", self._schedule_quick_format, add="+")
         self.text.bind("<KeyRelease>", self._schedule_quick_format, add="+")
+        self.text.bind("<KeyRelease>", self._schedule_type_completion, add="+")
+        self.text.bind("<Tab>", self._accept_type_completion, add="+")
         self.text.bind("<MouseWheel>", lambda _e: self._hide_quick_format(), add="+")
         self.text.drop_target_register(DND_FILES, DND_TEXT)
         self.text.dnd_bind("<<Drop>>", self._on_editor_drop)
