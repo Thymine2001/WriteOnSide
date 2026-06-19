@@ -750,8 +750,12 @@ class WindowMixin:
         if self.is_open:
             return
         alpha = self._preview_alpha if self._preview_alpha is not None else self.config.alpha
+        # Keep every top-level transparent until content, geometry and native
+        # styles are ready.  In particular, the navigation strip must not map
+        # a visible frame while the initial note is still being loaded.
         self.root.attributes("-alpha", 0.0)
         self.explorer.attributes("-alpha", 0.0)
+        self.nav.attributes("-alpha", 0.0)
         self._clear_animation_clips()
         self._refresh_panel_bounds()
         panel_x, explorer_x, nav_x, explorer_width = self._layout_positions(True)
@@ -763,11 +767,15 @@ class WindowMixin:
         else:
             self.explorer.withdraw()
         self.root.deiconify()
+        self.nav.deiconify()
         self.root.update_idletasks()
         self.explorer.update_idletasks()
         self.nav.update_idletasks()
         self._apply_no_taskbar_styles()
+        # No update call occurs between these opacity changes, allowing the
+        # Windows compositor to present the complete layout as one frame.
         self._apply_content_opacity(alpha)
+        self.nav.attributes("-alpha", self._nav_idle_alpha())
         self.is_open = True
         self._update_width_resize_handles()
         if self.explorer_visible and explorer_width > 0:
@@ -864,7 +872,7 @@ class WindowMixin:
         self.nav = tk.Toplevel(self.root)
         self.nav.overrideredirect(True)
         self.nav.attributes("-topmost", True)
-        self.nav.attributes("-alpha", self._nav_idle_alpha())
+        self.nav.attributes("-alpha", 0.0)
         self.nav.configure(bg=globals()["ACCENT"])
         self.nav_canvas = tk.Canvas(
             self.nav,
@@ -876,6 +884,7 @@ class WindowMixin:
         self.nav_canvas.pack(fill="both", expand=True)
         self._bind_nav_bar_events()
         self.nav.bind("<Configure>", lambda _event: self._refresh_nav_bar_visual(), add="+")
+        self.nav.withdraw()
 
     def _apply_content_opacity(self, alpha: float) -> None:
         alpha = max(0.30, min(1.0, float(alpha)))

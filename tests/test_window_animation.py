@@ -24,8 +24,76 @@ class _WindowSpy:
     def deiconify(self) -> None:
         self.events.append((self.name, "deiconify"))
 
+    def withdraw(self) -> None:
+        self.events.append((self.name, "withdraw"))
+
+    def lift(self) -> None:
+        self.events.append((self.name, "lift"))
+
 
 class WindowAnimationTests(unittest.TestCase):
+    def test_initial_panel_keeps_navigation_transparent_until_content_is_ready(self) -> None:
+        events: list[object] = []
+
+        class Harness(WindowMixin):
+            def _clear_animation_clips(self) -> None:
+                events.append("clips")
+
+            def _refresh_panel_bounds(self) -> None:
+                events.append("bounds")
+
+            def _layout_positions(self, _opened: bool):
+                return 1190, 980, 964, 210
+
+            def _panel_geometry(self, _x: int) -> str:
+                return "520x1080+1190+0"
+
+            def _set_explorer_geometry(self, _x: int, _width: int) -> None:
+                events.append("explorer_geometry")
+
+            def _apply_no_taskbar_styles(self) -> None:
+                events.append("styles")
+
+            def _apply_content_opacity(self, _alpha: float) -> None:
+                events.append("content_visible")
+
+            def _update_width_resize_handles(self) -> None:
+                events.append("handles")
+
+            def _raise_nav_bar(self) -> None:
+                events.append("nav_raised")
+
+            def _refresh_nav_bar_visual(self) -> None:
+                events.append("nav_visual")
+
+        class FocusSpy:
+            def focus_set(self) -> None:
+                events.append("focus")
+
+        app = Harness()
+        app.animating = False
+        app.is_open = False
+        app._preview_alpha = None
+        app.config = SimpleNamespace(alpha=0.98)
+        app.explorer_visible = True
+        app.panel_h = 1080
+        app.panel_y = 0
+        app.nav_w = 16
+        app.view_mode = "edit"
+        app.text = FocusSpy()
+        app.read_text = FocusSpy()
+        app.root = _WindowSpy(events, "root")
+        app.explorer = _WindowSpy(events, "explorer")
+        app.nav = _WindowSpy(events, "nav")
+
+        app._show_initial_panel()
+
+        self.assertLess(events.index(("nav", "-alpha", 0.0)), events.index(("nav", "deiconify")))
+        self.assertLess(events.index(("nav", "deiconify")), events.index("styles"))
+        self.assertLess(events.index("styles"), events.index("content_visible"))
+        self.assertEqual(("nav", "-alpha", 0.72), events[events.index("content_visible") + 1])
+        self.assertTrue(app.is_open)
+
     def test_frame_moves_navigation_before_repainting_clipped_content(self) -> None:
         events: list[object] = []
 

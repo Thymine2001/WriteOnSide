@@ -193,7 +193,6 @@ class WriteOnSideApp(
         self._setup_width_resize_handles()
         self._apply_no_taskbar_styles()
         self._poll_instance_activation()
-        self._show_nav_bar()
         self._poll_ui_queue()
         # Let Tk compose the first frame before importing keyboard hooks,
         # indexing the workspace, loading Pillow tray assets, or starting the
