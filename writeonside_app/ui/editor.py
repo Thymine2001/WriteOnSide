@@ -40,6 +40,9 @@ from ..theme import *  # noqa: F401,F403
 
 # Fix #6: module-level constant — single source of truth for all MD tag name lists
 _MD_EDITOR_TAGS: tuple[str, ...] = MD_EDITOR_TAGS
+READ_MODE_FRAGMENT_LINES = 1_200
+READ_MODE_WHEEL_LINES = 80
+READ_MODE_PAGE_LINES = 600
 
 
 def _literal_find_pattern(needle: str, case_sensitive: bool) -> re.Pattern[str]:
@@ -640,6 +643,11 @@ class EditorMixin:
         return self.text.get("1.0", "end-1c")
 
     def _set_editor_content(self, content: str) -> None:
+        self._cancel_large_read_fragment()
+        self._read_fragment_active = False
+        self._read_fragment_start_line = 1
+        self._read_fragment_end_line = 1
+        self._read_fragment_anchor_line = 1
         self._showing_placeholder = False
         self._editor_image_editing_keys.clear()
         self._editor_image_preview_state = None
@@ -1913,6 +1921,8 @@ class EditorMixin:
         if not hasattr(self, "read_text"):
             return
         if self.preview_path is not None:
+            self._cancel_large_read_fragment()
+            self._read_fragment_active = False
             self._read_content_limited = False
             # Fix #10: pass user font settings so preview matches the rest of the UI
             render_file_preview(
@@ -1922,6 +1932,15 @@ class EditorMixin:
                 font_size=self.config.font_size,
             )
         else:
+            metrics = self._editor_document_metrics()
+            if self.current_note_path and is_markdown_note(self.current_note_path) and metrics.is_large:
+                self._render_large_read_fragment(
+                    getattr(self, "_read_fragment_anchor_line", self._current_editor_source_line()),
+                    metrics=metrics,
+                )
+                return
+            self._cancel_large_read_fragment()
+            self._read_fragment_active = False
             content, limited = limit_read_mode_content(self._get_editor_content())
             self._read_content_limited = limited
             render_markdown(
@@ -1944,9 +1963,96 @@ class EditorMixin:
             except tk.TclError:
                 pass
 
+    def _current_editor_source_line(self) -> int:
+        try:
+            return max(1, int(str(self.text.index(tk.INSERT)).split(".")[0]))
+        except (tk.TclError, TypeError, ValueError):
+            return 1
+
+    def _render_large_read_fragment(self, anchor_line: int, *, metrics: DocumentMetrics | None = None) -> None:
+        metrics = metrics or self._editor_document_metrics()
+        if metrics.lines <= 1:
+            start_line = 1
+        else:
+            start_line = max(1, min(int(anchor_line), metrics.lines))
+        end_line = min(metrics.lines, start_line + READ_MODE_FRAGMENT_LINES - 1)
+        fragment = self.text.get(f"{start_line}.0", f"{end_line}.end")
+        self._read_fragment_active = True
+        self._read_content_limited = True
+        self._read_fragment_start_line = start_line
+        self._read_fragment_end_line = end_line
+        self._read_fragment_anchor_line = start_line
+        render_markdown(
+            self.read_text,
+            fragment,
+            self.current_note_path,
+            self.config.font_family,
+            self.config.font_size,
+            wiki_asset_resolver=self._wiki_asset_resolver,
+            wiki_note_resolver=self._wiki_note_embed,
+        )
+        range_note = f"{t('editor.read_limited')} ({start_line}-{end_line} / {metrics.lines})"
+        self.read_text.insert(tk.END, f"\n{range_note}\n", "body")
+        self._bind_rendered_wikilinks()
+        self.read_text.configure(state=tk.NORMAL)
+        for tag in ("find_match", "find_current", "outline_current", "sel"):
+            try:
+                self.read_text.tag_raise(tag)
+            except tk.TclError:
+                pass
+
+    def _schedule_large_read_fragment(self, anchor_line: int, delay_ms: int = 80) -> None:
+        self._read_fragment_anchor_line = max(1, int(anchor_line))
+        if self._read_fragment_after is not None:
+            try:
+                self.root.after_cancel(self._read_fragment_after)
+            except tk.TclError:
+                pass
+        self._read_fragment_after = self.root.after(delay_ms, self._apply_scheduled_large_read_fragment)
+
+    def _cancel_large_read_fragment(self) -> None:
+        if getattr(self, "_read_fragment_after", None) is not None:
+            try:
+                self.root.after_cancel(self._read_fragment_after)
+            except tk.TclError:
+                pass
+            self._read_fragment_after = None
+
+    def _apply_scheduled_large_read_fragment(self) -> None:
+        self._read_fragment_after = None
+        if self.view_mode != "read" or self.preview_path is not None or not getattr(self, "_read_fragment_active", False):
+            return
+        self._render_large_read_fragment(getattr(self, "_read_fragment_anchor_line", 1))
+
+    def _scroll_large_read_fragment(self, line_delta: int, *, immediate: bool = False) -> str:
+        if not getattr(self, "_read_fragment_active", False):
+            return "break"
+        metrics = self._editor_document_metrics()
+        max_start = max(1, metrics.lines - READ_MODE_FRAGMENT_LINES + 1)
+        current = getattr(self, "_read_fragment_anchor_line", getattr(self, "_read_fragment_start_line", 1))
+        target = max(1, min(max_start, current + int(line_delta)))
+        if target == current:
+            return "break"
+        if immediate:
+            self._render_large_read_fragment(target, metrics=metrics)
+        else:
+            self._schedule_large_read_fragment(target)
+        return "break"
+
+    def _on_read_mousewheel(self, event) -> str | None:
+        self._hide_code_copy_btn()
+        if not getattr(self, "_read_fragment_active", False):
+            return None
+        units = int(-1 * (event.delta / 120)) if getattr(event, "delta", 0) else 0
+        if units == 0:
+            return "break"
+        return self._scroll_large_read_fragment(units * READ_MODE_WHEEL_LINES)
+
     def _on_read_view_configure(self, _event=None) -> None:
         self._fit_read_view()
         if self.preview_path is None:
+            if getattr(self, "_read_fragment_active", False):
+                self._schedule_large_read_fragment(getattr(self, "_read_fragment_anchor_line", 1), delay_ms=120)
             return
         if self._preview_render_after is not None:
             try:
@@ -1961,6 +2067,7 @@ class EditorMixin:
             self._render_read_content()
 
     def _switch_to_edit(self) -> None:
+        self._cancel_large_read_fragment()
         if self.preview_path is not None:
             self._close_file_preview(restore_note=True)
             if self.view_mode == "edit":
@@ -1988,6 +2095,7 @@ class EditorMixin:
         self._save_note(False)
         self.view_mode = "read"
         self.config.view_mode = "read"
+        self._read_fragment_anchor_line = self._current_editor_source_line()
         self.edit_frame.pack_forget()
         self.read_frame.pack(fill="both", expand=True)
         self.root.update_idletasks()
@@ -2081,6 +2189,18 @@ class EditorMixin:
         """Allow navigation and Ctrl combos (copy, select-all) but block edits."""
         if event.state & 0x4:  # Ctrl held — allow Ctrl+C, Ctrl+A, etc.
             return None
+        if getattr(self, "_read_fragment_active", False):
+            if event.keysym == "Prior":
+                return self._scroll_large_read_fragment(-READ_MODE_PAGE_LINES, immediate=True)
+            if event.keysym == "Next":
+                return self._scroll_large_read_fragment(READ_MODE_PAGE_LINES, immediate=True)
+            if event.keysym == "Home":
+                self._render_large_read_fragment(1)
+                return "break"
+            if event.keysym == "End":
+                metrics = self._editor_document_metrics()
+                self._render_large_read_fragment(max(1, metrics.lines - READ_MODE_FRAGMENT_LINES + 1), metrics=metrics)
+                return "break"
         if event.keysym in (
             "Left", "Right", "Up", "Down", "Home", "End", "Prior", "Next",
             "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",

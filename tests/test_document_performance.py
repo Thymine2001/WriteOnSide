@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from writeonside_app.document_performance import (
+    DocumentMetrics,
     LARGE_DOCUMENT_CHAR_THRESHOLD,
     LARGE_DOCUMENT_LINE_THRESHOLD,
     READ_MODE_RENDER_BYTE_LIMIT,
@@ -188,6 +189,83 @@ class DocumentPerformanceTests(unittest.TestCase):
         app._jump_to_editor_source_line(10_000, fast=True)
         self.assertFalse(app.text.see_called)
         self.assertIsNotNone(app.text.moved_to)
+
+    def test_large_read_mode_uses_fragment_renderer_without_full_content(self) -> None:
+        class Harness(EditorMixin):
+            preview_path = None
+            current_note_path = None
+            rendered_anchor = 0
+
+            def __init__(self) -> None:
+                from pathlib import Path
+
+                self.current_note_path = Path("large.md")
+                self.read_text = object()
+
+            def _editor_document_metrics(self) -> DocumentMetrics:
+                return DocumentMetrics(2_000_000, 20_000)
+
+            def _current_editor_source_line(self) -> int:
+                return 250
+
+            def _render_large_read_fragment(self, anchor_line: int, *, metrics=None) -> None:
+                self.rendered_anchor = anchor_line
+
+            def _get_editor_content(self) -> str:
+                raise AssertionError("large read mode should not fetch full content")
+
+        app = Harness()
+        app._render_read_content()
+        self.assertEqual(250, app.rendered_anchor)
+
+    def test_large_read_scroll_schedules_fragment_render(self) -> None:
+        class RootSpy:
+            def __init__(self) -> None:
+                self.after_delay = 0
+
+            def after(self, delay: int, _callback) -> str:
+                self.after_delay = delay
+                return "after-id"
+
+            def after_cancel(self, _after_id: str) -> None:
+                return None
+
+        class Harness(EditorMixin):
+            def __init__(self) -> None:
+                self.root = RootSpy()
+                self._read_fragment_active = True
+                self._read_fragment_after = None
+                self._read_fragment_anchor_line = 1
+
+            def _editor_document_metrics(self) -> DocumentMetrics:
+                return DocumentMetrics(2_000_000, 20_000)
+
+        app = Harness()
+        self.assertEqual("break", app._scroll_large_read_fragment(80))
+        self.assertEqual(81, app._read_fragment_anchor_line)
+        self.assertEqual(80, app.root.after_delay)
+
+    def test_large_read_page_keys_render_immediately(self) -> None:
+        class Event:
+            state = 0
+            keysym = "Next"
+
+        class Harness(EditorMixin):
+            def __init__(self) -> None:
+                self._read_fragment_active = True
+                self._read_fragment_anchor_line = 1
+                self.rendered_anchor = 0
+
+            def _editor_document_metrics(self) -> DocumentMetrics:
+                return DocumentMetrics(2_000_000, 20_000)
+
+            def _render_large_read_fragment(self, anchor_line: int, *, metrics=None) -> None:
+                self.rendered_anchor = anchor_line
+                self._read_fragment_anchor_line = anchor_line
+
+        app = Harness()
+        self.assertEqual("break", app._read_text_key_filter(Event()))
+        self.assertEqual(601, app.rendered_anchor)
 
 
 if __name__ == "__main__":

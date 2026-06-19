@@ -175,7 +175,7 @@ MESSAGES = {
     "editor.outline": "Outline",
     "editor.no_headings": "No headings",
     "editor.copy": "copy",
-    "editor.read_limited": "Large-file preview: showing the first 1.5 MB. Continue in Edit mode.",
+    "editor.read_limited": "Large-file preview: rendering content in chunks. Scroll to continue.",
     "editor.copied": "Copied",
     "editor.edit_image": "Edit",
     "editor.placeholder_title": "# Start a Markdown note",

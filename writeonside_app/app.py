@@ -89,6 +89,11 @@ class WriteOnSideApp(
         self._preview_previous_mode: str | None = None
         self._preview_render_after: str | None = None
         self._read_content_limited = False
+        self._read_fragment_active = False
+        self._read_fragment_after: str | None = None
+        self._read_fragment_start_line = 1
+        self._read_fragment_end_line = 1
+        self._read_fragment_anchor_line = 1
         self.explorer_visible = self.config.explorer_open
         self._showing_placeholder = False
         self._ignore_tree_events = False
@@ -398,7 +403,7 @@ class WriteOnSideApp(
         self.read_text.bind("<Key>", self._read_text_key_filter)
         self.read_text.bind("<Motion>", self._on_read_hover)
         self.read_text.bind("<Leave>", lambda _e: self._schedule_copy_btn_hide(300))
-        self.read_text.bind("<MouseWheel>", lambda _e: self._hide_code_copy_btn(), add="+")
+        self.read_text.bind("<MouseWheel>", self._on_read_mousewheel, add="+")
         self.read_text.bind("<Button-1>", self._on_read_image_click, add="+")
         self._setup_read_copy_btn()
 

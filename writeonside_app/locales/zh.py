@@ -175,7 +175,7 @@ MESSAGES = {
     "editor.outline": "大纲",
     "editor.no_headings": "无标题",
     "editor.copy": "复制",
-    "editor.read_limited": "大文件预览：仅显示前 1.5 MB，请在编辑模式中继续查看。",
+    "editor.read_limited": "大文件预览：正在分块显示内容，可滚动继续查看。",
     "editor.copied": "已复制",
     "editor.edit_image": "编辑",
     "editor.placeholder_title": "# 开始写 Markdown 笔记",
