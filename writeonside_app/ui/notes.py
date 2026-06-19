@@ -407,7 +407,7 @@ class NotesMixin:
         if self.view_mode == "read":
             self._render_read_content()
 
-    def _load_initial_note(self) -> None:
+    def _load_initial_note(self, *, refresh_explorer: bool = True) -> None:
         root = self._workspace_dir()
         last = Path(self.config.current_note_path).expanduser() if self.config.current_note_path else None
         if (
@@ -430,7 +430,8 @@ class NotesMixin:
                         note_template(welcome, "# Welcome to WriteOnSide\n\nStart writing here.\n"),
                     )
                 self._open_note_file(welcome)
-        self._refresh_explorer()
+        if refresh_explorer:
+            self._refresh_explorer()
 
     def _switch_workspace(self, new_notes_dir: str) -> None:
         old_root = self._workspace_dir().resolve()

@@ -189,23 +189,37 @@ class WriteOnSideApp(
         self._setup_nav_bar()
         self._setup_width_resize_handles()
         self._apply_no_taskbar_styles()
-        self._apply_typography()
-        self._load_initial_note()
-        self._start_vault_watcher()
-        self._register_hotkey()
-        self._setup_tray()
-        self._poll_system_icon()
         self._poll_instance_activation()
         self._show_nav_bar()
         self._poll_ui_queue()
+        # Let Tk compose the first frame before importing keyboard hooks,
+        # indexing the workspace, loading Pillow tray assets, or starting the
+        # recursive filesystem observer.
+        self.root.after_idle(self._schedule_deferred_startup)
+
+    def _schedule_deferred_startup(self) -> None:
+        self.root.after(1, self._finish_startup_content)
+        self.root.after(35, self._register_hotkey)
+        self.root.after(120, self._finish_startup_services)
+
+    def _finish_startup_content(self) -> None:
+        self._apply_typography()
         if self._initial_file is not None:
-            self.root.after_idle(
-                lambda path=self._initial_file: self._open_file_in_editor(
-                    path,
-                    reveal_panel=True,
-                    prefer_split=False,
-                )
+            self._open_file_in_editor(
+                self._initial_file,
+                reveal_panel=True,
+                prefer_split=False,
             )
+        else:
+            self._load_initial_note(refresh_explorer=False)
+        # Build the complete tag index/file tree after the editor has usable
+        # content. Large workspaces no longer block the first visible frame.
+        self.root.after(80, self._refresh_explorer)
+
+    def _finish_startup_services(self) -> None:
+        self._start_vault_watcher()
+        self._setup_tray()
+        self._poll_system_icon()
 
     def _build_ui(self) -> None:
         g = globals()

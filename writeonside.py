@@ -1,4 +1,5 @@
 import sys
+import threading
 from tkinter import messagebox
 
 from writeonside_app import WriteOnSideApp
@@ -25,8 +26,17 @@ if __name__ == "__main__":
         instance.close()
     else:
         try:
-            register_file_open_support(EDITABLE_TEXT_SUFFIXES)
-            WriteOnSideApp(instance_guard=instance, initial_file=requested_file).run()
+            app = WriteOnSideApp(instance_guard=instance, initial_file=requested_file)
+            # File associations are maintenance work, not a startup dependency.
+            # Registry writes and SHChangeNotify can be slow on managed Windows
+            # installations, so keep them off the UI startup path.
+            threading.Thread(
+                target=register_file_open_support,
+                args=(EDITABLE_TEXT_SUFFIXES,),
+                daemon=True,
+                name="writeonside-file-associations",
+            ).start()
+            app.run()
         except Exception as exc:
             failure_path = write_startup_failure_report(type(exc), exc, exc.__traceback__)
             log_exception("Startup failure", type(exc), exc, exc.__traceback__)

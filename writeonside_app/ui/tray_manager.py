@@ -6,15 +6,13 @@ import threading
 from pathlib import Path
 from typing import Callable
 
-import keyboard
-import pystray
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image
 
 from ..config import APP_NAME
 from ..diagnostics import export_diagnostic_report, get_logger
-from ..hotkeys import format_hotkey_display, normalize_hotkey, purge_phantom_pressed_keys, validate_hotkey
+from ..hotkeys import keyboard, format_hotkey_display, normalize_hotkey, purge_phantom_pressed_keys, validate_hotkey
 from ..i18n import t
 from ..platform import SingleInstanceGuard, get_system_color_mode
 from ..theme import *  # noqa: F401,F403

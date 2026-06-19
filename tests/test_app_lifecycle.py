@@ -12,6 +12,45 @@ class _InterruptedRoot:
 
 
 class AppLifecycleTests(unittest.TestCase):
+    def test_expensive_startup_work_is_scheduled_after_first_idle_frame(self) -> None:
+        scheduled: list[tuple[int, object]] = []
+
+        class Root:
+            def after(self, delay: int, callback):
+                scheduled.append((delay, callback))
+                return f"after-{delay}"
+
+        app = object.__new__(WriteOnSideApp)
+        app.root = Root()
+        app._finish_startup_content = lambda: None
+        app._register_hotkey = lambda: None
+        app._finish_startup_services = lambda: None
+
+        app._schedule_deferred_startup()
+
+        self.assertEqual([1, 35, 120], [delay for delay, _callback in scheduled])
+
+    def test_startup_content_defers_full_explorer_index(self) -> None:
+        calls: list[object] = []
+
+        class Root:
+            def after(self, delay: int, callback):
+                calls.append((delay, callback))
+                return "explorer-after"
+
+        app = object.__new__(WriteOnSideApp)
+        app.root = Root()
+        app._initial_file = None
+        app._apply_typography = lambda: calls.append("typography")
+        app._load_initial_note = lambda **kwargs: calls.append(("note", kwargs))
+        app._refresh_explorer = lambda: None
+
+        app._finish_startup_content()
+
+        self.assertEqual("typography", calls[0])
+        self.assertEqual(("note", {"refresh_explorer": False}), calls[1])
+        self.assertEqual(80, calls[2][0])
+
     def test_keyboard_interrupt_uses_normal_quit_path(self) -> None:
         app = object.__new__(WriteOnSideApp)
         app.root = _InterruptedRoot()

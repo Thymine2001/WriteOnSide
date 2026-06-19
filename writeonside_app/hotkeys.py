@@ -1,9 +1,41 @@
 from __future__ import annotations
 
 import queue
+from typing import Any
 
-import keyboard
-from keyboard import KEY_DOWN, KEY_UP, get_hotkey_name, hook, unhook
+KEY_DOWN = "down"
+KEY_UP = "up"
+
+
+class _LazyKeyboard:
+    """Delay the relatively expensive Windows keyboard hook import until use."""
+
+    _module: Any = None
+
+    def _load(self):
+        if self._module is None:
+            import keyboard as keyboard_module
+
+            self._module = keyboard_module
+        return self._module
+
+    def __getattr__(self, name: str):
+        return getattr(self._load(), name)
+
+
+keyboard = _LazyKeyboard()
+
+
+def hook(*args, **kwargs):
+    return keyboard.hook(*args, **kwargs)
+
+
+def unhook(*args, **kwargs):
+    return keyboard.unhook(*args, **kwargs)
+
+
+def get_hotkey_name(*args, **kwargs):
+    return keyboard.get_hotkey_name(*args, **kwargs)
 
 # Windows hook stacks and some apps leave virtual function keys "stuck" in
 # keyboard._pressed_events. keyboard.read_hotkey() merges that global state
