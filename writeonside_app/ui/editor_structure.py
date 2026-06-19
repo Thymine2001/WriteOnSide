@@ -200,11 +200,22 @@ class EditorStructureMixin:
         top_line = int(self.text.index("@0,0").split(".")[0])
         return self._cached_active_heading_stack(top_line)
 
+    def _sticky_heading_stack(self) -> list[dict[str, int | str]]:
+        sticky: list[dict[str, int | str]] = []
+        for heading in self._active_heading_stack():
+            try:
+                info = self.text.dlineinfo(f"{int(heading['line'])}.0")
+            except (ValueError, tk.TclError):
+                info = None
+            if info is None or int(info[1]) < 0:
+                sticky.append(heading)
+        return sticky
+
     def _refresh_sticky_headings(self) -> None:
         for row in self._sticky_heading_rows:
             row.destroy()
         self._sticky_heading_rows.clear()
-        stack = self._active_heading_stack()
+        stack = self._sticky_heading_stack()
         if not stack:
             self.sticky_heading_frame.place_forget()
             return

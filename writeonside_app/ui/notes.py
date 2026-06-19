@@ -12,7 +12,7 @@ import tkinter as tk
 from PIL import Image, ImageGrab
 from tkinterdnd2 import DND_FILES, DND_TEXT
 
-from ..config import save_config
+from ..config import APP_NAME, save_config
 from ..dragdrop import is_image_path, is_image_url, is_url, local_path_from_drop, split_drop_data
 from ..editor_images import EDITOR_IMAGE_ELIDE_TAG, load_preview_photo, plan_editor_image_blocks
 from ..frontmatter import note_template, parse_front_matter
@@ -261,7 +261,7 @@ class NotesMixin:
         self.root.update_idletasks()
         self._fit_read_view()
         self._render_read_content()
-        self.note_title.config(text=path.name)
+        self._update_note_title()
         self._set_status_key("status.preview")
         self._update_view_buttons()
         self.read_text.focus_set()
@@ -1353,10 +1353,31 @@ class NotesMixin:
 
     # ── Status bar ───────────────────────────────────────────────────────────
 
-    def _update_note_title(self) -> None:
+    def _title_context_for_path(self, path: Path) -> str:
+        try:
+            root = self._workspace_dir().resolve()
+            resolved = path.resolve()
+            relative = resolved.relative_to(root)
+            parent = relative.parent
+            return root.name if str(parent) == "." else str(parent)
+        except (OSError, ValueError):
+            return str(path.parent)
+
+    def _active_title_parts(self) -> tuple[str, str]:
         active_path = self.preview_path or self.current_note_path
-        name = active_path.name if active_path else t("note.no_note")
-        self.note_title.config(text=name)
+        if active_path is None:
+            return APP_NAME, t("note.no_note")
+        return active_path.name, self._title_context_for_path(active_path)
+
+    def _update_note_title(self) -> None:
+        primary, secondary = self._active_title_parts()
+        if hasattr(self, "app_title_label"):
+            self.app_title_label.config(text=primary)
+        self.note_title.config(text=secondary)
+        try:
+            self.root.title(f"{primary} - {APP_NAME}" if primary != APP_NAME else APP_NAME)
+        except tk.TclError:
+            pass
         self._update_hotkey_hints()
 
     def _set_status(self, text: str) -> None:

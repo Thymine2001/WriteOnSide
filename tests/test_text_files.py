@@ -192,6 +192,69 @@ class TextFileTests(unittest.TestCase):
             self.assertTrue(app._open_note_split(fifth))
             self.assertIn("4", app.error)
 
+    def test_external_file_title_uses_file_name_and_parent_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "Vault"
+            external_dir = Path(temp_dir) / "Outside"
+            root.mkdir()
+            external_dir.mkdir()
+            external = external_dir / "example.py"
+            external.write_text("print('x')", encoding="utf-8")
+
+            class LabelSpy:
+                def __init__(self) -> None:
+                    self.text = ""
+
+                def config(self, **kwargs: str) -> None:
+                    self.text = kwargs["text"]
+
+            class RootSpy:
+                def __init__(self) -> None:
+                    self.title_text = ""
+
+                def title(self, text: str) -> None:
+                    self.title_text = text
+
+            class TitleHarness(NotesMixin):
+                preview_path = None
+                current_note_path = external
+
+                def __init__(self) -> None:
+                    self.app_title_label = LabelSpy()
+                    self.note_title = LabelSpy()
+                    self.root = RootSpy()
+
+                def _workspace_dir(self) -> Path:
+                    return root
+
+                def _update_hotkey_hints(self) -> None:
+                    return None
+
+            app = TitleHarness()
+            app._update_note_title()
+
+            self.assertEqual("example.py", app.app_title_label.text)
+            self.assertEqual(str(external_dir), app.note_title.text)
+            self.assertEqual("example.py - WriteOnSide", app.root.title_text)
+
+    def test_workspace_file_title_uses_relative_parent_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "Vault"
+            folder = root / "Folder"
+            folder.mkdir(parents=True)
+            note = folder / "example.md"
+            note.write_text("# Example", encoding="utf-8")
+
+            class TitleHarness(NotesMixin):
+                preview_path = None
+                current_note_path = note
+
+                def _workspace_dir(self) -> Path:
+                    return root
+
+            app = TitleHarness()
+            self.assertEqual(("example.md", "Folder"), app._active_title_parts())
+
     def test_closing_preview_without_restore_resyncs_visible_frame(self):
         class FrameSpy:
             def __init__(self) -> None:
