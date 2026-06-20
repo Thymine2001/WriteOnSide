@@ -151,11 +151,8 @@ does not require Obsidian to be installed.
 Markdown, plain-text, log, CSV, web, configuration, data, script, and common
 source-code formats can be edited directly. This includes Python, JavaScript,
 TypeScript, HTML, CSS, JSON, YAML, TOML, PowerShell, shell scripts, C/C++, C#,
-Java, Kotlin, Rust, Go, Swift, SQL, and many more.
-
-Common extensionless project files such as `Dockerfile`, `Makefile`,
-`CMakeLists.txt`, `Gemfile`, and `Jenkinsfile` are also recognized. Images in
-PNG, JPEG, GIF, BMP, WebP, TIFF, and ICO formats can be inserted or previewed.
+Java, Kotlin, Rust, Go.
+Images in PNG, JPEG, GIF, BMP, WebP, TIFF, and ICO formats can be inserted or previewed.
 Other files can be opened with their default Windows application.
 
 ## Privacy and data safety
