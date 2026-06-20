@@ -45,7 +45,7 @@ files in a folder you choose, ready to use with Obsidian, VS Code, Git, backup
 software, or any other tool you trust.
 
 <p align="center">
-  <img src="assets/screenshots/writeonside-demo.gif" alt="WriteOnSide side-panel workflow demonstration" width="800" />
+  <img src="assets/screenshots/writeonside-screenshot.png" alt="WriteOnSide side-panel workflow demonstration" width="800" />
 </p>
 
 > [!NOTE]
