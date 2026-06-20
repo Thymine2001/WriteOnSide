@@ -22,7 +22,6 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Markdown-editor-000000?logo=markdown&logoColor=white" alt="Markdown editor" />
-  <img src="https://img.shields.io/badge/Obsidian-compatible-7C3AED?logo=obsidian&logoColor=white" alt="Obsidian compatible" />
   <img src="https://img.shields.io/badge/storage-local--first-16A34A" alt="Local-first storage" />
   <img src="https://img.shields.io/badge/app-portable-0EA5E9" alt="Portable application" />
   <img src="https://img.shields.io/badge/interface-10_languages-F59E0B" alt="10 interface languages" />
