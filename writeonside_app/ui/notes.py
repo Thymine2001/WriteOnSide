@@ -28,6 +28,7 @@ from ..syntax_highlight import source_token_spans, syntax_tag_name
 from ..text_files import is_editable_text_path, is_markdown_note, read_editable_text
 from ..theme import *  # noqa: F401,F403
 from ..wikilinks import find_notes_linking_to, rename_note_and_rewrite_wikilinks
+from ..welcome import WELCOME_NOTE_BODY
 
 
 class NotesMixin:
@@ -340,7 +341,7 @@ class NotesMixin:
                 if not welcome.exists():
                     safe_write_text(
                         welcome,
-                        note_template(welcome, "# Welcome to WriteOnSide\n\nStart writing here.\n"),
+                        note_template(welcome, WELCOME_NOTE_BODY),
                     )
                 self._open_note_file(welcome)
         if refresh_explorer:
