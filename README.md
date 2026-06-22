@@ -108,13 +108,17 @@ this repository before running it.
 - Note and image embeds with `![[...]]`
 - Inline and nested tags such as `#idea` and `#project/writeonside`
 - Multi-select YAML tag filtering from the Files panel
+- Eight preset file-label colors plus one user-defined color, with text-only, color-only, or combined tag views
+- Portable `writeonside_colors` and `writeonside_pinned` YAML properties for Markdown notes
+- Optional creation-date filtering, enabled from the Tags adjustment menu
 - Incoming wiki-link updates when a note is renamed
 
 ### 📁 Work across files
 
 - Recursive workspace search by filename and content
 - Create, rename, move, copy, paste, delete, preview, reveal, and open files externally
-- Drag files or folders into the workspace
+- Drag files and folders within the workspace to move them; drag external items in to copy them
+- Pin important notes to the top of Files with a visible `📌` marker
 - Paste or drag images directly into Markdown notes
 - Configurable attachment folder with portable relative links
 - Image preview with zoom and pan

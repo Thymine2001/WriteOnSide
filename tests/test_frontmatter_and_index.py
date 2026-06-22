@@ -4,7 +4,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from writeonside_app.frontmatter import ensure_front_matter, note_template, parse_front_matter, split_front_matter
+from writeonside_app.frontmatter import (
+    ensure_front_matter,
+    note_template,
+    parse_front_matter,
+    set_writeonside_properties,
+    split_front_matter,
+)
 from writeonside_app.note_index import build_note_index, filter_workspace_files
 
 
@@ -40,6 +46,33 @@ class FrontMatterTests(unittest.TestCase):
         self.assertIsNotNone(header)
         self.assertIn("title: Example", header)
         self.assertEqual(body.lstrip(), "# Heading")
+
+    def test_writeonside_colors_and_pin_are_parsed_from_yaml(self) -> None:
+        content = (
+            "---\n"
+            "title: Negishi\n"
+            "tags: [Server, Purdue]\n"
+            "created: 2026-06-22\n"
+            'writeonside_colors: ["#DE2F24", "#5175B8"]\n'
+            "writeonside_pinned: true\n"
+            "---\n"
+        )
+        metadata = parse_front_matter(content, "Negishi")
+        self.assertEqual(("#DE2F24", "#5175B8"), metadata.color_tags)
+        self.assertTrue(metadata.pinned)
+
+    def test_set_writeonside_properties_preserves_existing_header(self) -> None:
+        original = "---\ntitle: Negishi\ntags: [Server, Purdue]\ncreated: 2026-06-22\naliases: [Server]\n---\nBody"
+        updated = set_writeonside_properties(
+            original,
+            color_tags=["#DE2F24", "#5175B8"],
+            pinned=True,
+        )
+        header, body = split_front_matter(updated)
+        self.assertIn('writeonside_colors: ["#DE2F24", "#5175B8"]', header)
+        self.assertIn("writeonside_pinned: true", header)
+        self.assertIn("aliases: [Server]", header)
+        self.assertEqual("Body", body)
 
 
 class NoteIndexTests(unittest.TestCase):
@@ -77,6 +110,15 @@ class NoteIndexTests(unittest.TestCase):
 
             images = filter_workspace_files(root / "Library", "image", set(), metadata)
             self.assertEqual(images, [])
+
+            created = filter_workspace_files(
+                root / "Library",
+                "",
+                set(),
+                metadata,
+                selected_created_dates={"2024-01-02"},
+            )
+            self.assertEqual([path.name for path in created], ["two.md"])
 
 
 if __name__ == "__main__":

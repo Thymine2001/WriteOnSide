@@ -15,6 +15,12 @@ from .layout_metrics import (
     work_area_width,
 )
 from .shortcuts import DEFAULT_COMMAND_SHORTCUTS, normalize_command_shortcuts
+from .file_labels import (
+    TAG_VIEW_MODES,
+    normalize_custom_color,
+    normalize_file_color_tags,
+    normalize_pinned_notes,
+)
 
 APP_NAME = "WriteOnSide"
 APP_DATA_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / APP_NAME
@@ -48,6 +54,11 @@ class AppConfig:
     attachments_folder: str = "Attachments"
     language: str = "en"
     command_shortcuts: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_COMMAND_SHORTCUTS))
+    tag_view_mode: str = "text"
+    show_created_dates_in_tags: bool = False
+    file_color_tags: dict[str, list[str]] = field(default_factory=dict)
+    custom_tag_color: str = ""
+    pinned_notes: list[str] = field(default_factory=list)
 
 
 def clamp_int(value, low: int, high: int, default: int) -> int:
@@ -135,6 +146,12 @@ def load_config() -> AppConfig:
         cfg.attachments_folder,
     )
     merged["command_shortcuts"] = normalize_command_shortcuts(merged.get("command_shortcuts"))
+    tag_view_mode = str(merged.get("tag_view_mode") or cfg.tag_view_mode).strip().lower()
+    merged["tag_view_mode"] = tag_view_mode if tag_view_mode in TAG_VIEW_MODES else cfg.tag_view_mode
+    merged["show_created_dates_in_tags"] = bool(merged.get("show_created_dates_in_tags", False))
+    merged["file_color_tags"] = normalize_file_color_tags(merged.get("file_color_tags"))
+    merged["custom_tag_color"] = normalize_custom_color(merged.get("custom_tag_color"))
+    merged["pinned_notes"] = normalize_pinned_notes(merged.get("pinned_notes"))
     raw_language = str(merged.get("language") or cfg.language).strip().lower()
     if raw_language.startswith("zh"):
         merged["language"] = "zh"

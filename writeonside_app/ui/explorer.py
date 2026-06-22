@@ -4,18 +4,31 @@ import re
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
-from tkinter import ttk
-from tkinterdnd2 import COPY, DND_FILES
+from tkinter import colorchooser, ttk
+from tkinterdnd2 import MOVE, DND_FILES
 
 from PIL import Image, ImageDraw, ImageTk
 
 from ..config import save_config
 from ..dragdrop import compact_paths, format_paths_for_drag, local_path_from_drop, split_drop_data
-from ..frontmatter import ensure_front_matter
+from ..frontmatter import ensure_front_matter, set_writeonside_properties
+from ..file_labels import (
+    COLOR_TAG_PALETTE,
+    MAX_COLOR_TAGS_PER_FILE,
+    colors_for_path,
+    is_path_pinned,
+    path_key,
+    normalize_color_list,
+    relocate_file_labels,
+    relocate_path,
+    remove_file_labels_under,
+    tag_mode_flags,
+    toggle_tag_mode,
+)
 from ..i18n import t
 from ..note_index import NoteIndexState, build_note_index, filter_workspace_files
-from ..storage import safe_note_name
-from ..text_files import is_editable_text_path, is_markdown_note
+from ..storage import safe_note_name, safe_write_text
+from ..text_files import is_editable_text_path, is_markdown_note, read_editable_text
 from ..platform import reveal_in_file_explorer
 
 
@@ -183,6 +196,14 @@ class ExplorerMixin:
         self.tag_scope_label.pack(side="left", fill="y", padx=(7, 0))
         self.tag_clear_btn = self._small_action(self.tag_header, "×", self._clear_tag_filters, "Clear tag filters")
         self.tag_clear_btn.pack(side="right")
+        self.tag_controls_btn = self._small_action(
+            self.tag_header,
+            "",
+            self._show_tag_controls,
+            t("explorer.tag_controls"),
+        )
+        self._set_tag_controls_icon()
+        self.tag_controls_btn.pack(side="right", padx=(0, 2))
 
         self.tag_cloud = tk.Text(
             self.tag_panel,
@@ -290,6 +311,8 @@ class ExplorerMixin:
         self.tag_header.grid(row=1, column=0, sticky="ew", padx=(10, 6))
         self.tag_cloud.grid(row=2, column=0, sticky="nsew", padx=(5, 3))
         self.tag_search_outer.grid(row=3, column=0, sticky="ew", padx=9, pady=(5, 9))
+        if self.config.tag_view_mode == "color" and not self.config.show_created_dates_in_tags:
+            self.tag_search_outer.grid_remove()
         self.explorer_split.add(self.tag_panel, minsize=130, stretch="never")
         self.root.after_idle(self._set_initial_explorer_split)
         self._apply_explorer_theme()
@@ -315,11 +338,14 @@ class ExplorerMixin:
             getattr(self, "explorer_new_btn", None),
             getattr(self, "explorer_refresh_btn", None),
             getattr(self, "tag_clear_btn", None),
+            getattr(self, "tag_controls_btn", None),
         ):
             if button is not None:
                 button.configure(bg=g["SIDEBAR"], fg=g["SIDEBAR_MUTED"])
                 button._normal_bg = g["SIDEBAR"]
                 button._normal_fg = g["SIDEBAR_MUTED"]
+        if hasattr(self, "tag_controls_btn"):
+            self._set_tag_controls_icon()
         for divider in (getattr(self, "explorer_divider", None),):
             if divider is not None:
                 divider.configure(bg=g["SIDEBAR_BORDER"])
@@ -398,7 +424,7 @@ class ExplorerMixin:
                         image=self._explorer_chevron_open if opened else self._explorer_chevron_closed,
                     )
                 else:
-                    self.file_tree.item(item, image=self._explorer_chevron_blank)
+                    self.file_tree.item(item, image=self._tree_file_image(path))
                 visit(item)
 
         visit("")
@@ -430,6 +456,73 @@ class ExplorerMixin:
         self._explorer_chevron_closed = make_chevron(False)
         self._explorer_chevron_open = make_chevron(True)
         self._explorer_chevron_blank = ImageTk.PhotoImage(blank)
+        self._explorer_file_image_cache: dict[tuple[str, ...], ImageTk.PhotoImage] = {}
+
+    def _set_tag_controls_icon(self) -> None:
+        if not hasattr(self, "tag_controls_btn"):
+            return
+        scale = 4
+        width, height = 20, 18
+        image = Image.new("RGBA", (width * scale, height * scale), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        track_color = globals()["SIDEBAR_MUTED"]
+        knob_color = globals()["SIDEBAR_TEXT"]
+        line_width = max(1, round(1.25 * scale))
+        knob_half_width = 1.8 * scale
+        knob_half_height = 2.4 * scale
+        for y, knob_x in ((4, 6), (9, 13), (14, 9)):
+            y_scaled = y * scale
+            draw.line(
+                (2 * scale, y_scaled, 18 * scale, y_scaled),
+                fill=track_color,
+                width=line_width,
+            )
+            center_x = knob_x * scale
+            draw.rounded_rectangle(
+                (
+                    center_x - knob_half_width,
+                    y_scaled - knob_half_height,
+                    center_x + knob_half_width,
+                    y_scaled + knob_half_height,
+                ),
+                radius=0.9 * scale,
+                fill=knob_color,
+            )
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
+        self._tag_controls_icon = ImageTk.PhotoImage(image)
+        self.tag_controls_btn.configure(
+            text="",
+            image=self._tag_controls_icon,
+            width=22,
+            height=22,
+            padx=0,
+            pady=0,
+        )
+
+    def _tree_file_image(self, path: Path) -> ImageTk.PhotoImage:
+        if self.config.tag_view_mode == "text":
+            return self._explorer_chevron_blank
+        colors = self._file_colors(path)
+        if not colors:
+            return self._explorer_chevron_blank
+        cached = self._explorer_file_image_cache.get(colors)
+        if cached is not None:
+            return cached
+        scale = 4
+        width, height = 22, 12
+        image = Image.new("RGBA", (width * scale, height * scale), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        for index, color in enumerate(colors[:MAX_COLOR_TAGS_PER_FILE]):
+            left = (2 + index * 6) * scale
+            draw.rounded_rectangle(
+                (left, 3 * scale, left + 4 * scale, 9 * scale),
+                radius=scale,
+                fill=color,
+            )
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
+        photo = ImageTk.PhotoImage(image)
+        self._explorer_file_image_cache[colors] = photo
+        return photo
 
     def _style_explorer_tree(self) -> None:
         g = globals()
@@ -581,37 +674,353 @@ class ExplorerMixin:
         self._note_index_mtimes = index_state.mtimes
         self._note_index_scope = scope
         self._selected_tags.intersection_update(self._tag_counts)
+        self._selected_created_dates.intersection_update(self._created_date_counts())
         if hasattr(self, "tag_scope_label"):
             root = self._workspace_dir().resolve()
             self.tag_scope_label.configure(text=t("explorer.all_notes") if scope == root else scope.name)
+
+    def _file_colors(self, path: Path) -> tuple[str, ...]:
+        metadata = getattr(self, "_note_metadata", {}).get(path_key(path))
+        if metadata is not None and metadata.color_tags is not None:
+            return metadata.color_tags
+        return colors_for_path(self.config.file_color_tags, path)
+
+    def _available_color_tags(self) -> tuple[str, ...]:
+        custom = self.config.custom_tag_color
+        colors = list(COLOR_TAG_PALETTE)
+        if custom and custom not in colors:
+            colors.append(custom)
+        for metadata in getattr(self, "_note_metadata", {}).values():
+            for color in metadata.color_tags or ():
+                if color not in colors:
+                    colors.append(color)
+        return tuple(colors)
+
+    def _is_note_pinned(self, path: Path) -> bool:
+        metadata = getattr(self, "_note_metadata", {}).get(path_key(path))
+        if metadata is not None and metadata.pinned is not None:
+            return metadata.pinned
+        return is_path_pinned(self.config.pinned_notes, path)
+
+    def _write_note_label_metadata(self, path: Path, colors: list[str], pinned: bool) -> None:
+        if not is_markdown_note(path) or not path.is_file():
+            return
+        self._save_note(False)
+        self._save_all_split_notes()
+        try:
+            content, encoding, newline = read_editable_text(path)
+            updated = set_writeonside_properties(content, color_tags=colors, pinned=pinned)
+            if updated == content:
+                return
+            self._mark_vault_internal_write(path)
+            safe_write_text(
+                path,
+                updated,
+                encoding=encoding,
+                newline=newline,
+                workspace_root=self._workspace_dir(),
+            )
+        except (OSError, UnicodeError) as exc:
+            self._set_error(t("error.color_tag_write_failed", exc=exc))
+            return
+        if self.current_note_path and self.current_note_path.resolve() == path.resolve():
+            self._open_note_file(path)
+        for note in getattr(self, "_split_notes", []):
+            if Path(note["path"]).resolve() == path.resolve():
+                self._render_split_note(note)
+
+    def _color_tag_counts(self, scope: Path | None = None) -> dict[str, int]:
+        scope = (scope or self._tag_scope_root()).resolve()
+        counts = {color: 0 for color in self._available_color_tags()}
+        candidate_paths = set(self.config.file_color_tags) | set(self._note_metadata)
+        for raw_path in candidate_paths:
+            path = Path(raw_path)
+            try:
+                path.resolve().relative_to(scope)
+            except (OSError, ValueError):
+                continue
+            if not path.is_file():
+                continue
+            for color in self._file_colors(path):
+                if color in counts:
+                    counts[color] += 1
+        return counts
+
+    def _created_date_counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for metadata in self._note_metadata.values():
+            created = metadata.created.strip()
+            if created:
+                counts[created] = counts.get(created, 0) + 1
+        return counts
+
+    def _colors_for_text_tag(self, tag: str) -> tuple[str, ...]:
+        found: set[str] = set()
+        for raw_path, metadata in self._note_metadata.items():
+            if tag not in metadata.tags:
+                continue
+            found.update(self._file_colors(Path(raw_path)))
+        return tuple(color for color in self._available_color_tags() if color in found)[:MAX_COLOR_TAGS_PER_FILE]
+
+    def _set_tag_view_mode(self, mode: str) -> None:
+        if mode not in {"text", "color", "both"}:
+            return
+        self.config.tag_view_mode = mode
+        if mode == "text":
+            self._selected_colors.clear()
+        elif mode == "color":
+            self._selected_tags.clear()
+        save_config(self.config)
+        if hasattr(self, "tag_search_outer"):
+            if mode == "color" and not self.config.show_created_dates_in_tags:
+                self.tag_search_outer.grid_remove()
+            else:
+                self.tag_search_outer.grid()
+        self._render_tag_cloud()
+        self._queue_cached_explorer_refresh()
+
+    def _toggle_tag_layer(self, layer: str) -> None:
+        self._set_tag_view_mode(toggle_tag_mode(self.config.tag_view_mode, layer))
+        text_enabled, color_enabled = tag_mode_flags(self.config.tag_view_mode)
+        variables = getattr(self, "_tag_mode_vars", {})
+        if "text" in variables:
+            variables["text"].set(text_enabled)
+        if "color" in variables:
+            variables["color"].set(color_enabled)
+
+    def _toggle_created_dates_visibility(self) -> None:
+        enabled = not self.config.show_created_dates_in_tags
+        self.config.show_created_dates_in_tags = enabled
+        if not enabled:
+            self._selected_created_dates.clear()
+        save_config(self.config)
+        variable = getattr(self, "_show_created_dates_var", None)
+        if variable is not None:
+            variable.set(enabled)
+        if hasattr(self, "tag_search_outer"):
+            if self.config.tag_view_mode == "color" and not enabled:
+                self.tag_search_outer.grid_remove()
+            else:
+                self.tag_search_outer.grid()
+        self._render_tag_cloud()
+        self._queue_cached_explorer_refresh()
+
+    def _toggle_file_color(self, path: Path, color: str) -> None:
+        if color not in self._available_color_tags() or not path.is_file() or not self._is_in_workspace(path):
+            return
+        key = path_key(path)
+        existing = list(self._file_colors(path))
+        if color in existing:
+            existing.remove(color)
+        else:
+            if len(existing) >= MAX_COLOR_TAGS_PER_FILE:
+                self._set_error(t("error.color_tag_limit", count=MAX_COLOR_TAGS_PER_FILE))
+                return
+            existing.append(color)
+        for raw_path in list(self.config.file_color_tags):
+            if raw_path.casefold() == key.casefold():
+                self.config.file_color_tags.pop(raw_path, None)
+        if existing:
+            self.config.file_color_tags[key] = existing
+        self._write_note_label_metadata(path, existing, self._is_note_pinned(path))
+        save_config(self.config)
+        self._refresh_explorer()
+
+    def _clear_file_colors(self, path: Path) -> None:
+        key = path_key(path).casefold()
+        changed = False
+        for raw_path in list(self.config.file_color_tags):
+            if raw_path.casefold() == key:
+                self.config.file_color_tags.pop(raw_path, None)
+                changed = True
+        if changed:
+            self._write_note_label_metadata(path, [], self._is_note_pinned(path))
+            save_config(self.config)
+            self._refresh_explorer()
+
+    def _choose_custom_tag_color(self, path: Path | None = None) -> None:
+        initial = self.config.custom_tag_color or "#808080"
+        _rgb, chosen = colorchooser.askcolor(
+            color=initial,
+            parent=self.root,
+            title=t("explorer.color_tags.choose_custom"),
+        )
+        if not chosen:
+            return
+        color = chosen.upper()
+        old_color = self.config.custom_tag_color
+        updated: dict[str, list[str]] = {}
+        for raw_path, colors in self.config.file_color_tags.items():
+            replaced = [color if old_color and value == old_color else value for value in colors]
+            normalized = normalize_color_list(replaced)
+            if normalized:
+                updated[raw_path] = normalized
+        self.config.custom_tag_color = color
+        self.config.file_color_tags = updated
+        if path is not None and path.is_file() and color not in self._file_colors(path):
+            existing = list(self._file_colors(path))
+            if len(existing) >= MAX_COLOR_TAGS_PER_FILE:
+                self._set_error(t("error.color_tag_limit", count=MAX_COLOR_TAGS_PER_FILE))
+            else:
+                existing.append(color)
+                key = path_key(path)
+                for raw_path in list(self.config.file_color_tags):
+                    if raw_path.casefold() == key.casefold():
+                        self.config.file_color_tags.pop(raw_path, None)
+                self.config.file_color_tags[key] = existing
+        yaml_updates: dict[Path, list[str]] = {}
+        if old_color:
+            for raw_path, metadata in getattr(self, "_note_metadata", {}).items():
+                if metadata.color_tags is None or old_color not in metadata.color_tags:
+                    continue
+                yaml_updates[Path(raw_path)] = normalize_color_list(
+                    [color if value == old_color else value for value in metadata.color_tags]
+                )
+        if path is not None and path.is_file():
+            yaml_updates[path] = list(self.config.file_color_tags.get(path_key(path), self._file_colors(path)))
+        for note_path, note_colors in yaml_updates.items():
+            self._write_note_label_metadata(note_path, note_colors, self._is_note_pinned(note_path))
+        save_config(self.config)
+        self._refresh_explorer()
+
+    def _add_color_tag_menu(self, menu: tk.Menu, path: Path | None) -> None:
+        colors = set(self._file_colors(path)) if path is not None and path.is_file() else set()
+        state = tk.NORMAL if path is not None and path.is_file() else tk.DISABLED
+        menu._color_tag_vars = []
+        for color in self._available_color_tags():
+            selected_var = tk.BooleanVar(menu, value=color in colors)
+            menu._color_tag_vars.append(selected_var)
+            menu.add_checkbutton(
+                label=f"■  {color}",
+                foreground=color,
+                activeforeground=color,
+                selectcolor=color,
+                state=state,
+                variable=selected_var,
+                command=(lambda value=color, target=path: self._toggle_file_color(target, value)) if path else None,
+            )
+        menu.add_separator()
+        menu.add_command(
+            label=t("explorer.color_tags.choose_custom"),
+            command=lambda target=path: self._choose_custom_tag_color(target),
+        )
+        menu.add_command(
+            label=t("explorer.color_tags.clear"),
+            state=tk.NORMAL if colors else tk.DISABLED,
+            command=(lambda target=path: self._clear_file_colors(target)) if path else None,
+        )
+
+    def _show_tag_controls(self) -> None:
+        g = globals()
+        menu = tk.Menu(
+            self.root,
+            tearoff=False,
+            bg=g["SIDEBAR_SURFACE"],
+            fg=g["SIDEBAR_TEXT"],
+            activebackground=g["SIDEBAR_HOVER"],
+            activeforeground=g["TEXT"],
+            font=("Segoe UI", 9),
+        )
+        text_enabled, color_enabled = tag_mode_flags(self.config.tag_view_mode)
+        self._tag_mode_vars = {
+            "text": tk.BooleanVar(menu, value=text_enabled),
+            "color": tk.BooleanVar(menu, value=color_enabled),
+        }
+        menu.add_checkbutton(
+            label=t("explorer.tag_mode.text"),
+            variable=self._tag_mode_vars["text"],
+            command=lambda: self._toggle_tag_layer("text"),
+        )
+        menu.add_checkbutton(
+            label=t("explorer.tag_mode.color"),
+            variable=self._tag_mode_vars["color"],
+            command=lambda: self._toggle_tag_layer("color"),
+        )
+        self._show_created_dates_var = tk.BooleanVar(
+            menu,
+            value=self.config.show_created_dates_in_tags,
+        )
+        menu.add_checkbutton(
+            label=t("explorer.tag_mode.created_dates"),
+            variable=self._show_created_dates_var,
+            command=self._toggle_created_dates_visibility,
+        )
+        menu.add_separator()
+        selected = self._explorer_selected_paths()
+        target = selected[0] if len(selected) == 1 and selected[0].is_file() else None
+        color_menu = tk.Menu(menu, tearoff=False, bg=g["SIDEBAR_SURFACE"], fg=g["SIDEBAR_TEXT"])
+        self._add_color_tag_menu(color_menu, target)
+        menu.add_cascade(
+            label=t("explorer.color_tags"),
+            menu=color_menu,
+            state=tk.NORMAL,
+        )
+        try:
+            menu.tk_popup(
+                self.tag_controls_btn.winfo_rootx(),
+                self.tag_controls_btn.winfo_rooty() + self.tag_controls_btn.winfo_height(),
+            )
+        finally:
+            menu.grab_release()
 
     def _render_tag_cloud(self) -> None:
         if not hasattr(self, "tag_cloud"):
             return
         g = globals()
+        mode = self.config.tag_view_mode
         query = self.tag_search_var.get().strip().casefold() if hasattr(self, "tag_search_var") else ""
-        tags = [
+        text_tags = [
             (tag, count)
             for tag, count in sorted(self._tag_counts.items(), key=lambda item: (-item[1], item[0].casefold()))
             if not query or query in tag.casefold()
-        ]
+        ] if mode in {"text", "both"} else []
+        created_dates = [
+            (created, count)
+            for created, count in sorted(self._created_date_counts().items(), reverse=True)
+            if not query or query in created.casefold()
+        ] if self.config.show_created_dates_in_tags else []
+        color_tags = [
+            (color, count)
+            for color, count in self._color_tag_counts().items()
+            if count
+        ] if mode in {"color", "both"} else []
+        rows = [("color", value, count) for value, count in color_tags]
+        rows.extend(("created", value, count) for value, count in created_dates)
+        rows.extend(("text", value, count) for value, count in text_tags)
         self.tag_cloud.configure(state=tk.NORMAL)
         self.tag_cloud.delete("1.0", tk.END)
-        if not tags:
+        if not rows:
             message = t("explorer.no_matching_tags") if query else t("explorer.no_tags_in_folder")
             self.tag_cloud.insert(tk.END, message, "tag_empty")
             self.tag_cloud.tag_configure("tag_empty", foreground=g["SIDEBAR_MUTED"], spacing1=9, lmargin1=9)
         cloud_family = self.config.font_family or "Segoe UI"
         cloud_size = max(8, self.config.font_size - 1)
-        for index, (tag, count) in enumerate(tags):
+        for index, (kind, value, count) in enumerate(rows):
             row_tag = f"tag_item_{index}"
             marker_tag = f"tag_marker_{index}"
             label_tag = f"tag_label_{index}"
             count_tag = f"tag_count_{index}"
-            selected = tag in self._selected_tags
-            marker = "\u258e" if selected else " "
+            selected_values = (
+                self._selected_colors
+                if kind == "color"
+                else self._selected_created_dates
+                if kind == "created"
+                else self._selected_tags
+            )
+            selected = value in selected_values
+            marker = "■" if kind == "color" else ("◷" if kind == "created" else ("\u258e" if selected else " "))
             self.tag_cloud.insert(tk.END, marker, (row_tag, marker_tag))
-            self.tag_cloud.insert(tk.END, f"\t{tag}", (row_tag, label_tag))
+            if kind == "text" and mode == "both":
+                for block_index, color in enumerate(self._colors_for_text_tag(value)):
+                    block_tag = f"tag_color_block_{index}_{block_index}"
+                    self.tag_cloud.insert(tk.END, "■", (row_tag, block_tag))
+                    self.tag_cloud.tag_configure(
+                        block_tag,
+                        foreground=color,
+                        font=("Segoe UI Symbol", cloud_size),
+                    )
+            label = t("explorer.created_date", date=value) if kind == "created" else value
+            self.tag_cloud.insert(tk.END, f"\t{label}", (row_tag, label_tag))
             self.tag_cloud.insert(tk.END, f"\t{count}\n", (row_tag, count_tag))
             self.tag_cloud.tag_configure(
                 row_tag,
@@ -624,7 +1033,15 @@ class ExplorerMixin:
             )
             self.tag_cloud.tag_configure(
                 marker_tag,
-                foreground=g["ACCENT_2"] if selected else g["SIDEBAR"],
+                foreground=(
+                    value
+                    if kind == "color"
+                    else g["ACCENT_2"]
+                    if selected
+                    else g["SIDEBAR_MUTED"]
+                    if kind == "created"
+                    else g["SIDEBAR"]
+                ),
                 font=("Segoe UI Symbol", cloud_size + 1),
             )
             self.tag_cloud.tag_configure(
@@ -647,11 +1064,16 @@ class ExplorerMixin:
                 "<Leave>",
                 lambda _e, item=row_tag, active=selected: self._set_tag_row_hover(item, False, active),
             )
-            self.tag_cloud.tag_bind(row_tag, "<Button-1>", lambda _e, value=tag: self._toggle_tag_filter(value))
+            if kind == "color":
+                self.tag_cloud.tag_bind(row_tag, "<Button-1>", lambda _e, item=value: self._toggle_color_filter(item))
+            elif kind == "created":
+                self.tag_cloud.tag_bind(row_tag, "<Button-1>", lambda _e, item=value: self._toggle_created_date_filter(item))
+            else:
+                self.tag_cloud.tag_bind(row_tag, "<Button-1>", lambda _e, item=value: self._toggle_tag_filter(item))
         self.tag_cloud.configure(state=tk.DISABLED)
         if hasattr(self, "tag_title"):
-            selected_count = len(self._selected_tags)
-            self.tag_title.configure(text="Tags")
+            selected_count = len(self._selected_tags) + len(self._selected_colors) + len(self._selected_created_dates)
+            self.tag_title.configure(text=t("explorer.colors") if mode == "color" else t("explorer.tags"))
             self.tag_scope_label.configure(
                 text=t("explorer.selected_tags", count=selected_count) if selected_count else self._tag_scope_text()
             )
@@ -659,6 +1081,24 @@ class ExplorerMixin:
                 fg=g["ACCENT_2"] if selected_count else g["SIDEBAR_MUTED"],
             )
             self.tag_clear_btn._normal_fg = g["ACCENT_2"] if selected_count else g["SIDEBAR_MUTED"]
+
+    def _toggle_color_filter(self, color: str) -> str:
+        if color in self._selected_colors:
+            self._selected_colors.remove(color)
+        else:
+            self._selected_colors.add(color)
+        self._render_tag_cloud()
+        self._queue_cached_explorer_refresh()
+        return "break"
+
+    def _toggle_created_date_filter(self, created: str) -> str:
+        if created in self._selected_created_dates:
+            self._selected_created_dates.remove(created)
+        else:
+            self._selected_created_dates.add(created)
+        self._render_tag_cloud()
+        self._queue_cached_explorer_refresh()
+        return "break"
 
     def _tag_scope_text(self) -> str:
         scope = self._tag_scope_root().resolve()
@@ -690,9 +1130,11 @@ class ExplorerMixin:
         return "break"
 
     def _clear_tag_filters(self) -> None:
-        if not self._selected_tags:
+        if not self._selected_tags and not self._selected_colors and not self._selected_created_dates:
             return
         self._selected_tags.clear()
+        self._selected_colors.clear()
+        self._selected_created_dates.clear()
         self._render_tag_cloud()
         self._queue_cached_explorer_refresh()
 
@@ -716,7 +1158,7 @@ class ExplorerMixin:
         self._tag_refresh_after = None
         self._rebuild_tag_index()
         self._render_tag_cloud()
-        if self._selected_tags or (hasattr(self, "search_var") and self.search_var.get().strip()):
+        if self._selected_tags or self._selected_colors or self._selected_created_dates or (hasattr(self, "search_var") and self.search_var.get().strip()):
             self._refresh_explorer(rebuild_index=False)
 
     # ── Workspace ────────────────────────────────────────────────────────────
@@ -738,7 +1180,12 @@ class ExplorerMixin:
 
     def _explorer_is_filtered(self) -> bool:
         query = self.search_var.get().strip() if hasattr(self, "search_var") else ""
-        return bool(query or getattr(self, "_selected_tags", set()))
+        return bool(
+            query
+            or getattr(self, "_selected_tags", set())
+            or getattr(self, "_selected_colors", set())
+            or getattr(self, "_selected_created_dates", set())
+        )
 
     def _capture_explorer_tree_state(self) -> set[str]:
         expanded: set[str] = set()
@@ -867,7 +1314,10 @@ class ExplorerMixin:
                     files.append(entry)
         except OSError:
             return [], []
-        return sorted(dirs, key=lambda p: p.name.lower()), sorted(files, key=lambda p: p.name.lower())
+        return (
+            sorted(dirs, key=lambda p: p.name.lower()),
+            sorted(files, key=lambda p: (not self._is_note_pinned(p), p.name.lower())),
+        )
 
     def _on_file_tree_resize(self, _event=None) -> None:
         if getattr(self, "_width_resize_kind", None) is not None:
@@ -938,6 +1388,8 @@ class ExplorerMixin:
     def _file_tree_label(self, path: Path) -> str:
         suffix_text = "".join(path.suffixes)
         name = path.name[:-len(suffix_text)] if suffix_text else path.name
+        if self._is_note_pinned(path):
+            name = f"📌 {name}"
         return self._truncate_tree_label(name, path)
 
     def _truncate_tree_label(self, name: str, path: Path) -> str:
@@ -971,7 +1423,37 @@ class ExplorerMixin:
         return ".".join(suffixes).upper()
 
     def _load_filtered_results(self, root_id: str, root: Path, scope: Path, query: str) -> None:
-        matches = filter_workspace_files(scope, query, self._selected_tags, self._note_metadata)
+        if self._selected_colors and not self._selected_tags:
+            matches = []
+            for raw_path in set(self.config.file_color_tags) | set(self._note_metadata):
+                path = Path(raw_path)
+                try:
+                    relative = path.resolve().relative_to(scope.resolve())
+                except (OSError, ValueError):
+                    continue
+                if path.is_file() and (not query or query in str(relative).casefold()):
+                    matches.append(path.resolve())
+        else:
+            matches = filter_workspace_files(
+                scope,
+                query,
+                self._selected_tags,
+                self._note_metadata,
+                selected_created_dates=self._selected_created_dates,
+            )
+        if self._selected_colors:
+            matches = [
+                path
+                for path in matches
+                if self._selected_colors.issubset(self._file_colors(path))
+            ]
+        if self._selected_created_dates:
+            matches = [
+                path
+                for path in matches
+                if (metadata := self._note_metadata.get(path_key(path))) is not None
+                and metadata.created in self._selected_created_dates
+            ]
         inserted_dirs = {root.resolve(): root_id}
 
         def ensure_directory(path: Path) -> str:
@@ -995,7 +1477,14 @@ class ExplorerMixin:
             inserted_dirs[path] = iid
             return iid
 
-        for path in sorted(matches, key=lambda item: str(item.relative_to(root)).casefold()):
+        for path in sorted(
+            matches,
+            key=lambda item: (
+                str(item.parent.relative_to(root)).casefold(),
+                not self._is_note_pinned(item),
+                item.name.casefold(),
+            ),
+        ):
             parent_id = ensure_directory(path.parent)
             iid = str(path)
             if not self.file_tree.exists(iid):
@@ -1004,7 +1493,7 @@ class ExplorerMixin:
                     tk.END,
                     iid=iid,
                     text=self._file_tree_label(path),
-                    image=self._explorer_chevron_blank,
+                    image=self._tree_file_image(path),
                     tags=("note",),
                     values=(self._file_format_label(path),),
                 )
@@ -1041,6 +1530,26 @@ class ExplorerMixin:
             if self._is_dummy_id(child):
                 self.file_tree.delete(child)
         dirs, files = self._list_dir_entries(directory)
+        pinned_files = [item for item in files if self._is_note_pinned(item)]
+        regular_files = [item for item in files if not self._is_note_pinned(item)]
+
+        def insert_file(item: Path) -> None:
+            iid = str(item.resolve())
+            if self.file_tree.exists(iid):
+                return
+            item_tag = "note" if item.suffix.lower() == ".md" else "attachment"
+            self.file_tree.insert(
+                parent_id,
+                tk.END,
+                iid=iid,
+                text=self._file_tree_label(item),
+                image=self._tree_file_image(item),
+                tags=(item_tag,),
+                values=(self._file_format_label(item),),
+            )
+
+        for item in pinned_files[:300]:
+            insert_file(item)
         for item in dirs[:300]:
             iid = str(item.resolve())
             if not self.file_tree.exists(iid):
@@ -1055,19 +1564,8 @@ class ExplorerMixin:
                     values=("",),
                 )
                 self.file_tree.insert(iid, tk.END, iid=self._dummy_id(item.resolve()), text="")
-        for item in files[:300]:
-            iid = str(item.resolve())
-            if not self.file_tree.exists(iid):
-                item_tag = "note" if item.suffix.lower() == ".md" else "attachment"
-                self.file_tree.insert(
-                    parent_id,
-                    tk.END,
-                    iid=iid,
-                    text=self._file_tree_label(item),
-                    image=self._explorer_chevron_blank,
-                    tags=(item_tag,),
-                    values=(self._file_format_label(item),),
-                )
+        for item in regular_files[: max(0, 300 - len(pinned_files))]:
+            insert_file(item)
         self._tree_loaded_dirs.add(directory_id)
 
     # ── Tree event handlers ──────────────────────────────────────────────────
@@ -1120,7 +1618,7 @@ class ExplorerMixin:
                 self._explorer_scope = scope
                 self._rebuild_tag_index(scope)
                 self._render_tag_cloud()
-                if self._selected_tags or self.search_var.get().strip():
+                if self._selected_tags or self._selected_colors or self._selected_created_dates or self.search_var.get().strip():
                     self.root.after_idle(lambda: self._refresh_explorer(rebuild_index=False))
             return
         if not path.is_file():
@@ -1177,7 +1675,7 @@ class ExplorerMixin:
         data = format_paths_for_drag(paths)
         if not data:
             return "break"
-        return (COPY, DND_FILES, data)
+        return (MOVE, DND_FILES, data)
 
     def _explorer_paste_destination(self, item: str | None = None) -> Path:
         if item and item != "|empty-filter|" and not self._is_dummy_id(item):
@@ -1237,14 +1735,70 @@ class ExplorerMixin:
             self._explorer_set_clipboard(paths, "copy")
 
     def _note_paths_after_relocate(self, mapping: dict[Path, Path]) -> None:
-        self._note_split_paths_after_relocate(mapping)
         for old_path, new_path in mapping.items():
-            if self.current_note_path and self.current_note_path.resolve() == old_path.resolve():
-                self.current_note_path = new_path
-                self.config.current_note_path = str(new_path) if is_markdown_note(new_path) else ""
-                self._update_note_title()
-            if getattr(self, "preview_path", None) and self.preview_path.resolve() == old_path.resolve():
-                self.preview_path = new_path
+            self._mark_vault_internal_write(old_path)
+            self._mark_vault_internal_write(new_path)
+        expanded_mapping = dict(mapping)
+        tracked_paths = [
+            path
+            for path in (
+                getattr(self, "current_note_path", None),
+                getattr(self, "preview_path", None),
+                *(Path(note["path"]) for note in getattr(self, "_split_notes", [])),
+            )
+            if path is not None
+        ]
+        for tracked in tracked_paths:
+            relocated = relocate_path(Path(tracked), mapping)
+            if relocated != Path(tracked).resolve():
+                expanded_mapping[Path(tracked).resolve()] = relocated
+        self._relocate_explorer_metadata(mapping)
+        self._note_split_paths_after_relocate(expanded_mapping)
+        if self.current_note_path:
+            self.current_note_path = relocate_path(self.current_note_path, mapping)
+            self.config.current_note_path = (
+                str(self.current_note_path) if is_markdown_note(self.current_note_path) else ""
+            )
+            self._update_note_title()
+        if getattr(self, "preview_path", None):
+            self.preview_path = relocate_path(self.preview_path, mapping)
+        save_config(self.config)
+
+    def _relocate_explorer_metadata(self, mapping: dict[Path, Path]) -> None:
+        colors, pins = relocate_file_labels(
+            self.config.file_color_tags,
+            self.config.pinned_notes,
+            mapping,
+        )
+        self.config.file_color_tags = colors
+        self.config.pinned_notes = pins
+        save_config(self.config)
+
+    def _remove_explorer_metadata(self, path: Path) -> None:
+        colors, pins = remove_file_labels_under(
+            self.config.file_color_tags,
+            self.config.pinned_notes,
+            path,
+        )
+        if colors == self.config.file_color_tags and pins == self.config.pinned_notes:
+            return
+        self.config.file_color_tags = colors
+        self.config.pinned_notes = pins
+        self._selected_colors.intersection_update(self._color_tag_counts())
+        save_config(self.config)
+
+    def _toggle_note_pin(self, path: Path) -> None:
+        if not is_markdown_note(path) or not path.is_file() or not self._is_in_workspace(path):
+            return
+        key = path_key(path)
+        pins = [raw_path for raw_path in self.config.pinned_notes if raw_path.casefold() != key.casefold()]
+        if len(pins) == len(self.config.pinned_notes):
+            pins.append(key)
+        self.config.pinned_notes = pins
+        pinned = any(raw_path.casefold() == key.casefold() for raw_path in pins)
+        self._write_note_label_metadata(path, list(self._file_colors(path)), pinned)
+        save_config(self.config)
+        self._refresh_explorer()
 
     def _move_into_explorer(self, source: Path, destination: Path) -> Path:
         import shutil
@@ -1323,6 +1877,7 @@ class ExplorerMixin:
         self._schedule_wiki_index_refresh()
 
     def _after_explorer_tree_delete(self, path: Path) -> None:
+        self._remove_explorer_metadata(path)
         self._close_deleted_split_notes(path)
         if self.current_note_path:
             try:
@@ -1495,6 +2050,27 @@ class ExplorerMixin:
         if has_selection:
             menu.add_separator()
             if is_file and single_path is not None:
+                if is_markdown_note(single_path):
+                    menu.add_command(
+                        label=t(
+                            "explorer.menu.unpin"
+                            if self._is_note_pinned(single_path)
+                            else "explorer.menu.pin"
+                        ),
+                        command=lambda: self._toggle_note_pin(single_path),
+                    )
+                color_menu = tk.Menu(
+                    menu,
+                    tearoff=False,
+                    bg=g["SIDEBAR_SURFACE"],
+                    fg=g["SIDEBAR_TEXT"],
+                    activebackground=g["SIDEBAR_HOVER"],
+                    activeforeground=g["TEXT"],
+                    font=("Segoe UI", 9),
+                )
+                self._add_color_tag_menu(color_menu, single_path)
+                menu.add_cascade(label=t("explorer.color_tags"), menu=color_menu)
+                menu.add_separator()
                 if is_editable_text_path(single_path):
                     menu.add_command(
                         label=t("explorer.menu.open_split"),
@@ -1594,6 +2170,9 @@ class ExplorerMixin:
     def _on_explorer_drop(self, event):
         destination = self._explorer_drop_directory()
         copied = 0
+        moved = 0
+        handled = 0
+        relocated: dict[Path, Path] = {}
         errors: list[str] = []
         try:
             destination.mkdir(parents=True, exist_ok=True)
@@ -1604,18 +2183,29 @@ class ExplorerMixin:
             source = local_path_from_drop(value)
             if source is None or not source.exists():
                 continue
+            handled += 1
             try:
-                if self._copy_into_explorer(source, destination) is not None:
+                if self._is_in_workspace(source):
+                    target = self._move_into_explorer(source, destination)
+                    if target.resolve() != source.resolve():
+                        relocated[source.resolve()] = target.resolve()
+                        moved += 1
+                elif self._copy_into_explorer(source, destination) is not None:
                     copied += 1
             except OSError as exc:
                 errors.append(str(exc))
-        if copied:
+        if relocated:
+            self._note_paths_after_relocate(relocated)
+        if moved or copied:
             self._refresh_explorer()
             self._schedule_wiki_index_refresh()
-            self._set_status_key("status.copied_items", count=copied)
+            if moved:
+                self._set_status_key("status.moved_items", count=moved)
+            else:
+                self._set_status_key("status.copied_items", count=copied)
         elif errors:
             self._set_error(t("error.drop_failed", exc=errors[0]))
-        else:
+        elif not handled:
             self._set_error(t("error.no_local_files"))
         return getattr(event, "action", None)
 

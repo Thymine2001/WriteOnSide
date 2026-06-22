@@ -102,6 +102,8 @@ class WriteOnSideApp(
         self._tree_loaded_dirs: set[str] = set()
         self._explorer_scope: Path | None = None
         self._selected_tags: set[str] = set()
+        self._selected_colors: set[str] = set()
+        self._selected_created_dates: set[str] = set()
         self._note_metadata: dict[str, NoteMetadata] = {}
         self._tag_counts: dict[str, int] = {}
         self._note_index_mtimes: dict[str, float] = {}

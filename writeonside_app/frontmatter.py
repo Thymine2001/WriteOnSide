@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from .file_labels import normalize_color_list
+
 
 FRONT_MATTER_PATTERN = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", re.DOTALL)
 
@@ -16,6 +18,8 @@ class NoteMetadata:
     tags: tuple[str, ...]
     created: str
     aliases: tuple[str, ...] = ()
+    color_tags: tuple[str, ...] | None = None
+    pinned: bool | None = None
 
 
 def split_front_matter(content: str) -> tuple[str | None, str]:
@@ -56,8 +60,10 @@ def parse_front_matter(content: str, fallback_title: str = "") -> NoteMetadata:
     created = ""
     tags: list[str] = []
     aliases: list[str] = []
+    color_tags: list[str] | None = None
+    pinned: bool | None = None
     if header is None:
-        return NoteMetadata(title=title, tags=(), created=created, aliases=())
+        return NoteMetadata(title=title, tags=(), created=created, aliases=(), color_tags=None, pinned=None)
 
     collecting_list = ""
     for raw_line in header.splitlines():
@@ -67,7 +73,12 @@ def parse_front_matter(content: str, fallback_title: str = "") -> NoteMetadata:
             if item:
                 value = _unquote(item.group(1)).strip()
                 if value:
-                    (tags if collecting_list == "tags" else aliases).append(value)
+                    if collecting_list == "tags":
+                        tags.append(value)
+                    elif collecting_list == "aliases":
+                        aliases.append(value)
+                    elif color_tags is not None:
+                        color_tags.append(value)
                 continue
             collecting_list = ""
         match = re.match(r"^\s*([A-Za-z_][\w-]*)\s*:\s*(.*?)\s*$", line)
@@ -89,10 +100,68 @@ def parse_front_matter(content: str, fallback_title: str = "") -> NoteMetadata:
                 aliases.extend(_parse_inline_tags(value))
             else:
                 collecting_list = "aliases"
+        elif key == "writeonside_colors":
+            color_tags = []
+            if value:
+                color_tags.extend(_parse_inline_tags(value))
+            else:
+                collecting_list = "writeonside_colors"
+        elif key == "writeonside_pinned":
+            normalized = _unquote(value).strip().casefold()
+            if normalized in {"true", "yes", "on", "1"}:
+                pinned = True
+            elif normalized in {"false", "no", "off", "0"}:
+                pinned = False
 
     unique_tags = tuple(dict.fromkeys(tag for tag in tags if tag))
     unique_aliases = tuple(dict.fromkeys(alias for alias in aliases if alias))
-    return NoteMetadata(title=title, tags=unique_tags, created=created, aliases=unique_aliases)
+    normalized_colors = tuple(normalize_color_list(color_tags)) if color_tags is not None else None
+    return NoteMetadata(
+        title=title,
+        tags=unique_tags,
+        created=created,
+        aliases=unique_aliases,
+        color_tags=normalized_colors,
+        pinned=pinned,
+    )
+
+
+def set_writeonside_properties(
+    content: str,
+    *,
+    color_tags: list[str] | tuple[str, ...],
+    pinned: bool,
+) -> str:
+    header, body = split_front_matter(content)
+    if header is None:
+        return content
+    keys = {"writeonside_colors", "writeonside_pinned"}
+    retained: list[str] = []
+    skipping_list = False
+    for line in header.splitlines():
+        match = re.match(r"^\s*([A-Za-z_][\w-]*)\s*:", line)
+        if match:
+            skipping_list = match.group(1).casefold() in keys
+            if skipping_list:
+                continue
+        elif skipping_list and re.match(r"^\s+-\s+", line):
+            continue
+        else:
+            skipping_list = False
+        retained.append(line)
+    colors = normalize_color_list(color_tags)
+    color_value = ", ".join(f'"{color}"' for color in colors)
+    properties = [
+        f"writeonside_colors: [{color_value}]",
+        f"writeonside_pinned: {'true' if pinned else 'false'}",
+    ]
+    insert_at = len(retained)
+    for index, line in enumerate(retained):
+        if re.match(r"^\s*created\s*:", line, re.IGNORECASE):
+            insert_at = index + 1
+            break
+    updated_header = [*retained[:insert_at], *properties, *retained[insert_at:]]
+    return "---\n" + "\n".join(updated_header) + "\n---\n" + body
 
 
 def _yaml_string(value: str) -> str:

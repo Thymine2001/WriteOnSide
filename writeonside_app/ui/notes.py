@@ -122,7 +122,7 @@ class NotesMixin:
             self._update_note_title()
         elif self.current_note_path and self.current_note_path.resolve() in {note.resolve() for note in changed_notes}:
             self._open_note_file(self.current_note_path)
-        self._note_split_paths_after_relocate({old_path: new_path})
+        self._note_paths_after_relocate({old_path: new_path})
         self._refresh_explorer()
         self._schedule_wiki_index_refresh()
         if changed_notes:
@@ -141,6 +141,7 @@ class NotesMixin:
         except OSError as exc:
             self._set_error(t("error.delete_failed", exc=exc))
             return
+        self._remove_explorer_metadata(path)
         try:
             self._delete_note_attachment_folder(path)
         except OSError as exc:

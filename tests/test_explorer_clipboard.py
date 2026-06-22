@@ -1,9 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from writeonside_app.dragdrop import compact_paths, format_paths_for_drag
+from writeonside_app.file_labels import colors_for_path
 from writeonside_app.platform import reveal_in_file_explorer
 from writeonside_app.ui.explorer import ExplorerMixin
 
@@ -76,6 +78,128 @@ class ExplorerClipboardTests(unittest.TestCase):
             app = Harness()
             self.assertIsNone(app._copy_into_explorer(file_path, root))
             self.assertEqual("x", file_path.read_text(encoding="utf-8"))
+
+    def test_drop_from_workspace_moves_instead_of_copying(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            destination = root / "Archive"
+            destination.mkdir()
+            source = root / "Note.md"
+            source.write_text("# Note", encoding="utf-8")
+
+            class TreeStub:
+                class TkStub:
+                    @staticmethod
+                    def splitlist(data):
+                        return (data,)
+
+                tk = TkStub()
+
+            class Harness(ExplorerMixin):
+                def __init__(self) -> None:
+                    self.file_tree = TreeStub()
+                    self.config = SimpleNamespace(file_color_tags={}, pinned_notes=[])
+                    self.relocated = {}
+                    self.status = None
+
+                def _workspace_dir(self) -> Path:
+                    return root
+
+                def _is_in_workspace(self, path: Path) -> bool:
+                    return path.resolve().is_relative_to(root)
+
+                def _explorer_drop_directory(self) -> Path:
+                    return destination
+
+                def _note_paths_after_relocate(self, mapping) -> None:
+                    self.relocated = mapping
+
+                def _refresh_explorer(self) -> None:
+                    return
+
+                def _schedule_wiki_index_refresh(self) -> None:
+                    return
+
+                def _set_status_key(self, key: str, **kwargs) -> None:
+                    self.status = (key, kwargs)
+
+                def _set_error(self, message: str) -> None:
+                    self.fail(message)
+
+                def _write_note_label_metadata(self, path: Path, colors: list[str], pinned: bool) -> None:
+                    return
+
+            app = Harness()
+            result = app._on_explorer_drop(SimpleNamespace(data=str(source), action="move"))
+
+            target = destination / source.name
+            self.assertEqual("move", result)
+            self.assertFalse(source.exists())
+            self.assertTrue(target.exists())
+            self.assertEqual({source.resolve(): target.resolve()}, app.relocated)
+            self.assertEqual(("status.moved_items", {"count": 1}), app.status)
+
+    def test_pin_toggle_adds_and_removes_note(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            note = root / "Note.md"
+            note.write_text("# Note", encoding="utf-8")
+
+            class Harness(ExplorerMixin):
+                def __init__(self) -> None:
+                    self.config = SimpleNamespace(file_color_tags={}, pinned_notes=[])
+
+                def _workspace_dir(self) -> Path:
+                    return root
+
+                def _is_in_workspace(self, path: Path) -> bool:
+                    return path.resolve().is_relative_to(root)
+
+                def _refresh_explorer(self, rebuild_index=True) -> None:
+                    return
+
+                def _write_note_label_metadata(self, path: Path, colors: list[str], pinned: bool) -> None:
+                    return
+
+            app = Harness()
+            with patch("writeonside_app.ui.explorer.save_config"):
+                app._toggle_note_pin(note)
+                self.assertTrue(app._is_note_pinned(note))
+                app._toggle_note_pin(note)
+                self.assertFalse(app._is_note_pinned(note))
+
+    def test_choosing_custom_color_migrates_existing_assignments(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            note = root / "Note.md"
+            note.write_text("# Note", encoding="utf-8")
+
+            class Harness(ExplorerMixin):
+                def __init__(self) -> None:
+                    self.root = object()
+                    self.config = SimpleNamespace(
+                        custom_tag_color="#123456",
+                        file_color_tags={str(note): ["#123456"]},
+                        pinned_notes=[],
+                    )
+
+                def _refresh_explorer(self, rebuild_index=True) -> None:
+                    return
+
+                def _set_error(self, message: str) -> None:
+                    self.fail(message)
+
+                def _write_note_label_metadata(self, path: Path, colors: list[str], pinned: bool) -> None:
+                    return
+
+            app = Harness()
+            with patch("writeonside_app.ui.explorer.colorchooser.askcolor", return_value=((171, 205, 239), "#abcdef")), patch(
+                "writeonside_app.ui.explorer.save_config"
+            ):
+                app._choose_custom_tag_color(note)
+
+            self.assertEqual("#ABCDEF", app.config.custom_tag_color)
+            self.assertEqual(("#ABCDEF",), colors_for_path(app.config.file_color_tags, note))
 
     def test_reveal_in_file_explorer_opens_folder(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -83,6 +83,7 @@ def filter_workspace_files(
     selected_tags: set[str],
     metadata: dict[str, NoteMetadata],
     limit: int = 1500,
+    selected_created_dates: set[str] | None = None,
 ) -> list[Path]:
     scope = scope.resolve()
     scope_text = str(scope)
@@ -94,6 +95,8 @@ def filter_workspace_files(
         if normalized_query and normalized_query not in relative_text.casefold():
             continue
         if selected_tags and not selected_tags.issubset(note_metadata.tags):
+            continue
+        if selected_created_dates and note_metadata.created not in selected_created_dates:
             continue
         matches.append(Path(raw_path))
         if len(matches) >= limit:

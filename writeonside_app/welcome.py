@@ -109,6 +109,12 @@ Images are copied to the attachment folder configured in Settings and inserted w
 
 Right-click items in **Files** to create folders, rename, copy, cut, paste, delete, copy a path, reveal an item in Windows Explorer, preview it, edit it, open it externally, or open a Markdown note in a split.
 
+Drag an item between folders in **Files** to move it. Items dragged in from outside WriteOnSide are copied instead. Right-click an important Markdown note and choose **Pin note** to keep it at the top with a `📌` marker.
+
+Use the slider button beside **Tags** to show text tags, color tags, or both. Choose from eight preset colors or define your own, then assign up to three color tags to a file from its right-click menu. In combined mode, color blocks also appear before related text tags and can be selected as filters.
+
+For Markdown notes, color labels and pin state are stored as `writeonside_colors` and `writeonside_pinned` YAML properties, so they travel with the note and remain visible in Obsidian. Enable **Created dates** from the Tags adjustment menu to list `created` dates, then select one or more to filter notes by when they were created.
+
 WriteOnSide uses atomic saves. When it replaces an existing file, it also keeps timestamped managed backups outside your notes folder. Backups are a safety net, not a substitute for your own versioned or synced backup of important notes.
 
 ## Make WriteOnSide fit your workflow
