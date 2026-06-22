@@ -1,12 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
-
 datas = [
     ('assets/icon_dark.png', 'assets'),
     ('assets/icon_light.png', 'assets'),
 ]
 binaries = []
-hiddenimports = []
+hiddenimports = [
+    'keyboard._winkeyboard',
+    'pystray._win32',
+    'watchdog.observers.read_directory_changes',
+    'watchdog.observers.winapi',
+]
 excludes = [
     'IPython',
     'jupyter',
@@ -19,17 +22,22 @@ excludes = [
     'PySide6',
     'pytest',
     'scipy',
+    'keyboard._darwinkeyboard',
+    'keyboard._nixkeyboard',
+    'PIL.AvifImagePlugin',
+    'PIL.ImageCms',
+    'PIL._avif',
+    'PIL._imagingcms',
+    'PIL._imagingft',
+    'pystray._appindicator',
+    'pystray._darwin',
+    'pystray._gtk',
+    'pystray._xorg',
+    'watchdog.observers.fsevents',
+    'watchdog.observers.fsevents2',
+    'watchdog.observers.inotify',
+    'watchdog.observers.kqueue',
 ]
-tmp_ret = collect_all('keyboard')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('pystray')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('PIL')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('pygments')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('watchdog')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
@@ -38,7 +46,7 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    hookspath=[],
+    hookspath=['scripts/pyinstaller_hooks'],
     hooksconfig={},
     runtime_hooks=[],
     excludes=excludes,

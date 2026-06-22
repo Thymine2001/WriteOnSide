@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from .file_labels import normalize_color_list
+from .file_labels import color_tag_storage_name, normalize_color_list
 
 
 FRONT_MATTER_PATTERN = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", re.DOTALL)
@@ -150,7 +150,7 @@ def set_writeonside_properties(
             skipping_list = False
         retained.append(line)
     colors = normalize_color_list(color_tags)
-    color_value = ", ".join(f'"{color}"' for color in colors)
+    color_value = ", ".join(f'"{color_tag_storage_name(color)}"' for color in colors)
     properties = [
         f"writeonside_colors: [{color_value}]",
         f"writeonside_pinned: {'true' if pinned else 'false'}",

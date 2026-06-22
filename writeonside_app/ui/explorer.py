@@ -11,8 +11,9 @@ from PIL import Image, ImageDraw, ImageTk
 
 from ..config import save_config
 from ..dragdrop import compact_paths, format_paths_for_drag, local_path_from_drop, split_drop_data
-from ..frontmatter import ensure_front_matter, set_writeonside_properties
+from ..frontmatter import NoteMetadata, ensure_front_matter, set_writeonside_properties
 from ..file_labels import (
+    COLOR_TAG_LABEL_KEYS,
     COLOR_TAG_PALETTE,
     MAX_COLOR_TAGS_PER_FILE,
     colors_for_path,
@@ -685,6 +686,15 @@ class ExplorerMixin:
             return metadata.color_tags
         return colors_for_path(self.config.file_color_tags, path)
 
+    def _color_tag_label(self, color: str) -> str:
+        key = COLOR_TAG_LABEL_KEYS.get(color)
+        return t(key) if key else color
+
+    def _color_tag_matches_query(self, color: str, query: str) -> bool:
+        if not query:
+            return True
+        return query in color.casefold() or query in self._color_tag_label(color).casefold()
+
     def _available_color_tags(self) -> tuple[str, ...]:
         custom = self.config.custom_tag_color
         colors = list(COLOR_TAG_PALETTE)
@@ -729,6 +739,84 @@ class ExplorerMixin:
             if Path(note["path"]).resolve() == path.resolve():
                 self._render_split_note(note)
 
+    def _tag_candidate_items(
+        self,
+        *,
+        include_text: bool = True,
+        include_color: bool = True,
+        include_created: bool = True,
+        scope: Path | None = None,
+    ) -> list[tuple[Path, NoteMetadata]]:
+        scope = (scope or self._tag_scope_root()).resolve()
+        items: list[tuple[Path, NoteMetadata]] = []
+        for raw_path, metadata in getattr(self, "_note_metadata", {}).items():
+            path = Path(raw_path)
+            try:
+                path.resolve().relative_to(scope)
+            except (OSError, ValueError):
+                continue
+            if include_text and self._selected_tags and not self._selected_tags.issubset(metadata.tags):
+                continue
+            if include_color and self._selected_colors and not self._selected_colors.issubset(self._file_colors(path)):
+                continue
+            if include_created and self._selected_created_dates and metadata.created not in self._selected_created_dates:
+                continue
+            items.append((path, metadata))
+        return items
+
+    def _tag_counts_for_items(self, items: list[tuple[Path, NoteMetadata]]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for _path, metadata in items:
+            for tag in metadata.tags:
+                counts[tag] = counts.get(tag, 0) + 1
+        return counts
+
+    def _created_date_counts_for_items(self, items: list[tuple[Path, NoteMetadata]]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for _path, metadata in items:
+            created = metadata.created.strip()
+            if created:
+                counts[created] = counts.get(created, 0) + 1
+        return counts
+
+    def _color_tag_counts_for_items(self, items: list[tuple[Path, NoteMetadata]]) -> dict[str, int]:
+        counts = {color: 0 for color in self._available_color_tags()}
+        for path, _metadata in items:
+            for color in self._file_colors(path):
+                if color in counts:
+                    counts[color] += 1
+        if not self._selected_tags and not self._selected_created_dates:
+            scope = self._tag_scope_root().resolve()
+            for raw_path in set(self.config.file_color_tags) - set(self._note_metadata):
+                path = Path(raw_path)
+                try:
+                    path.resolve().relative_to(scope)
+                except (OSError, ValueError):
+                    continue
+                if not path.is_file():
+                    continue
+                colors = self._file_colors(path)
+                if self._selected_colors and not self._selected_colors.issubset(colors):
+                    continue
+                for color in colors:
+                    if color in counts:
+                        counts[color] += 1
+        return counts
+
+    def _tag_colors_for_items(self, items: list[tuple[Path, NoteMetadata]]) -> dict[str, tuple[str, ...]]:
+        found: dict[str, set[str]] = {}
+        for path, metadata in items:
+            colors = self._file_colors(path)
+            if not colors:
+                continue
+            for tag in metadata.tags:
+                found.setdefault(tag, set()).update(colors)
+        available = self._available_color_tags()
+        return {
+            tag: tuple(color for color in available if color in colors)[:MAX_COLOR_TAGS_PER_FILE]
+            for tag, colors in found.items()
+        }
+
     def _color_tag_counts(self, scope: Path | None = None) -> dict[str, int]:
         scope = (scope or self._tag_scope_root()).resolve()
         counts = {color: 0 for color in self._available_color_tags()}
@@ -753,14 +841,6 @@ class ExplorerMixin:
             if created:
                 counts[created] = counts.get(created, 0) + 1
         return counts
-
-    def _colors_for_text_tag(self, tag: str) -> tuple[str, ...]:
-        found: set[str] = set()
-        for raw_path, metadata in self._note_metadata.items():
-            if tag not in metadata.tags:
-                continue
-            found.update(self._file_colors(Path(raw_path)))
-        return tuple(color for color in self._available_color_tags() if color in found)[:MAX_COLOR_TAGS_PER_FILE]
 
     def _set_tag_view_mode(self, mode: str) -> None:
         if mode not in {"text", "color", "both"}:
@@ -888,10 +968,11 @@ class ExplorerMixin:
         state = tk.NORMAL if path is not None and path.is_file() else tk.DISABLED
         menu._color_tag_vars = []
         for color in self._available_color_tags():
+            label = self._color_tag_label(color)
             selected_var = tk.BooleanVar(menu, value=color in colors)
             menu._color_tag_vars.append(selected_var)
             menu.add_checkbutton(
-                label=f"■  {color}",
+                label=f"■  {label}",
                 foreground=color,
                 activeforeground=color,
                 selectcolor=color,
@@ -969,20 +1050,25 @@ class ExplorerMixin:
         g = globals()
         mode = self.config.tag_view_mode
         query = self.tag_search_var.get().strip().casefold() if hasattr(self, "tag_search_var") else ""
+        candidates = self._tag_candidate_items()
+        text_counts = self._tag_counts_for_items(candidates)
+        color_counts = self._color_tag_counts_for_items(candidates)
+        created_counts = self._created_date_counts_for_items(candidates)
+        tag_colors = self._tag_colors_for_items(candidates) if mode == "both" else {}
         text_tags = [
             (tag, count)
-            for tag, count in sorted(self._tag_counts.items(), key=lambda item: (-item[1], item[0].casefold()))
+            for tag, count in sorted(text_counts.items(), key=lambda item: (-item[1], item[0].casefold()))
             if not query or query in tag.casefold()
         ] if mode in {"text", "both"} else []
         created_dates = [
             (created, count)
-            for created, count in sorted(self._created_date_counts().items(), reverse=True)
+            for created, count in sorted(created_counts.items(), reverse=True)
             if not query or query in created.casefold()
         ] if self.config.show_created_dates_in_tags else []
         color_tags = [
             (color, count)
-            for color, count in self._color_tag_counts().items()
-            if count
+            for color, count in color_counts.items()
+            if count and self._color_tag_matches_query(color, query)
         ] if mode in {"color", "both"} else []
         rows = [("color", value, count) for value, count in color_tags]
         rows.extend(("created", value, count) for value, count in created_dates)
@@ -1011,7 +1097,7 @@ class ExplorerMixin:
             marker = "■" if kind == "color" else ("◷" if kind == "created" else ("\u258e" if selected else " "))
             self.tag_cloud.insert(tk.END, marker, (row_tag, marker_tag))
             if kind == "text" and mode == "both":
-                for block_index, color in enumerate(self._colors_for_text_tag(value)):
+                for block_index, color in enumerate(tag_colors.get(value, ())):
                     block_tag = f"tag_color_block_{index}_{block_index}"
                     self.tag_cloud.insert(tk.END, "■", (row_tag, block_tag))
                     self.tag_cloud.tag_configure(
@@ -1019,7 +1105,13 @@ class ExplorerMixin:
                         foreground=color,
                         font=("Segoe UI Symbol", cloud_size),
                     )
-            label = t("explorer.created_date", date=value) if kind == "created" else value
+            label = (
+                t("explorer.created_date", date=value)
+                if kind == "created"
+                else self._color_tag_label(value)
+                if kind == "color"
+                else value
+            )
             self.tag_cloud.insert(tk.END, f"\t{label}", (row_tag, label_tag))
             self.tag_cloud.insert(tk.END, f"\t{count}\n", (row_tag, count_tag))
             self.tag_cloud.tag_configure(
@@ -1144,7 +1236,10 @@ class ExplorerMixin:
                 self.root.after_cancel(self._explorer_refresh_after)
             except tk.TclError:
                 pass
-        self._explorer_refresh_after = self.root.after(1, lambda: self._refresh_explorer(rebuild_index=False))
+        self._explorer_refresh_after = self.root.after(
+            1,
+            lambda: self._refresh_explorer(rebuild_index=False, render_tags=False),
+        )
 
     def _schedule_tag_refresh(self) -> None:
         if self._tag_refresh_after is not None:
@@ -1159,7 +1254,7 @@ class ExplorerMixin:
         self._rebuild_tag_index()
         self._render_tag_cloud()
         if self._selected_tags or self._selected_colors or self._selected_created_dates or (hasattr(self, "search_var") and self.search_var.get().strip()):
-            self._refresh_explorer(rebuild_index=False)
+            self._refresh_explorer(rebuild_index=False, render_tags=False)
 
     # ── Workspace ────────────────────────────────────────────────────────────
 
@@ -1260,7 +1355,7 @@ class ExplorerMixin:
                 self._update_tree_dir_label(iid, True)
             current_id = iid
 
-    def _refresh_explorer(self, rebuild_index: bool = True) -> None:
+    def _refresh_explorer(self, rebuild_index: bool = True, render_tags: bool = True) -> None:
         if not hasattr(self, "file_tree"):
             return
         self._explorer_refresh_after = None
@@ -1275,7 +1370,8 @@ class ExplorerMixin:
             scope = self._tag_scope_root()
             if rebuild_index or not self._note_metadata:
                 self._rebuild_tag_index(scope)
-            self._render_tag_cloud()
+            if render_tags:
+                self._render_tag_cloud()
             root_id = str(root)
             self.file_tree.insert(
                 "",
@@ -1619,7 +1715,7 @@ class ExplorerMixin:
                 self._rebuild_tag_index(scope)
                 self._render_tag_cloud()
                 if self._selected_tags or self._selected_colors or self._selected_created_dates or self.search_var.get().strip():
-                    self.root.after_idle(lambda: self._refresh_explorer(rebuild_index=False))
+                    self.root.after_idle(lambda: self._refresh_explorer(rebuild_index=False, render_tags=False))
             return
         if not path.is_file():
             return

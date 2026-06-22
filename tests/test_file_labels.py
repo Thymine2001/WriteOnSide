@@ -33,9 +33,9 @@ class FileLabelTests(unittest.TestCase):
         )
         self.assertEqual([COLOR_TAG_PALETTE[0], "#FFFFFF", COLOR_TAG_PALETTE[1]], values)
 
-    def test_custom_color_requires_a_six_digit_hex_value(self) -> None:
+    def test_color_values_accept_preset_names_or_six_digit_hex(self) -> None:
         self.assertEqual("#12ABEF", normalize_custom_color("#12abef"))
-        self.assertEqual("", normalize_custom_color("red"))
+        self.assertEqual(COLOR_TAG_PALETTE[0], normalize_custom_color("red"))
         self.assertEqual("", normalize_custom_color("#FFF"))
 
     def test_relocate_file_labels_moves_nested_paths(self) -> None:

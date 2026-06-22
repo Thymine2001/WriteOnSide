@@ -69,7 +69,7 @@ class FrontMatterTests(unittest.TestCase):
             pinned=True,
         )
         header, body = split_front_matter(updated)
-        self.assertIn('writeonside_colors: ["#DE2F24", "#5175B8"]', header)
+        self.assertIn('writeonside_colors: ["red", "blue"]', header)
         self.assertIn("writeonside_pinned: true", header)
         self.assertIn("aliases: [Server]", header)
         self.assertEqual("Body", body)

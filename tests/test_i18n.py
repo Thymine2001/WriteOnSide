@@ -59,6 +59,14 @@ class I18nTests(unittest.TestCase):
             "find.replace",
             "find.replace_all",
             "editor.read_limited",
+            "color.red",
+            "color.orange",
+            "color.yellow",
+            "color.green",
+            "color.blue",
+            "color.cyan",
+            "color.purple",
+            "color.black",
         }
         for code, catalog in TRANSLATIONS.items():
             self.assertFalse(required - catalog.keys(), code)

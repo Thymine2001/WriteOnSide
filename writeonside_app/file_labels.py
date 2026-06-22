@@ -15,13 +15,156 @@ COLOR_TAG_PALETTE = (
     "#771F77",
     "#070403",
 )
+COLOR_TAG_STORAGE_NAMES = (
+    "red",
+    "orange",
+    "yellow",
+    "green",
+    "blue",
+    "cyan",
+    "purple",
+    "black",
+)
+COLOR_TAG_LABEL_KEYS = {
+    color: f"color.{name}"
+    for color, name in zip(COLOR_TAG_PALETTE, COLOR_TAG_STORAGE_NAMES)
+}
+COLOR_TAG_STORAGE_NAME_BY_COLOR = {
+    color: name
+    for color, name in zip(COLOR_TAG_PALETTE, COLOR_TAG_STORAGE_NAMES)
+}
+_COLOR_TAG_ALIASES = {
+    "red": "#DE2F24",
+    "rot": "#DE2F24",
+    "rouge": "#DE2F24",
+    "rosso": "#DE2F24",
+    "rood": "#DE2F24",
+    "vermelho": "#DE2F24",
+    "червоний": "#DE2F24",
+    "красный": "#DE2F24",
+    "लाल": "#DE2F24",
+    "빨강": "#DE2F24",
+    "빨간색": "#DE2F24",
+    "红": "#DE2F24",
+    "红色": "#DE2F24",
+    "紅": "#DE2F24",
+    "紅色": "#DE2F24",
+    "orange": "#EBA529",
+    "laranja": "#EBA529",
+    "arancione": "#EBA529",
+    "oranje": "#EBA529",
+    "помаранчевий": "#EBA529",
+    "оранжевый": "#EBA529",
+    "नारंगी": "#EBA529",
+    "주황": "#EBA529",
+    "주황색": "#EBA529",
+    "橙": "#EBA529",
+    "橙色": "#EBA529",
+    "yellow": "#E8EA45",
+    "gelb": "#E8EA45",
+    "jaune": "#E8EA45",
+    "giallo": "#E8EA45",
+    "geel": "#E8EA45",
+    "amarelo": "#E8EA45",
+    "жовтий": "#E8EA45",
+    "желтый": "#E8EA45",
+    "желтый": "#E8EA45",
+    "पीला": "#E8EA45",
+    "노랑": "#E8EA45",
+    "노란색": "#E8EA45",
+    "黄": "#E8EA45",
+    "黄色": "#E8EA45",
+    "黃": "#E8EA45",
+    "黃色": "#E8EA45",
+    "green": "#70B832",
+    "gruen": "#70B832",
+    "grün": "#70B832",
+    "vert": "#70B832",
+    "verde": "#70B832",
+    "groen": "#70B832",
+    "зелений": "#70B832",
+    "зеленый": "#70B832",
+    "हरा": "#70B832",
+    "초록": "#70B832",
+    "초록색": "#70B832",
+    "녹색": "#70B832",
+    "绿": "#70B832",
+    "绿色": "#70B832",
+    "綠": "#70B832",
+    "綠色": "#70B832",
+    "blue": "#5175B8",
+    "blau": "#5175B8",
+    "bleu": "#5175B8",
+    "blu": "#5175B8",
+    "azul": "#5175B8",
+    "синій": "#5175B8",
+    "синий": "#5175B8",
+    "नीला": "#5175B8",
+    "파랑": "#5175B8",
+    "파란색": "#5175B8",
+    "蓝": "#5175B8",
+    "蓝色": "#5175B8",
+    "藍": "#5175B8",
+    "藍色": "#5175B8",
+    "cyan": "#7BC5D4",
+    "ciano": "#7BC5D4",
+    "cyaan": "#7BC5D4",
+    "zcyan": "#7BC5D4",
+    "бирюзовий": "#7BC5D4",
+    "бирюзовый": "#7BC5D4",
+    "голубой": "#7BC5D4",
+    "सियान": "#7BC5D4",
+    "청록": "#7BC5D4",
+    "청록색": "#7BC5D4",
+    "青": "#7BC5D4",
+    "青色": "#7BC5D4",
+    "cyanblue": "#7BC5D4",
+    "purple": "#771F77",
+    "violett": "#771F77",
+    "violet": "#771F77",
+    "viola": "#771F77",
+    "paars": "#771F77",
+    "roxo": "#771F77",
+    "фіолетовий": "#771F77",
+    "фиолетовый": "#771F77",
+    "बैंगनी": "#771F77",
+    "보라": "#771F77",
+    "보라색": "#771F77",
+    "紫": "#771F77",
+    "紫色": "#771F77",
+    "black": "#070403",
+    "schwarz": "#070403",
+    "noir": "#070403",
+    "nero": "#070403",
+    "zwart": "#070403",
+    "preto": "#070403",
+    "чорний": "#070403",
+    "черный": "#070403",
+    "काला": "#070403",
+    "검정": "#070403",
+    "검은색": "#070403",
+    "黑": "#070403",
+    "黑色": "#070403",
+}
 MAX_COLOR_TAGS_PER_FILE = 3
 TAG_VIEW_MODES = frozenset({"text", "color", "both"})
 
 
+def normalize_color_name(value: object) -> str:
+    return re.sub(r"[\s_\-]+", "", str(value or "").strip().casefold())
+
+
 def normalize_custom_color(value: object) -> str:
-    color = str(value or "").strip().upper()
-    return color if re.fullmatch(r"#[0-9A-F]{6}", color) else ""
+    text = str(value or "").strip()
+    color = text.upper()
+    if re.fullmatch(r"#[0-9A-F]{6}", color):
+        return color
+    return _COLOR_TAG_ALIASES.get(normalize_color_name(text), "")
+
+
+def color_tag_storage_name(color: str) -> str:
+    normalized = normalize_custom_color(color)
+    return COLOR_TAG_STORAGE_NAME_BY_COLOR.get(normalized, normalized)
 
 
 def tag_mode_flags(mode: str) -> tuple[bool, bool]:

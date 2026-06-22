@@ -75,7 +75,7 @@ class ConfigTests(unittest.TestCase):
                         "tag_view_mode": "both",
                         "show_created_dates_in_tags": True,
                         "file_color_tags": {
-                            "C:/Notes/A.md": [*COLOR_TAG_PALETTE, "#FFFFFF"],
+                            "C:/Notes/A.md": ["red", "orange", "yellow", "green", "blue", "#FFFFFF"],
                         },
                         "custom_tag_color": "#12abef",
                         "pinned_notes": ["C:/Notes/A.md", "c:/notes/a.md"],
