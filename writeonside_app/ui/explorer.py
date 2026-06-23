@@ -1760,14 +1760,28 @@ class ExplorerMixin:
             paths.append(path)
         return compact_paths(paths)
 
+    def _tree_event_y(self, event) -> int | None:
+        y = getattr(event, "y", None)
+        if y is not None:
+            return int(y)
+        y_root = getattr(event, "y_root", None)
+        if y_root is None:
+            return None
+        try:
+            return int(y_root) - self.file_tree.winfo_rooty()
+        except tk.TclError:
+            return None
+
     def _on_explorer_drag_init(self, event):
         paths = self._explorer_selected_paths()
         if not paths:
-            item = self.file_tree.identify_row(event.y)
-            if item and item != "|empty-filter|" and not self._is_dummy_id(item):
-                path = Path(item)
-                if path.exists() and self._is_in_workspace(path) and path.resolve() != self._workspace_dir().resolve():
-                    paths = [path]
+            y = self._tree_event_y(event)
+            if y is not None:
+                item = self.file_tree.identify_row(y)
+                if item and item != "|empty-filter|" and not self._is_dummy_id(item):
+                    path = Path(item)
+                    if path.exists() and self._is_in_workspace(path) and path.resolve() != self._workspace_dir().resolve():
+                        paths = [path]
         data = format_paths_for_drag(paths)
         if not data:
             return "break"

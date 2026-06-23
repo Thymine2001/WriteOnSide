@@ -11,7 +11,7 @@ from tkinter import colorchooser
 
 from ..config import APP_NAME, save_config
 from ..format_icons import FORMAT_MDL2_FONT, FORMAT_MDL2_ICONS, format_menu_label
-from ..frontmatter import ensure_front_matter, split_front_matter
+from ..frontmatter import ensure_complete_front_matter, split_front_matter
 from ..i18n import command_label, t
 from ..editor_images import (
     EDITOR_IMAGE_ELIDE_TAG,
@@ -1193,8 +1193,8 @@ class EditorMixin:
         self._clear_placeholder()
         content = self._get_editor_content()
         header, body = split_front_matter(content)
-        if header is None:
-            content, _created = ensure_front_matter(content, self.current_note_path.stem)
+        content, changed = ensure_complete_front_matter(content, self.current_note_path.stem)
+        if changed:
             self._replace_text_atomic("1.0", tk.END, content)
             self.text.edit_modified(False)
             self._dirty = True

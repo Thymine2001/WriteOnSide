@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from writeonside_app.frontmatter import (
+    ensure_complete_front_matter,
     ensure_front_matter,
     note_template,
     parse_front_matter,
@@ -39,6 +40,33 @@ class FrontMatterTests(unittest.TestCase):
         unchanged, created = ensure_front_matter(original, "Other")
         self.assertFalse(created)
         self.assertEqual(unchanged, original)
+
+    def test_ensure_complete_front_matter_creates_all_supported_fields(self) -> None:
+        updated, created = ensure_complete_front_matter("# Heading\n", "Example")
+        header, body = split_front_matter(updated)
+
+        self.assertTrue(created)
+        self.assertIn("title: Example", header)
+        self.assertIn("tags: []", header)
+        self.assertIn("created:", header)
+        self.assertIn("aliases: []", header)
+        self.assertIn("writeonside_colors: []", header)
+        self.assertIn("writeonside_pinned: false", header)
+        self.assertEqual("# Heading\n", body.lstrip())
+
+    def test_ensure_complete_front_matter_only_adds_missing_fields(self) -> None:
+        original = "---\ntitle: Existing\ntags: [Keep]\ncreated: 2024-01-01\n---\nBody"
+        updated, changed = ensure_complete_front_matter(original, "Other")
+        header, body = split_front_matter(updated)
+
+        self.assertTrue(changed)
+        self.assertIn("title: Existing", header)
+        self.assertIn("tags: [Keep]", header)
+        self.assertIn("created: 2024-01-01", header)
+        self.assertIn("aliases: []", header)
+        self.assertIn("writeonside_colors: []", header)
+        self.assertIn("writeonside_pinned: false", header)
+        self.assertEqual("Body", body)
 
     def test_note_template_places_metadata_before_body(self) -> None:
         content = note_template(Path("Example.md"), "# Heading")

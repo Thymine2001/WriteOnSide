@@ -184,6 +184,21 @@ def build_front_matter(title: str, tags: list[str] | tuple[str, ...] = (), creat
     )
 
 
+def build_complete_front_matter(title: str, tags: list[str] | tuple[str, ...] = (), created: str | None = None) -> str:
+    created = created or date.today().isoformat()
+    tag_text = ", ".join(_yaml_string(tag) for tag in tags)
+    return (
+        "---\n"
+        f"title: {_yaml_string(title)}\n"
+        f"tags: [{tag_text}]\n"
+        f"created: {created}\n"
+        "aliases: []\n"
+        "writeonside_colors: []\n"
+        "writeonside_pinned: false\n"
+        "---\n"
+    )
+
+
 def ensure_front_matter(content: str, title: str) -> tuple[str, bool]:
     header, _body = split_front_matter(content)
     if header is not None:
@@ -191,6 +206,38 @@ def ensure_front_matter(content: str, title: str) -> tuple[str, bool]:
     body = content.lstrip("\ufeff")
     separator = "\n" if body and not body.startswith("\n") else ""
     return build_front_matter(title) + separator + body, True
+
+
+def ensure_complete_front_matter(content: str, title: str) -> tuple[str, bool]:
+    header, body = split_front_matter(content)
+    if header is None:
+        body = content.lstrip("\ufeff")
+        separator = "\n" if body and not body.startswith("\n") else ""
+        return build_complete_front_matter(title) + separator + body, True
+
+    existing_keys: set[str] = set()
+    for line in header.splitlines():
+        match = re.match(r"^\s*([A-Za-z_][\w-]*)\s*:", line)
+        if match:
+            existing_keys.add(match.group(1).casefold())
+
+    additions: list[str] = []
+    if "title" not in existing_keys:
+        additions.append(f"title: {_yaml_string(title)}")
+    if "tags" not in existing_keys:
+        additions.append("tags: []")
+    if "created" not in existing_keys:
+        additions.append(f"created: {date.today().isoformat()}")
+    if "alias" not in existing_keys and "aliases" not in existing_keys:
+        additions.append("aliases: []")
+    if "writeonside_colors" not in existing_keys:
+        additions.append("writeonside_colors: []")
+    if "writeonside_pinned" not in existing_keys:
+        additions.append("writeonside_pinned: false")
+    if not additions:
+        return content, False
+    updated_header = "\n".join([header.rstrip(), *additions])
+    return "---\n" + updated_header + "\n---\n" + body, True
 
 
 def note_template(path: Path, body: str = "") -> str:
