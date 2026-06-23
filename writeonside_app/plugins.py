@@ -16,7 +16,13 @@ class PluginManifest:
 
 
 BUILTIN_PLUGINS: tuple[PluginManifest, ...] = (
-    PluginManifest("ai_helper", "plugins.placeholder.ai", "plugins.description.ai", "🧠"),
+    PluginManifest(
+        "pedigree_analysis",
+        "plugins.pedigree.name",
+        "plugins.pedigree.description",
+        "🧬",
+        entrypoint="writeonside_app.builtin_plugins.pedigree_analysis:run",
+    ),
     PluginManifest("calendar", "plugins.placeholder.calendar", "plugins.description.calendar", "📅"),
     PluginManifest("deep_search", "plugins.placeholder.search", "plugins.description.search", "🔎"),
     PluginManifest("organizer", "plugins.placeholder.organize", "plugins.description.organize", "🗂"),

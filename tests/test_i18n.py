@@ -93,6 +93,20 @@ class I18nTests(unittest.TestCase):
             "settings.plugins.restore",
             "plugins.empty",
             "plugins.description.ai",
+            "plugins.open",
+            "plugins.pedigree.name",
+            "plugins.pedigree.description",
+            "pedigree.window_title",
+            "pedigree.choose_file",
+            "pedigree.columns_title",
+            "pedigree.analyze",
+            "pedigree.progress.ready",
+            "pedigree.progress.title",
+            "pedigree.progress.running",
+            "pedigree.progress.complete",
+            "pedigree.progress.cancelled",
+            "pedigree.progress.done",
+            "pedigree.error.analysis_failed",
         }
         for code in ("en", "zh"):
             self.assertFalse(required - TRANSLATIONS[code].keys(), code)

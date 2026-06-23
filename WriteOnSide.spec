@@ -9,6 +9,7 @@ hiddenimports = [
     'pystray._win32',
     'watchdog.observers.read_directory_changes',
     'watchdog.observers.winapi',
+    'writeonside_pedigree',
 ]
 excludes = [
     'IPython',

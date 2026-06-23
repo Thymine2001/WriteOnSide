@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import tkinter as tk
 
 from ..i18n import t
@@ -9,6 +10,14 @@ from ..theme import *  # noqa: F401,F403
 
 
 class PluginsMixin:
+    def _run_plugin_entrypoint(self, entrypoint: str) -> None:
+        module_name, _, function_name = entrypoint.partition(":")
+        if not module_name or not function_name:
+            return
+        module = importlib.import_module(module_name)
+        function = getattr(module, function_name)
+        function(self)
+
     def _open_plugins(self) -> None:
         if getattr(self, "_plugins_open", False):
             return
@@ -102,7 +111,7 @@ class PluginsMixin:
             name_label.pack(fill="x", padx=7)
             hint_label = tk.Label(
                 card,
-                text=t("plugins.placeholder.coming_soon"),
+                text=t("plugins.open") if plugin.entrypoint else t("plugins.placeholder.coming_soon"),
                 bg=g["SURFACE"],
                 fg=g["MUTED"],
                 font=("Segoe UI", 8),
@@ -119,6 +128,12 @@ class PluginsMixin:
             for widget in (card, icon_label, name_label, hint_label):
                 widget.bind("<Enter>", lambda _event, state=card_state: set_card_background(state, True))
                 widget.bind("<Leave>", lambda _event, state=card_state: set_card_background(state, False))
+                if plugin.entrypoint:
+                    widget.configure(cursor="hand2")
+                    widget.bind(
+                        "<Button-1>",
+                        lambda _event, entrypoint=plugin.entrypoint: self._run_plugin_entrypoint(entrypoint),
+                    )
 
         plugin_theme_widgets = {
             "window": win,

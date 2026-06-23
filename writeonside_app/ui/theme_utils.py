@@ -326,6 +326,8 @@ class ThemeMixin:
             self._schedule_editor_structure_refresh()
         if hasattr(self, "_refresh_plugin_window_theme"):
             self._refresh_plugin_window_theme()
+        if hasattr(self, "_refresh_pedigree_plugin_theme"):
+            self._refresh_pedigree_plugin_theme()
         if flush:
             self.root.update_idletasks()
 

@@ -19,6 +19,8 @@ class PluginTests(unittest.TestCase):
 
         self.assertEqual(BUILTIN_PLUGINS, enabled_plugins(config))
         self.assertEqual("enabled", plugin_status(config, BUILTIN_PLUGINS[0].id))
+        self.assertEqual("pedigree_analysis", BUILTIN_PLUGINS[0].id)
+        self.assertTrue(BUILTIN_PLUGINS[0].entrypoint)
 
     def test_plugin_can_be_disabled_removed_and_restored(self) -> None:
         config = AppConfig()

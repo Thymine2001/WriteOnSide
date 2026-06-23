@@ -9,6 +9,7 @@ $projectRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path
 $versionFile = Join-Path $projectRoot "VERSION"
 $python = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $spec = Join-Path $projectRoot "WriteOnSide.spec"
+$pedigreeExtension = Join-Path $projectRoot "rust_extensions\pedigree_analysis"
 
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     throw "Project Python was not found: $python"
@@ -88,6 +89,20 @@ try {
     & $python (Join-Path $projectRoot "scripts\export_icons.py")
     if ($LASTEXITCODE -ne 0) {
         throw "Icon export failed with exit code $LASTEXITCODE."
+    }
+
+    if (Test-Path -LiteralPath $pedigreeExtension -PathType Container) {
+        & $python -m maturin --version *> $null
+        if ($LASTEXITCODE -ne 0) {
+            & $python -m pip install "maturin>=1.7,<2"
+            if ($LASTEXITCODE -ne 0) {
+                throw "Unable to install maturin for Rust extension build."
+            }
+        }
+        & $python -m maturin develop --release --manifest-path (Join-Path $pedigreeExtension "Cargo.toml")
+        if ($LASTEXITCODE -ne 0) {
+            throw "Pedigree Rust extension build failed with exit code $LASTEXITCODE."
+        }
     }
 
     & $python -m PyInstaller `
