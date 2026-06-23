@@ -47,6 +47,8 @@ class I18nMixin:
             self._track_tooltip(self.close_btn, "tooltip.close")
         if hasattr(self, "settings_btn"):
             self._track_tooltip(self.settings_btn, "tooltip.settings")
+        if hasattr(self, "plugins_btn"):
+            self._track_tooltip(self.plugins_btn, "tooltip.plugins")
         if hasattr(self, "outline_btn"):
             self._track_tooltip(self.outline_btn, "cmd.outline")
         if hasattr(self, "backlinks_btn"):

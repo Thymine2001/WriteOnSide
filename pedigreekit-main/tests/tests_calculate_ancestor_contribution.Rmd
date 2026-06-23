@@ -1,0 +1,84 @@
+---
+title: "pedigreekit 祖先贡献率测试"
+output: html_document
+---
+
+```{r setup, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 读取测试数据
+
+```{r}
+library(pedigreekit)
+
+ped <- read.csv("ped.csv", stringsAsFactors = FALSE)
+str(ped)
+
+progeny <- ped$ID
+sire <- ped$DadID
+dam <- ped$MaID
+```
+
+## calculate_ancestor_contribution（向量输入，小样本）
+
+全群计算较慢，此处用前 500 个个体做示例。
+
+```{r}
+n_sample <- 500
+CF_vec <- calculate_ancestor_contribution(
+  progeny = progeny,
+  sire = sire,
+  dam = dam,
+  top_k = 999,
+  max_depth = 999,
+  format = "ratio"
+)
+
+
+CF_mat <- calculate_ancestor_contribution(
+  progeny = progeny,
+  sire = sire,
+  dam = dam,
+  top_k = 999,
+  max_depth = 999,
+  format = "matrix"
+)
+head(CF_mat)
+
+
+
+
+CF_mat1 <- calculate_ancestor_contribution(
+  progeny = progeny,
+  sire = sire,
+  dam = dam,
+  top_k = 999,
+  max_depth = 999,
+  format = "ratio"
+)
+head(CF_mat1)
+```
+
+## calculate_ancestor_contribution（file 输入，逗号分隔）
+
+从文件读取并计算前若干个体的祖先贡献（全群可改为不取子集，耗时会较长）。
+
+```{r}
+CF_file <- calculate_ancestor_contribution(
+  file = "ped.csv",
+  sep = ",",
+  progeny = "ID",
+  sire = "DadID",
+  dam = "MaID",
+  top_k = 5,
+  max_depth = 6
+)
+head(CF_file)
+```
+
+## 输出结构说明
+
+- 第一列 `id`：个体 ID  
+- 后续列 `anc_1`, `anc_2`, ...：贡献从高到低的祖先 ID  
+- 无父母或无法计算时对应列为 `NA`

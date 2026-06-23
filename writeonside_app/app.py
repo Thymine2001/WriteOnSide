@@ -34,6 +34,7 @@ from .ui.wikilinks_ui import WikiLinksMixin
 from .ui.explorer import ExplorerMixin
 from .ui.notes import NotesMixin
 from .ui.settings import SettingsMixin
+from .ui.plugins import PluginsMixin
 from .ui.i18n_ui import I18nMixin
 from .ui.vault_watcher import VaultWatcherMixin
 
@@ -51,6 +52,7 @@ class WriteOnSideApp(
     ExplorerMixin,
     NotesMixin,
     SettingsMixin,
+    PluginsMixin,
     I18nMixin,
     VaultWatcherMixin,
 ):
@@ -119,6 +121,7 @@ class WriteOnSideApp(
         self._dirty = False
         self._ui_queue: queue.Queue[Callable[[], None]] = queue.Queue()
         self._settings_open = False
+        self._plugins_open = False
         self._settings_width_sync: Callable[[int, int], None] | None = None
         self._preview_alpha: float | None = None
         self._quick_format_after: str | None = None
@@ -237,7 +240,8 @@ class WriteOnSideApp(
         self.menu_btn.pack(side="left", padx=(8, 4))
         self.close_btn = self._icon_label(header, "×", self.close_panel)
         self.close_btn.pack(side="right", padx=(2, 8))
-        self.settings_btn = self._icon_label(header, "⚙", self._open_settings)
+        self.plugins_btn = self._icon_label(header, "🧩", self._open_plugins)
+        self.plugins_btn.configure(font=("Segoe UI Emoji", 13))
 
         title_group = tk.Frame(header, bg=g["SURFACE"], width=1)
         self.title_group = title_group

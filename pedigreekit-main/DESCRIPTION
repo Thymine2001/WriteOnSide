@@ -1,0 +1,23 @@
+Package: pedigreekit
+Type: Package
+Title: Pedigree QC, Inbreeding and Ancestor Contribution
+Version: 0.1.0
+Authors@R: c(
+    person(
+      "Huangyi", "Tang",
+      email = "tang749@purdue.edu",
+      role = c("aut", "cre")
+    )
+  )
+Author: Huangyi Tang [aut, cre]
+Maintainer: Huangyi Tang <tang749@purdue.edu>
+Description: Pedigree quality control (duplicates, loops, sex mismatch, birth order),
+    fixing (remove invalid links, break loops), inbreeding coefficient (F) and
+    ancestor contribution. Supports vectors, data frames and file input.
+    Uses Rcpp for performance.
+License: GPL-3 + file LICENSE
+Encoding: UTF-8
+LazyData: false
+Imports: Rcpp
+Suggests: Matrix
+LinkingTo: Rcpp

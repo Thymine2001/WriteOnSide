@@ -93,6 +93,28 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual("#12ABEF", config.custom_tag_color)
             self.assertEqual(["C:/Notes/A.md"], config.pinned_notes)
 
+    def test_load_config_normalizes_plugin_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir)
+            config_file = config_dir / "config.json"
+            config_file.write_text(
+                json.dumps(
+                    {
+                        "enabled_plugins": ["AI Helper", "ai_helper", ""],
+                        "disabled_plugins": ["calendar", "calendar"],
+                        "removed_plugins": ["sync", None, "Sync"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("writeonside_app.config.APP_DATA_DIR", config_dir), patch(
+                "writeonside_app.config.CONFIG_FILE", config_file
+            ):
+                config = load_config()
+            self.assertEqual(["ai_helper"], config.enabled_plugins)
+            self.assertEqual(["calendar"], config.disabled_plugins)
+            self.assertEqual(["sync"], config.removed_plugins)
+
     def test_save_config_writes_valid_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = Path(temp_dir)

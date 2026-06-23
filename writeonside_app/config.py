@@ -59,6 +59,9 @@ class AppConfig:
     file_color_tags: dict[str, list[str]] = field(default_factory=dict)
     custom_tag_color: str = ""
     pinned_notes: list[str] = field(default_factory=list)
+    enabled_plugins: list[str] = field(default_factory=list)
+    disabled_plugins: list[str] = field(default_factory=list)
+    removed_plugins: list[str] = field(default_factory=list)
 
 
 def clamp_int(value, low: int, high: int, default: int) -> int:
@@ -94,6 +97,20 @@ def normalize_relative_folder(value: object, default: str = "Attachments") -> st
     if not text or path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
         return default
     return path.as_posix()
+
+
+def normalize_plugin_ids(value: object) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        plugin_id = str(item or "").strip().casefold().replace(" ", "_")
+        if not plugin_id or plugin_id in seen:
+            continue
+        seen.add(plugin_id)
+        normalized.append(plugin_id)
+    return normalized
 
 
 def load_config() -> AppConfig:
@@ -152,6 +169,9 @@ def load_config() -> AppConfig:
     merged["file_color_tags"] = normalize_file_color_tags(merged.get("file_color_tags"))
     merged["custom_tag_color"] = normalize_custom_color(merged.get("custom_tag_color"))
     merged["pinned_notes"] = normalize_pinned_notes(merged.get("pinned_notes"))
+    merged["enabled_plugins"] = normalize_plugin_ids(merged.get("enabled_plugins"))
+    merged["disabled_plugins"] = normalize_plugin_ids(merged.get("disabled_plugins"))
+    merged["removed_plugins"] = normalize_plugin_ids(merged.get("removed_plugins"))
     raw_language = str(merged.get("language") or cfg.language).strip().lower()
     if raw_language.startswith("zh"):
         merged["language"] = "zh"

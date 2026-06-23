@@ -14,6 +14,7 @@ from ..i18n import SUPPORTED_LANGUAGES, command_label, normalize_language, set_l
 from ..hotkeys import format_hotkey_display, normalize_hotkey, read_hotkey_clean, validate_hotkey
 from ..layout_metrics import explorer_width_limits, panel_width_limits
 from ..platform import is_startup_enabled, set_startup_enabled
+from ..plugins import BUILTIN_PLUGINS, disable_plugin, enable_plugin, plugin_status, remove_plugin, restore_plugin
 from ..shortcuts import (
     COMMAND_SHORTCUTS,
     DEFAULT_COMMAND_SHORTCUTS,
@@ -48,6 +49,9 @@ class SettingsMixin:
             "attachments_folder": self.config.attachments_folder,
             "language": self.config.language,
             "command_shortcuts": dict(self.config.command_shortcuts),
+            "enabled_plugins": list(self.config.enabled_plugins),
+            "disabled_plugins": list(self.config.disabled_plugins),
+            "removed_plugins": list(self.config.removed_plugins),
         }
 
         win = tk.Toplevel(self.root)
@@ -243,6 +247,7 @@ class SettingsMixin:
             "appearance": tk.Frame(settings_pages, bg=g["BG"]),
             "layout": tk.Frame(settings_pages, bg=g["BG"]),
             "shortcuts": tk.Frame(settings_pages, bg=g["BG"]),
+            "plugins": tk.Frame(settings_pages, bg=g["BG"]),
         }
         page_buttons: dict[str, tk.Label] = {}
         active_page = tk.StringVar(value="general")
@@ -276,6 +281,7 @@ class SettingsMixin:
             ("appearance", t("settings.page.appearance")),
             ("layout", t("settings.page.layout")),
             ("shortcuts", t("settings.page.shortcuts")),
+            ("plugins", t("settings.page.plugins")),
         ):
             _g = globals()
             button = tk.Label(
@@ -299,6 +305,7 @@ class SettingsMixin:
         appearance_page = pages["appearance"]
         layout_page = pages["layout"]
         shortcuts_page = pages["shortcuts"]
+        plugins_page = pages["plugins"]
         general_section_label = tk.Label(general_page, text=t("settings.section.general"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
         general_section_label.pack(fill="x", padx=18, pady=(2, 10))
         appearance_section_label = tk.Label(appearance_page, text=t("settings.section.appearance"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
@@ -316,6 +323,19 @@ class SettingsMixin:
             anchor="w",
         )
         shortcuts_hint_label.pack(fill="x", padx=18, pady=(0, 8))
+        plugins_section_label = tk.Label(plugins_page, text=t("settings.section.plugins"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
+        plugins_section_label.pack(fill="x", padx=18, pady=(2, 4))
+        plugins_hint_label = tk.Label(
+            plugins_page,
+            text=t("settings.plugins_hint"),
+            bg=g["BG"],
+            fg=g["MUTED"],
+            font=("Segoe UI", 9),
+            anchor="w",
+            justify="left",
+            wraplength=520,
+        )
+        plugins_hint_label.pack(fill="x", padx=18, pady=(0, 10))
         show_settings_page("general")
 
         def dropdown_control(
@@ -722,6 +742,137 @@ class SettingsMixin:
             pady=6,
         )
         restore_shortcuts_button.pack(anchor="e", padx=18, pady=(8, 4))
+
+        plugin_rows: list[dict[str, object]] = []
+        plugins_list = tk.Frame(plugins_page, bg=g["BG"])
+        plugins_list.pack(fill="x", padx=18, pady=(0, 8))
+
+        def refresh_plugin_rows() -> None:
+            _g = globals()
+            for row_state in plugin_rows:
+                plugin = row_state["plugin"]
+                state = plugin_status(self.config, plugin.id)
+                frame = row_state["frame"]
+                icon_label = row_state["icon"]
+                title_label = row_state["title"]
+                description_label = row_state["description"]
+                status_label = row_state["status"]
+                toggle_button = row_state["toggle"]
+                remove_button = row_state["remove"]
+                is_removed = state == "removed"
+                frame.configure(
+                    bg=_g["SURFACE"] if not is_removed else _g["BG"],
+                    highlightbackground=_g["BORDER"],
+                )
+                icon_label.configure(bg=frame.cget("bg"), fg=_g["TEXT"] if not is_removed else _g["MUTED"])
+                title_label.configure(text=t(plugin.name_key), bg=frame.cget("bg"), fg=_g["TEXT"] if not is_removed else _g["MUTED"])
+                description_label.configure(text=t(plugin.description_key), bg=frame.cget("bg"), fg=_g["TEXT_SOFT"] if not is_removed else _g["MUTED"])
+                status_label.configure(
+                    text=t(f"settings.plugins.status.{state}"),
+                    bg=frame.cget("bg"),
+                    fg=_g["ACCENT_2"] if state == "enabled" else _g["MUTED"],
+                )
+                if state == "removed":
+                    toggle_button.configure(text=t("settings.plugins.restore"), state=tk.NORMAL)
+                    remove_button.configure(text=t("settings.plugins.remove"), state=tk.DISABLED)
+                elif state == "disabled":
+                    toggle_button.configure(text=t("settings.plugins.enable"), state=tk.NORMAL)
+                    remove_button.configure(text=t("settings.plugins.remove"), state=tk.NORMAL)
+                else:
+                    toggle_button.configure(text=t("settings.plugins.disable"), state=tk.NORMAL)
+                    remove_button.configure(text=t("settings.plugins.remove"), state=tk.NORMAL)
+                for button in (toggle_button, remove_button):
+                    button.configure(
+                        bg=_g["BORDER"],
+                        fg=_g["TEXT"],
+                        activebackground=_g["ACCENT"],
+                        activeforeground=self._contrast_text(_g["ACCENT"]),
+                    )
+
+        def toggle_plugin(plugin_id: str) -> None:
+            state = plugin_status(self.config, plugin_id)
+            if state == "removed":
+                restore_plugin(self.config, plugin_id)
+                msg.config(text=t("settings.plugins.msg.restored"), fg=globals()["TEXT"])
+            elif state == "disabled":
+                enable_plugin(self.config, plugin_id)
+                msg.config(text=t("settings.plugins.msg.enabled"), fg=globals()["TEXT"])
+            else:
+                disable_plugin(self.config, plugin_id)
+                msg.config(text=t("settings.plugins.msg.disabled"), fg=globals()["TEXT"])
+            refresh_plugin_rows()
+
+        def delete_plugin(plugin_id: str) -> None:
+            remove_plugin(self.config, plugin_id)
+            msg.config(text=t("settings.plugins.msg.removed"), fg=globals()["TEXT"])
+            refresh_plugin_rows()
+
+        for plugin in BUILTIN_PLUGINS:
+            plugin_frame = tk.Frame(
+                plugins_list,
+                bg=g["SURFACE"],
+                highlightthickness=1,
+                highlightbackground=g["BORDER"],
+                padx=10,
+                pady=8,
+            )
+            plugin_frame.pack(fill="x", pady=5)
+            icon_label = tk.Label(plugin_frame, text=plugin.icon, bg=g["SURFACE"], fg=g["TEXT"], font=("Segoe UI Emoji", 18), width=3)
+            icon_label.pack(side="left", padx=(0, 8))
+            text_frame = tk.Frame(plugin_frame, bg=g["SURFACE"])
+            text_frame.pack(side="left", fill="x", expand=True)
+            title_label = tk.Label(text_frame, text=t(plugin.name_key), bg=g["SURFACE"], fg=g["TEXT"], font=("Segoe UI", 10, "bold"), anchor="w")
+            title_label.pack(fill="x")
+            description_label = tk.Label(
+                text_frame,
+                text=t(plugin.description_key),
+                bg=g["SURFACE"],
+                fg=g["TEXT_SOFT"],
+                font=("Segoe UI", 8),
+                anchor="w",
+                justify="left",
+                wraplength=320,
+            )
+            description_label.pack(fill="x", pady=(2, 0))
+            status_label = tk.Label(plugin_frame, text="", bg=g["SURFACE"], fg=g["MUTED"], font=("Segoe UI", 8), width=10)
+            status_label.pack(side="left", padx=(8, 6))
+            toggle_button = tk.Button(
+                plugin_frame,
+                text="",
+                command=lambda value=plugin.id: toggle_plugin(value),
+                bg=g["BORDER"],
+                fg=g["TEXT"],
+                relief="flat",
+                padx=8,
+                pady=3,
+                cursor="hand2",
+            )
+            toggle_button.pack(side="left", padx=(0, 5))
+            remove_button = tk.Button(
+                plugin_frame,
+                text="",
+                command=lambda value=plugin.id: delete_plugin(value),
+                bg=g["BORDER"],
+                fg=g["TEXT"],
+                relief="flat",
+                padx=8,
+                pady=3,
+                cursor="hand2",
+            )
+            remove_button.pack(side="left")
+            plugin_rows.append(
+                {
+                    "plugin": plugin,
+                    "frame": plugin_frame,
+                    "icon": icon_label,
+                    "title": title_label,
+                    "description": description_label,
+                    "status": status_label,
+                    "toggle": toggle_button,
+                    "remove": remove_button,
+                }
+            )
+        refresh_plugin_rows()
 
         e_notes = row(general_page, t("settings.notes_folder"), self.config.notes_directory, lambda: filedialog.askdirectory(parent=win), lambda: apply_workspace_only())
 
@@ -1460,6 +1611,8 @@ class SettingsMixin:
             layout_section_label.configure(text=t("settings.section.layout"))
             shortcuts_section_label.configure(text=t("settings.section.shortcuts"))
             shortcuts_hint_label.configure(text=t("settings.shortcuts_hint"))
+            plugins_section_label.configure(text=t("settings.section.plugins"))
+            plugins_hint_label.configure(text=t("settings.plugins_hint"))
             for key, button in page_buttons.items():
                 button.configure(text=t(f"settings.page.{key}"))
             language_label.configure(text=t("settings.language"))
@@ -1494,6 +1647,7 @@ class SettingsMixin:
                 if str(button.cget("state")) != tk.DISABLED:
                     button.configure(text=t("settings.record"))
             restore_shortcuts_button.configure(text=t("settings.restore_defaults"))
+            refresh_plugin_rows()
             refresh_setting_toggles()
             refresh_page_nav()
             win.after_idle(update_scroll_region)
@@ -1685,6 +1839,9 @@ class SettingsMixin:
             self.config.remember_last_note = bool(original["remember_last_note"])
             self.config.explorer_open = bool(original["explorer_open"])
             self.config.start_on_boot = bool(original["start_on_boot"])
+            self.config.enabled_plugins = list(original["enabled_plugins"])
+            self.config.disabled_plugins = list(original["disabled_plugins"])
+            self.config.removed_plugins = list(original["removed_plugins"])
             self.config.language = str(original["language"])
             set_language(self.config.language)
             self.explorer_visible = self.config.explorer_open

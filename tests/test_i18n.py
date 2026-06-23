@@ -77,6 +77,26 @@ class I18nTests(unittest.TestCase):
         set_language(config.language)
         self.assertEqual("en", get_language())
 
+    def test_plugin_management_messages_exist_in_primary_languages(self) -> None:
+        from writeonside_app.locales import TRANSLATIONS
+
+        required = {
+            "settings.page.plugins",
+            "settings.section.plugins",
+            "settings.plugins_hint",
+            "settings.plugins.status.enabled",
+            "settings.plugins.status.disabled",
+            "settings.plugins.status.removed",
+            "settings.plugins.enable",
+            "settings.plugins.disable",
+            "settings.plugins.remove",
+            "settings.plugins.restore",
+            "plugins.empty",
+            "plugins.description.ai",
+        }
+        for code in ("en", "zh"):
+            self.assertFalse(required - TRANSLATIONS[code].keys(), code)
+
 
 if __name__ == "__main__":
     unittest.main()

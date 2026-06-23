@@ -189,7 +189,7 @@ class ThemeMixin:
             ("note_title", {"bg": "SURFACE", "fg": "MUTED"}),
             ("menu_btn", {"bg": "SURFACE", "fg": "MUTED", "_normal_bg": "SURFACE", "_normal_fg": "MUTED"}),
             ("close_btn", {"bg": "SURFACE", "fg": "MUTED", "_normal_bg": "SURFACE", "_normal_fg": "MUTED"}),
-            ("settings_btn", {"bg": "SURFACE", "fg": "MUTED", "_normal_bg": "SURFACE", "_normal_fg": "MUTED"}),
+            ("plugins_btn", {"bg": "SURFACE", "fg": "MUTED", "_normal_bg": "SURFACE", "_normal_fg": "MUTED"}),
             ("toolbar", {"bg": "SURFACE_2"}),
             ("toolbar_top", {"bg": "SURFACE_2"}),
             ("toolbar_bottom", {"bg": "SURFACE_2"}),
@@ -324,18 +324,21 @@ class ThemeMixin:
             )
         if hasattr(self, "line_number_canvas"):
             self._schedule_editor_structure_refresh()
+        if hasattr(self, "_refresh_plugin_window_theme"):
+            self._refresh_plugin_window_theme()
         if flush:
             self.root.update_idletasks()
 
     def _apply_header_alignment(self) -> None:
         if not hasattr(self, "title_group"):
             return
-        for widget in (self.menu_btn, self.close_btn, self.title_group):
+        for widget in (self.menu_btn, self.close_btn, self.plugins_btn, self.title_group):
             widget.pack_forget()
         if self.config.app_position == "left":
             self.app_title_label.config(anchor="e")
             self.note_title.config(anchor="e")
             self.close_btn.pack(side="left", padx=(8, 2))
+            self.plugins_btn.pack(side="left", padx=2)
             self.menu_btn.pack(side="right", padx=(4, 8))
             self.title_group.pack(side="left", fill="x", expand=True)
         else:
@@ -343,4 +346,5 @@ class ThemeMixin:
             self.note_title.config(anchor="w")
             self.menu_btn.pack(side="left", padx=(8, 4))
             self.close_btn.pack(side="right", padx=(2, 8))
+            self.plugins_btn.pack(side="right", padx=2)
             self.title_group.pack(side="left", fill="x", expand=True)

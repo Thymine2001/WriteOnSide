@@ -225,6 +225,24 @@ def hide_window_from_taskbar(hwnd: int) -> bool:
     return bool(user32.SetWindowPos(wintypes.HWND(hwnd), None, 0, 0, 0, 0, flags))
 
 
+def show_window_in_taskbar(hwnd: int) -> bool:
+    if not hwnd:
+        return False
+    user32 = ctypes.windll.user32
+    get_style = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
+    set_style = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
+    get_style.argtypes = [wintypes.HWND, ctypes.c_int]
+    get_style.restype = ctypes.c_ssize_t
+    set_style.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+    set_style.restype = ctypes.c_ssize_t
+    style = int(get_style(wintypes.HWND(hwnd), GWL_EXSTYLE))
+    updated = (style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
+    if updated != style:
+        set_style(wintypes.HWND(hwnd), GWL_EXSTYLE, updated)
+    flags = SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
+    return bool(user32.SetWindowPos(wintypes.HWND(hwnd), None, 0, 0, 0, 0, flags))
+
+
 def get_system_color_mode() -> str | None:
     """Return the Windows app color mode, or None when it cannot be detected."""
     try:
