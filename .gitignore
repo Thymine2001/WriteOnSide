@@ -17,3 +17,6 @@ performance_tests/test_*mb.md
 Thumbs.db
 *_REVIEW.md
 Backup/
+# Rust build outputs
+target/
+**/target/
