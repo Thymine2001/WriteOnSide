@@ -412,6 +412,7 @@ _THEME_SYNC_MODULES = (
     f"{_THEME_MODULE_PREFIX}.ui.settings",
     f"{_THEME_MODULE_PREFIX}.ui.plugins",
     f"{_THEME_MODULE_PREFIX}.builtin_plugins.pedigree_analysis",
+    f"{_THEME_MODULE_PREFIX}.builtin_plugins.sticky_notes",
     f"{_THEME_MODULE_PREFIX}.ui.theme_utils",
     f"{_THEME_MODULE_PREFIX}.ui.dialogs",
 )

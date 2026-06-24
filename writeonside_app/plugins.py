@@ -23,6 +23,13 @@ BUILTIN_PLUGINS: tuple[PluginManifest, ...] = (
         "🧬",
         entrypoint="writeonside_app.builtin_plugins.pedigree_analysis:run",
     ),
+    PluginManifest(
+        "sticky_notes",
+        "plugins.sticky.name",
+        "plugins.sticky.description",
+        "🗒",
+        entrypoint="writeonside_app.builtin_plugins.sticky_notes:run",
+    ),
     PluginManifest("calendar", "plugins.placeholder.calendar", "plugins.description.calendar", "📅"),
     PluginManifest("deep_search", "plugins.placeholder.search", "plugins.description.search", "🔎"),
     PluginManifest("organizer", "plugins.placeholder.organize", "plugins.description.organize", "🗂"),

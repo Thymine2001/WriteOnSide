@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
+from writeonside_app.config import AppConfig
 from writeonside_app.app import WriteOnSideApp
 from writeonside_app.ui.tray_manager import TrayMixin
 
@@ -24,11 +26,13 @@ class AppLifecycleTests(unittest.TestCase):
         app.root = Root()
         app._finish_startup_content = lambda: None
         app._register_hotkey = lambda: None
+        app._register_sticky_notes_hotkey = lambda: None
+        app._register_plugin_shortcuts = lambda: None
         app._finish_startup_services = lambda: None
 
         app._schedule_deferred_startup()
 
-        self.assertEqual([1, 35, 120], [delay for delay, _callback in scheduled])
+        self.assertEqual([1, 35, 55, 70, 120], [delay for delay, _callback in scheduled])
 
     def test_startup_content_defers_full_explorer_index(self) -> None:
         calls: list[object] = []
@@ -62,6 +66,35 @@ class AppLifecycleTests(unittest.TestCase):
         app.run()
 
         self.assertEqual([True], quit_calls)
+
+    def test_sticky_notes_plugin_shortcut_opens_new_hotkey_window(self) -> None:
+        callbacks = []
+        calls: list[str] = []
+
+        class Harness(TrayMixin):
+            config = AppConfig(plugin_shortcuts={"sticky_notes": "ctrl+alt+s"}, sticky_notes_double_ctrl=False)
+
+            def _post_ui(self, callback) -> None:
+                callback()
+
+            def _open_sticky_notes(self) -> None:
+                calls.append("sticky-hotkey")
+
+            def _run_plugin_entrypoint(self, _entrypoint: str) -> None:
+                calls.append("plugin-entrypoint")
+
+        def fake_add_hotkey(_hotkey, callback):
+            callbacks.append(callback)
+            return "handle"
+
+        app = Harness()
+        app._active_plugin_shortcuts = {}
+        with patch("writeonside_app.ui.tray_manager.keyboard.add_hotkey", fake_add_hotkey):
+            app._register_plugin_shortcuts()
+
+        callbacks[0]()
+
+        self.assertEqual(["sticky-hotkey"], calls)
 
     def test_shutdown_saves_main_and_split_notes(self) -> None:
         class Root:

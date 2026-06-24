@@ -73,6 +73,11 @@ class FrontMatterTests(unittest.TestCase):
         header, body = split_front_matter(content)
         self.assertIsNotNone(header)
         self.assertIn("title: Example", header)
+        self.assertIn("tags: []", header)
+        self.assertIn("created:", header)
+        self.assertIn("aliases: []", header)
+        self.assertIn("writeonside_colors: []", header)
+        self.assertIn("writeonside_pinned: false", header)
         self.assertEqual(body.lstrip(), "# Heading")
 
     def test_writeonside_colors_and_pin_are_parsed_from_yaml(self) -> None:

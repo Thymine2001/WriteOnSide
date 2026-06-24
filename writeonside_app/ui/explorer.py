@@ -33,6 +33,11 @@ from ..text_files import is_editable_text_path, is_markdown_note, read_editable_
 from ..platform import reveal_in_file_explorer
 
 
+def natural_sort_key(value: str) -> tuple[object, ...]:
+    parts = re.split(r"(\d+)", value.casefold())
+    return tuple((0, int(part)) if part.isdigit() else (1, part) for part in parts if part)
+
+
 class ExplorerMixin:
     # ── Explorer build ───────────────────────────────────────────────────────
 
@@ -1411,8 +1416,8 @@ class ExplorerMixin:
         except OSError:
             return [], []
         return (
-            sorted(dirs, key=lambda p: p.name.lower()),
-            sorted(files, key=lambda p: (not self._is_note_pinned(p), p.name.lower())),
+            sorted(dirs, key=lambda p: natural_sort_key(p.name)),
+            sorted(files, key=lambda p: (not self._is_note_pinned(p), natural_sort_key(p.name))),
         )
 
     def _on_file_tree_resize(self, _event=None) -> None:
@@ -1576,9 +1581,9 @@ class ExplorerMixin:
         for path in sorted(
             matches,
             key=lambda item: (
-                str(item.parent.relative_to(root)).casefold(),
+                natural_sort_key(str(item.parent.relative_to(root))),
                 not self._is_note_pinned(item),
-                item.name.casefold(),
+                natural_sort_key(item.name),
             ),
         ):
             parent_id = ensure_directory(path.parent)
@@ -2186,6 +2191,11 @@ class ExplorerMixin:
                         label=t("explorer.menu.open_split"),
                         command=lambda: self._open_note_split(single_path),
                     )
+                if is_markdown_note(single_path):
+                    menu.add_command(
+                        label=t("explorer.menu.open_sticky_note"),
+                        command=lambda: self._open_in_sticky_note(single_path),
+                    )
                 if is_editable_text_path(single_path) and not is_markdown_note(single_path):
                     menu.add_command(
                         label=t("explorer.menu.edit"),
@@ -2217,6 +2227,11 @@ class ExplorerMixin:
             menu.grab_release()
             self.root.after_idle(self._clear_tree_context_ignore)
         return "break"
+
+    def _open_in_sticky_note(self, path: Path) -> None:
+        from ..builtin_plugins.sticky_notes import open_path_in_sticky_note
+
+        open_path_in_sticky_note(self, path)
 
     # ── Drop into explorer ───────────────────────────────────────────────────
 

@@ -134,7 +134,10 @@ class PedigreePluginTests(unittest.TestCase):
             self.assertTrue(report_path.exists())
             report = report_path.read_text(encoding="utf-8")
             self.assertTrue(report.startswith("---\n"))
-            self.assertIn("tags: [pedigree, inbreeding, plugin-report]", report)
+            self.assertIn(
+                "tags: [pedigree, inbreeding, plugin-report, plugin-pedigree-analysis, pedigree-analysis]",
+                report,
+            )
             self.assertNotIn("  - pedigree", report)
             self.assertIn("plugin: pedigree_analysis", report)
             self.assertIn("# Pedigree QC & Inbreeding Report", report)

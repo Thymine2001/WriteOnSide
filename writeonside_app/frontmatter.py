@@ -172,18 +172,6 @@ def _yaml_string(value: str) -> str:
     return value
 
 
-def build_front_matter(title: str, tags: list[str] | tuple[str, ...] = (), created: str | None = None) -> str:
-    created = created or date.today().isoformat()
-    tag_text = ", ".join(_yaml_string(tag) for tag in tags)
-    return (
-        "---\n"
-        f"title: {_yaml_string(title)}\n"
-        f"tags: [{tag_text}]\n"
-        f"created: {created}\n"
-        "---\n"
-    )
-
-
 def build_complete_front_matter(title: str, tags: list[str] | tuple[str, ...] = (), created: str | None = None) -> str:
     created = created or date.today().isoformat()
     tag_text = ", ".join(_yaml_string(tag) for tag in tags)
@@ -197,6 +185,11 @@ def build_complete_front_matter(title: str, tags: list[str] | tuple[str, ...] = 
         "writeonside_pinned: false\n"
         "---\n"
     )
+
+
+def build_front_matter(title: str, tags: list[str] | tuple[str, ...] = (), created: str | None = None) -> str:
+    """Build the canonical WriteOnSide YAML header used by all note creation paths."""
+    return build_complete_front_matter(title, tags, created)
 
 
 def ensure_front_matter(content: str, title: str) -> tuple[str, bool]:

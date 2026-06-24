@@ -116,6 +116,9 @@ class WriteOnSideApp(
         self._sash_indicator: tk.Frame | None = None
         self._pending_explorer_sash_y: int | None = None
         self._active_hotkey = None
+        self._active_sticky_notes_hook = None
+        self._active_plugin_shortcuts = {}
+        self._sticky_notes_last_ctrl_down = 0.0
         self._autosave_after = None
         self._live_render_after = None
         self._dirty = False
@@ -207,6 +210,8 @@ class WriteOnSideApp(
     def _schedule_deferred_startup(self) -> None:
         self.root.after(1, self._finish_startup_content)
         self.root.after(35, self._register_hotkey)
+        self.root.after(55, self._register_sticky_notes_hotkey)
+        self.root.after(70, self._register_plugin_shortcuts)
         self.root.after(120, self._finish_startup_services)
 
     def _finish_startup_content(self) -> None:

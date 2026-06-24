@@ -853,6 +853,12 @@ class WindowMixin:
         def done() -> None:
             self.explorer.withdraw()
             self.root.withdraw()
+            try:
+                from ..builtin_plugins.sticky_notes import keep_sticky_notes_visible
+
+                keep_sticky_notes_visible(self)
+            except Exception:
+                pass
             self._raise_nav_bar()
             self._refresh_nav_bar_visual()
 

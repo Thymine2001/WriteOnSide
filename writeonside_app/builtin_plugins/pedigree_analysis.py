@@ -39,18 +39,28 @@ class PedigreeAnalysisWindow:
             return
         app._pedigree_plugin_open = True
         g = globals()
-        win = tk.Toplevel(app.root)
+        parent = getattr(app, "_plugin_parent_window", None)
+        try:
+            if parent is None or not parent.winfo_exists():
+                parent = app.root
+        except tk.TclError:
+            parent = app.root
+        win = tk.Toplevel(parent)
         win.withdraw()
         win.title(t("pedigree.window_title"))
         work_width = max(420, app.work_right - app.work_left)
         work_height = max(360, app.work_bottom - app.work_top)
-        width = min(780, max(520, work_width - 72))
-        height = min(640, max(460, work_height - 96))
+        width = min(780, max(420, work_width - 48))
+        height = min(640, max(360, work_height - 72))
         x = app.work_left + max(0, (work_width - width) // 2)
         y = app.work_top + max(0, (work_height - height) // 2)
         win.geometry(f"{width}x{height}+{x}+{y}")
-        win.minsize(520, 460)
+        win.minsize(min(420, width), min(340, height))
         win.configure(bg=g["BG"])
+        try:
+            win.transient(parent)
+        except tk.TclError:
+            pass
         win.resizable(True, True)
 
         footer = tk.Frame(win, bg=g["BG"])
@@ -66,8 +76,84 @@ class PedigreeAnalysisWindow:
         )
         status.pack(side="left", fill="x", expand=True, padx=(0, 14))
 
-        content = tk.Frame(win, bg=g["BG"])
-        content.pack(fill="both", expand=True, padx=22, pady=(18, 8))
+        content_shell = tk.Frame(win, bg=g["BG"])
+        content_shell.pack(fill="both", expand=True)
+        content_canvas = tk.Canvas(content_shell, bg=g["BG"], highlightthickness=0, bd=0)
+        content_scroll_track = tk.Frame(content_shell, bg=g["BG"], width=12, cursor="sb_v_double_arrow")
+        content_scroll_thumb = tk.Frame(content_scroll_track, bg=g["BORDER"], width=5, cursor="sb_v_double_arrow")
+        content_canvas.configure(
+            yscrollcommand=lambda first, last: update_content_scroll_thumb(first, last)
+        )
+        content_canvas.pack(side="left", fill="both", expand=True)
+        content_scroll_track.pack(side="right", fill="y", padx=(0, 5), pady=10)
+        content_scroll_track.pack_propagate(False)
+        content = tk.Frame(content_canvas, bg=g["BG"])
+        content_window = content_canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def update_content_scroll_thumb(first: str, last: str) -> None:
+            start = float(first)
+            end = float(last)
+            if start <= 0 and end >= 1:
+                content_scroll_thumb.place_forget()
+                return
+            content_scroll_thumb.place(
+                relx=0.5,
+                rely=start,
+                relheight=max(0.08, end - start),
+                width=5,
+                anchor="n",
+            )
+
+        def scroll_content_to_pointer(event) -> None:
+            height = max(1, content_scroll_track.winfo_height())
+            content_canvas.yview_moveto(max(0.0, min(1.0, event.y / height)))
+
+        content_drag_state = {"y": 0, "first": 0.0}
+
+        def start_content_thumb_drag(event) -> None:
+            first, _last = content_canvas.yview()
+            content_drag_state["y"] = event.y_root
+            content_drag_state["first"] = first
+            content_scroll_thumb.config(bg=globals()["ACCENT"])
+
+        def drag_content_thumb(event) -> None:
+            height = max(1, content_scroll_track.winfo_height())
+            delta = (event.y_root - content_drag_state["y"]) / height
+            content_canvas.yview_moveto(max(0.0, min(1.0, content_drag_state["first"] + delta)))
+
+        def end_content_thumb_drag(_event) -> None:
+            content_scroll_thumb.config(bg=globals()["BORDER"])
+
+        def sync_scroll_region(_event=None) -> None:
+            try:
+                content_canvas.configure(scrollregion=content_canvas.bbox("all"))
+                first, last = content_canvas.yview()
+                update_content_scroll_thumb(str(first), str(last))
+            except tk.TclError:
+                pass
+
+        def sync_content_width(event) -> None:
+            try:
+                content_canvas.itemconfigure(content_window, width=max(1, event.width))
+            except tk.TclError:
+                pass
+
+        def scroll_content(event) -> str:
+            delta = -1 if event.delta > 0 else 1
+            content_canvas.yview_scroll(delta * 3, "units")
+            return "break"
+
+        content.bind("<Configure>", sync_scroll_region)
+        content_canvas.bind("<Configure>", sync_content_width)
+        content_scroll_track.bind("<Button-1>", scroll_content_to_pointer)
+        content_scroll_thumb.bind("<ButtonPress-1>", start_content_thumb_drag)
+        content_scroll_thumb.bind("<B1-Motion>", drag_content_thumb)
+        content_scroll_thumb.bind("<ButtonRelease-1>", end_content_thumb_drag)
+        content_scroll_thumb.bind("<Enter>", lambda _event: content_scroll_thumb.config(bg=globals()["ACCENT_2"]))
+        content_scroll_thumb.bind("<Leave>", lambda _event: content_scroll_thumb.config(bg=globals()["BORDER"]))
+        content_canvas.bind("<Enter>", lambda _event: content_canvas.bind_all("<MouseWheel>", scroll_content))
+        content_canvas.bind("<Leave>", lambda _event: content_canvas.unbind_all("<MouseWheel>"))
+        content.configure(padx=22, pady=18)
 
         hero = tk.Frame(content, bg=g["SURFACE"], highlightthickness=1, highlightbackground=g["BORDER"], padx=18, pady=14)
         hero.pack(fill="x", pady=(0, 14))
@@ -149,6 +235,10 @@ class PedigreeAnalysisWindow:
 
         def close() -> None:
             app._pedigree_plugin_open = False
+            try:
+                content_canvas.unbind_all("<MouseWheel>")
+            except tk.TclError:
+                pass
             if getattr(app, "_refresh_pedigree_plugin_theme", None) is refresh_theme:
                 try:
                     delattr(app, "_refresh_pedigree_plugin_theme")
@@ -214,109 +304,143 @@ class PedigreeAnalysisWindow:
             set_menu_values("birthdate", headers, guess(headers, "birthdate", "birth_date", "dob", optional=True))
             set_status(t("pedigree.loaded", rows=len(self.rows), columns=len(headers)))
 
-        def open_progress_dialog() -> dict[str, object]:
-            dialog = tk.Toplevel(win)
-            dialog.withdraw()
-            try:
-                dialog.attributes("-alpha", 0.0)
-            except tk.TclError:
-                pass
-            dialog.title(t("pedigree.progress.title"))
-            dialog.overrideredirect(True)
-            dialog_w = 400
-            dialog_h = 172
-            dialog_x = win.winfo_rootx() + max(0, (win.winfo_width() - dialog_w) // 2)
-            dialog_y = win.winfo_rooty() + max(0, (win.winfo_height() - dialog_h) // 2)
-            dialog.geometry(f"{dialog_w}x{dialog_h}+{dialog_x}+{dialog_y}")
-            dialog.resizable(False, False)
-            dialog.transient(win)
-            dialog.configure(bg=globals()["BG"])
-
+        def configure_progress_style(window: tk.Misc) -> None:
             bg = globals()["SURFACE"]
             text = globals()["TEXT"]
             muted = globals()["MUTED"]
             border = globals()["BORDER"]
-            is_dark = str(globals()["BG"]).lower() not in {"#ffffff", "#f7f7f7", "#f8f9fa", "#fafafa"}
-            accent = "#5b8fd8" if is_dark else "#6aa6e8"
-            style = ttk.Style(dialog)
-            style.configure("PedigreeProgress.TLabel", background=bg, foreground=text, font=("Segoe UI", 10))
+            accent = globals()["ACCENT"]
+            accent_2 = globals()["ACCENT_2"]
+            style = ttk.Style(window)
+            style.configure("PedigreeProgress.TLabel", background=bg, foreground=text, font=("Segoe UI", 10, "bold"))
             style.configure("PedigreeProgressMuted.TLabel", background=bg, foreground=muted, font=("Segoe UI", 9))
             style.configure(
                 "Pedigree.Horizontal.TProgressbar",
                 troughcolor=border,
                 background=accent,
-                lightcolor=accent,
+                lightcolor=accent_2,
                 darkcolor=accent,
                 bordercolor=border,
-                thickness=8,
+                thickness=10,
             )
 
-            shell = tk.Frame(dialog, bg=globals()["SURFACE"], highlightthickness=1, highlightbackground=globals()["BORDER"], padx=16, pady=14)
-            shell.pack(fill="both", expand=True, padx=14, pady=14)
-            title_bar = tk.Frame(shell, bg=bg)
-            title_bar.pack(fill="x")
-            title_label = ttk.Label(
-                title_bar,
+        def center_progress_dialog(dialog: tk.Toplevel) -> None:
+            try:
+                dialog.update_idletasks()
+                popup_width = max(320, min(420, dialog.winfo_reqwidth()))
+                popup_height = max(140, dialog.winfo_reqheight())
+                parent_x = win.winfo_rootx()
+                parent_y = win.winfo_rooty()
+                parent_w = max(1, win.winfo_width())
+                parent_h = max(1, win.winfo_height())
+                popup_x = parent_x + max(0, (parent_w - popup_width) // 2)
+                popup_y = parent_y + max(0, (parent_h - popup_height) // 2)
+                popup_x = max(app.work_left + 8, min(popup_x, app.work_right - popup_width - 8))
+                popup_y = max(app.work_top + 8, min(popup_y, app.work_bottom - popup_height - 8))
+                dialog.geometry(f"{popup_width}x{popup_height}+{popup_x}+{popup_y}")
+            except tk.TclError:
+                pass
+
+        def open_progress_panel() -> dict[str, object]:
+            progress_dialog = tk.Toplevel(win)
+            progress_dialog.withdraw()
+            try:
+                progress_dialog.attributes("-alpha", 0.0)
+            except tk.TclError:
+                pass
+            progress_dialog.title(t("pedigree.progress.title"))
+            progress_dialog.transient(win)
+            progress_dialog.resizable(False, False)
+            progress_dialog.configure(bg=globals()["BG"])
+            shell = tk.Frame(
+                progress_dialog,
+                bg=globals()["SURFACE"],
+                highlightthickness=1,
+                highlightbackground=globals()["BORDER"],
+                padx=16,
+                pady=14,
+            )
+            shell.pack(fill="both", expand=True, padx=12, pady=12)
+            progress_header = tk.Frame(shell, bg=globals()["SURFACE"])
+            progress_header.pack(fill="x")
+            progress_title = ttk.Label(
+                progress_header,
                 text=t("pedigree.progress.title"),
                 style="PedigreeProgress.TLabel",
                 anchor="w",
             )
-            title_label.pack(side="left", fill="x", expand=True)
-            close_btn = tk.Button(
-                title_bar,
-                text="×",
-                bg=bg,
-                fg=muted,
-                activebackground=border,
-                activeforeground=text,
-                relief="flat",
-                borderwidth=0,
-                width=3,
-                cursor="hand2",
+            progress_title.pack(side="left", fill="x", expand=True)
+            progress_percent = ttk.Label(
+                progress_header,
+                text="0%",
+                style="PedigreeProgressMuted.TLabel",
+                anchor="e",
+                width=5,
             )
-            close_btn.pack(side="right")
-            status_row = tk.Frame(shell, bg=bg)
-            status_row.pack(fill="x", pady=(8, 10))
-            label = ttk.Label(
-                status_row,
+            progress_percent.pack(side="right")
+            progress_label = ttk.Label(
+                shell,
                 text=t("pedigree.progress.running"),
                 style="PedigreeProgressMuted.TLabel",
                 anchor="w",
+                wraplength=360,
             )
-            label.pack(side="left", fill="x", expand=True)
-            percent = ttk.Label(status_row, text="0%", style="PedigreeProgressMuted.TLabel", anchor="e", width=5)
-            percent.pack(side="right")
+            progress_label.pack(fill="x", pady=(10, 12))
             progress_value = tk.DoubleVar(value=0)
-            bar = ttk.Progressbar(
+            progress_bar = ttk.Progressbar(
                 shell,
                 variable=progress_value,
                 maximum=100,
                 mode="determinate",
                 style="Pedigree.Horizontal.TProgressbar",
             )
-            bar.pack(fill="x", pady=(0, 12))
-            done_btn = tk.Button(
-                shell,
+            progress_bar.pack(fill="x", pady=(0, 12))
+            progress_actions = tk.Frame(shell, bg=globals()["SURFACE"])
+            progress_actions.pack(fill="x")
+            cancel_btn = tk.Button(
+                progress_actions,
+                text=t("dialog.cancel"),
+                bg=globals()["BORDER"],
+                fg=globals()["TEXT"],
+                activebackground=globals()["SURFACE_2"],
+                activeforeground=globals()["TEXT"],
+                relief="flat",
+                padx=14,
+                pady=5,
+                cursor="hand2",
+            )
+            cancel_btn.pack(side="right", padx=(8, 0))
+            close_btn = tk.Button(
+                progress_actions,
                 text=t("pedigree.progress.done"),
                 state="disabled",
                 bg=globals()["BORDER"],
                 fg=globals()["TEXT"],
+                activebackground=globals()["SURFACE_2"],
+                activeforeground=globals()["TEXT"],
                 relief="flat",
                 padx=14,
                 pady=5,
             )
-            done_btn.pack(side="right")
+
+            configure_progress_style(progress_dialog)
+            progress_value.set(0)
+            progress_percent.configure(text="0%")
+            progress_label.configure(text=t("pedigree.progress.running"))
+            close_btn.configure(state="disabled", command=lambda: None)
+            cancel_btn.configure(state="normal")
             state: dict[str, object] = {
-                "dialog": dialog,
+                "dialog": progress_dialog,
                 "shell": shell,
-                "title_bar": title_bar,
-                "title_label": title_label,
-                "close_btn": close_btn,
-                "label": label,
-                "bar": bar,
+                "header": progress_header,
+                "actions": progress_actions,
+                "title": progress_title,
+                "label": progress_label,
+                "bar": progress_bar,
                 "value": progress_value,
-                "percent": percent,
-                "done_btn": done_btn,
+                "percent": progress_percent,
+                "done_btn": close_btn,
+                "cancel_btn": cancel_btn,
                 "cancelled": False,
                 "completed": False,
             }
@@ -328,27 +452,28 @@ class PedigreeAnalysisWindow:
                 state["cancelled"] = True
                 current_progress["state"] = None
                 try:
-                    dialog.destroy()
+                    progress_dialog.destroy()
                 except tk.TclError:
                     pass
                 set_busy(False)
                 set_status(t("pedigree.progress.cancelled"), muted=True)
 
-            close_btn.configure(command=cancel)
-            dialog.protocol("WM_DELETE_WINDOW", cancel)
-            dialog.bind("<Escape>", lambda _event: cancel())
-            dialog.update_idletasks()
+            cancel_btn.configure(command=cancel)
+            progress_dialog.protocol("WM_DELETE_WINDOW", cancel)
+            progress_dialog.bind("<Escape>", lambda _event: cancel())
+            center_progress_dialog(progress_dialog)
+            progress_dialog.update_idletasks()
+            progress_dialog.deiconify()
             try:
-                dialog.attributes("-alpha", 1.0)
+                progress_dialog.lift(win)
+            except tk.TclError:
+                progress_dialog.lift()
+            progress_dialog.focus_force()
+            progress_dialog.update_idletasks()
+            try:
+                progress_dialog.attributes("-alpha", 1.0)
             except tk.TclError:
                 pass
-            dialog.deiconify()
-            try:
-                dialog.attributes("-topmost", True)
-                dialog.lift()
-                dialog.after(120, lambda: dialog.attributes("-topmost", False))
-            except tk.TclError:
-                dialog.lift(win)
             return state
 
         def analyze() -> None:
@@ -363,10 +488,15 @@ class PedigreeAnalysisWindow:
                 return
             start_time = time.monotonic()
             worker_state: dict[str, object] = {"done": False, "report": None, "error": None}
+            progress_animation = {
+                "display": 0.0,
+                "completion_started": None,
+                "completion_from": 0.0,
+            }
             set_busy(True)
             set_status(t("pedigree.progress.running"), muted=True)
             win.update_idletasks()
-            progress = open_progress_dialog()
+            progress = open_progress_panel()
 
             def worker() -> None:
                 try:
@@ -379,34 +509,66 @@ class PedigreeAnalysisWindow:
                 finally:
                     worker_state["done"] = True
 
+            def ease_out_cubic(value: float) -> float:
+                value = max(0.0, min(1.0, value))
+                return 1.0 - pow(1.0 - value, 3)
+
+            def running_progress_target(elapsed: float) -> float:
+                # Smoothly approaches 94% while the Rust worker is still busy.
+                # This avoids both a static bar and a fake linear countdown that
+                # reaches the end before the report is actually ready.
+                return min(0.94, 0.94 * (1.0 - math.exp(-elapsed / 2.2)))
+
+            def set_progress_value(value: float) -> None:
+                value = max(0.0, min(1.0, value))
+                progress["value"].set(value * 100)
+                progress["percent"].configure(text=f"{round(value * 100)}%")
+
             def tick() -> None:
                 if not win.winfo_exists():
                     return
                 if progress["cancelled"]:
                     return
-                elapsed = time.monotonic() - start_time
-                minimum_progress = min(0.95, elapsed / 3.0 * 0.95)
-                value = 1.0 if worker_state["done"] and elapsed >= 3.0 else minimum_progress
+                now = time.monotonic()
+                elapsed = now - start_time
+                display = float(progress_animation["display"])
+                if worker_state["done"]:
+                    if progress_animation["completion_started"] is None:
+                        progress_animation["completion_started"] = now
+                        progress_animation["completion_from"] = display
+                    completion_elapsed = now - float(progress_animation["completion_started"])
+                    completion_ratio = ease_out_cubic(completion_elapsed / 0.45)
+                    completion_from = float(progress_animation["completion_from"])
+                    value = completion_from + (1.0 - completion_from) * completion_ratio
+                else:
+                    target = running_progress_target(elapsed)
+                    value = display + (target - display) * 0.18
+                    value = max(display, min(value, 0.94))
+                progress_animation["display"] = value
                 try:
-                    progress["value"].set(value * 100)
-                    progress["percent"].configure(text=f"{round(value * 100)}%")
+                    set_progress_value(value)
                 except tk.TclError:
                     progress["cancelled"] = True
                     set_busy(False)
                     set_status(t("pedigree.progress.cancelled"), muted=True)
                     return
-                if not worker_state["done"] or elapsed < 3.0:
-                    win.after(50, tick)
+                if not worker_state["done"] or value < 0.999:
+                    win.after(16, tick)
                     return
                 set_busy(False)
                 if worker_state["error"] is not None:
                     set_status(t("pedigree.error.analysis_failed", exc=worker_state["error"]), True)
-                    def close_progress_dialog() -> None:
+                    def close_progress_panel() -> None:
                         current_progress["state"] = None
-                        progress["dialog"].destroy()
+                        try:
+                            progress["dialog"].destroy()
+                        except tk.TclError:
+                            pass
                     try:
                         progress["label"].configure(text=t("pedigree.error.analysis_failed", exc=worker_state["error"]))
-                        progress["done_btn"].configure(state="normal", text=t("pedigree.progress.done"), command=close_progress_dialog)
+                        progress["cancel_btn"].pack_forget()
+                        progress["done_btn"].pack(side="right")
+                        progress["done_btn"].configure(state="normal", text=t("pedigree.progress.done"), command=close_progress_panel)
                     except tk.TclError:
                         pass
                     return
@@ -424,9 +586,11 @@ class PedigreeAnalysisWindow:
                         app._open_file_in_editor(report, reveal_panel=True, prefer_split=False)
 
                 try:
+                    set_progress_value(1.0)
                     progress["label"].configure(text=t("pedigree.progress.complete"))
-                    progress["done_btn"].configure(state="normal", text=t("pedigree.progress.done"), command=finish)
-                    progress["dialog"].protocol("WM_DELETE_WINDOW", finish)
+                    progress["cancel_btn"].pack_forget()
+                    progress["done_btn"].configure(state="disabled")
+                    win.after(650, finish)
                 except tk.TclError:
                     finish()
 
@@ -468,6 +632,10 @@ class PedigreeAnalysisWindow:
                 win.configure(bg=_g["BG"])
                 footer.configure(bg=_g["BG"])
                 status.configure(bg=_g["BG"], fg=_g["MUTED"])
+                content_shell.configure(bg=_g["BG"])
+                content_canvas.configure(bg=_g["BG"])
+                content_scroll_track.configure(bg=_g["BG"])
+                content_scroll_thumb.configure(bg=_g["BORDER"])
                 content.configure(bg=_g["BG"])
                 hero.configure(bg=_g["SURFACE"], highlightbackground=_g["BORDER"])
                 icon.configure(bg=_g["SURFACE"], fg=_g["TEXT"])
@@ -517,40 +685,13 @@ class PedigreeAnalysisWindow:
                         pass
                 progress_state = current_progress.get("state")
                 if progress_state:
-                    is_dark = str(_g["BG"]).lower() not in {"#ffffff", "#f7f7f7", "#f8f9fa", "#fafafa"}
-                    progress_accent = "#5b8fd8" if is_dark else "#6aa6e8"
-                    style = ttk.Style(progress_state["dialog"])
-                    style.configure(
-                        "PedigreeProgress.TLabel",
-                        background=_g["SURFACE"],
-                        foreground=_g["TEXT"],
-                        font=("Segoe UI", 10),
-                    )
-                    style.configure(
-                        "PedigreeProgressMuted.TLabel",
-                        background=_g["SURFACE"],
-                        foreground=_g["MUTED"],
-                        font=("Segoe UI", 9),
-                    )
-                    style.configure(
-                        "Pedigree.Horizontal.TProgressbar",
-                        troughcolor=_g["BORDER"],
-                        background=progress_accent,
-                        lightcolor=progress_accent,
-                        darkcolor=progress_accent,
-                        bordercolor=_g["BORDER"],
-                        thickness=8,
-                    )
+                    configure_progress_style(progress_state["dialog"])
                     progress_state["dialog"].configure(bg=_g["BG"])
                     progress_state["shell"].configure(bg=_g["SURFACE"], highlightbackground=_g["BORDER"])
-                    progress_state["title_bar"].configure(bg=_g["SURFACE"])
-                    progress_state["close_btn"].configure(
-                        bg=_g["SURFACE"],
-                        fg=_g["MUTED"],
-                        activebackground=_g["BORDER"],
-                        activeforeground=_g["TEXT"],
-                    )
+                    progress_state["header"].configure(bg=_g["SURFACE"])
+                    progress_state["actions"].configure(bg=_g["SURFACE"])
                     progress_state["done_btn"].configure(bg=_g["BORDER"], fg=_g["TEXT"])
+                    progress_state["cancel_btn"].configure(bg=_g["BORDER"], fg=_g["TEXT"])
             except tk.TclError:
                 pass
 
@@ -561,7 +702,10 @@ class PedigreeAnalysisWindow:
         win.bind("<Escape>", lambda _event: close())
         win.update_idletasks()
         win.deiconify()
-        win.lift()
+        try:
+            win.lift(parent)
+        except tk.TclError:
+            win.lift()
         win.focus_force()
 
 
@@ -713,7 +857,7 @@ def report_front_matter(input_path: Path, generated_at: str) -> str:
             "---",
             f"title: {yaml_quote(title)}",
             f"created: {yaml_quote(generated_at)}",
-            "tags: [pedigree, inbreeding, plugin-report]",
+            "tags: [pedigree, inbreeding, plugin-report, plugin-pedigree-analysis, pedigree-analysis]",
             "aliases: []",
             "writeonside_colors: []",
             "writeonside_pinned: false",

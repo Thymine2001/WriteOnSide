@@ -9,9 +9,9 @@ import tkinter.font as tkfont
 from PIL import Image, ImageDraw, ImageTk
 
 from .. import theme as theme_module
-from ..config import APP_NAME, AppConfig, normalize_relative_folder, save_config
+from ..config import APP_NAME, AppConfig, normalize_plugin_shortcuts, normalize_relative_folder, save_config
 from ..i18n import SUPPORTED_LANGUAGES, command_label, normalize_language, set_language, t
-from ..hotkeys import format_hotkey_display, normalize_hotkey, read_hotkey_clean, validate_hotkey
+from ..hotkeys import format_hotkey_display, is_modifier_only_hotkey, normalize_hotkey, read_hotkey_clean, validate_hotkey
 from ..layout_metrics import explorer_width_limits, panel_width_limits
 from ..platform import is_startup_enabled, set_startup_enabled
 from ..plugins import BUILTIN_PLUGINS, disable_plugin, enable_plugin, plugin_status, remove_plugin, restore_plugin
@@ -49,6 +49,8 @@ class SettingsMixin:
             "attachments_folder": self.config.attachments_folder,
             "language": self.config.language,
             "command_shortcuts": dict(self.config.command_shortcuts),
+            "plugin_shortcuts": dict(getattr(self.config, "plugin_shortcuts", {})),
+            "sticky_notes_double_ctrl": bool(getattr(self.config, "sticky_notes_double_ctrl", True)),
             "enabled_plugins": list(self.config.enabled_plugins),
             "disabled_plugins": list(self.config.disabled_plugins),
             "removed_plugins": list(self.config.removed_plugins),
@@ -77,11 +79,17 @@ class SettingsMixin:
         canvas = tk.Canvas(content_shell, bg=g["BG"], highlightthickness=0, borderwidth=0)
         scroll_track = tk.Frame(content_shell, bg=g["BG"], width=12, cursor="sb_v_double_arrow")
         scroll_thumb = tk.Frame(scroll_track, bg=g["BORDER"], width=5, cursor="sb_v_double_arrow")
+        h_scroll_track = tk.Frame(content_shell, bg=g["BG"], height=12, cursor="sb_h_double_arrow")
+        h_scroll_thumb = tk.Frame(h_scroll_track, bg=g["BORDER"], height=5, cursor="sb_h_double_arrow")
         content = tk.Frame(canvas, bg=g["BG"])
         content_window = canvas.create_window((0, 0), window=content, anchor="nw")
-        canvas.pack(side="left", fill="both", expand=True)
-        scroll_track.pack(side="right", fill="y", padx=(0, 5), pady=10)
+        content_shell.grid_rowconfigure(0, weight=1)
+        content_shell.grid_columnconfigure(0, weight=1)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scroll_track.grid(row=0, column=1, sticky="ns", padx=(0, 5), pady=10)
+        h_scroll_track.grid(row=1, column=0, sticky="ew", padx=(10, 0), pady=(0, 5))
         scroll_track.pack_propagate(False)
+        h_scroll_track.pack_propagate(False)
 
         def update_scroll_thumb(first: str, last: str) -> None:
             start = float(first)
@@ -91,11 +99,24 @@ class SettingsMixin:
                 return
             scroll_thumb.place(relx=0.5, rely=start, relheight=max(0.08, end - start), width=5, anchor="n")
 
+        def update_h_scroll_thumb(first: str, last: str) -> None:
+            start = float(first)
+            end = float(last)
+            if start <= 0 and end >= 1:
+                h_scroll_thumb.place_forget()
+                return
+            h_scroll_thumb.place(relx=start, rely=0.5, relwidth=max(0.08, end - start), height=5, anchor="w")
+
         def scroll_to_pointer(event) -> None:
             height = max(1, scroll_track.winfo_height())
             canvas.yview_moveto(max(0.0, min(1.0, event.y / height)))
 
+        def h_scroll_to_pointer(event) -> None:
+            width = max(1, h_scroll_track.winfo_width())
+            canvas.xview_moveto(max(0.0, min(1.0, event.x / width)))
+
         drag_state = {"y": 0, "first": 0.0}
+        h_drag_state = {"x": 0, "first": 0.0}
 
         def start_thumb_drag(event) -> None:
             first, _last = canvas.yview()
@@ -103,27 +124,49 @@ class SettingsMixin:
             drag_state["first"] = first
             scroll_thumb.config(bg=globals()["ACCENT"])
 
+        def start_h_thumb_drag(event) -> None:
+            first, _last = canvas.xview()
+            h_drag_state["x"] = event.x_root
+            h_drag_state["first"] = first
+            h_scroll_thumb.config(bg=globals()["ACCENT"])
+
         def drag_thumb(event) -> None:
             height = max(1, scroll_track.winfo_height())
             delta = (event.y_root - drag_state["y"]) / height
             canvas.yview_moveto(max(0.0, min(1.0, drag_state["first"] + delta)))
 
+        def drag_h_thumb(event) -> None:
+            width = max(1, h_scroll_track.winfo_width())
+            delta = (event.x_root - h_drag_state["x"]) / width
+            canvas.xview_moveto(max(0.0, min(1.0, h_drag_state["first"] + delta)))
+
         def end_thumb_drag(_event) -> None:
             scroll_thumb.config(bg=globals()["BORDER"])
 
-        canvas.configure(yscrollcommand=update_scroll_thumb)
+        def end_h_thumb_drag(_event) -> None:
+            h_scroll_thumb.config(bg=globals()["BORDER"])
+
+        canvas.configure(yscrollcommand=update_scroll_thumb, xscrollcommand=update_h_scroll_thumb)
         scroll_track.bind("<Button-1>", scroll_to_pointer)
         scroll_thumb.bind("<ButtonPress-1>", start_thumb_drag)
         scroll_thumb.bind("<B1-Motion>", drag_thumb)
         scroll_thumb.bind("<ButtonRelease-1>", end_thumb_drag)
         scroll_thumb.bind("<Enter>", lambda _e: scroll_thumb.config(bg=globals()["ACCENT_2"]))
         scroll_thumb.bind("<Leave>", lambda _e: scroll_thumb.config(bg=globals()["BORDER"]))
+        h_scroll_track.bind("<Button-1>", h_scroll_to_pointer)
+        h_scroll_thumb.bind("<ButtonPress-1>", start_h_thumb_drag)
+        h_scroll_thumb.bind("<B1-Motion>", drag_h_thumb)
+        h_scroll_thumb.bind("<ButtonRelease-1>", end_h_thumb_drag)
+        h_scroll_thumb.bind("<Enter>", lambda _e: h_scroll_thumb.config(bg=globals()["ACCENT_2"]))
+        h_scroll_thumb.bind("<Leave>", lambda _e: h_scroll_thumb.config(bg=globals()["BORDER"]))
 
         def update_scroll_region(_event=None) -> None:
+            canvas.itemconfigure(content_window, width=max(canvas.winfo_width(), content.winfo_reqwidth()))
             canvas.configure(scrollregion=canvas.bbox("all"))
-            canvas.itemconfigure(content_window, width=canvas.winfo_width())
             first, last = canvas.yview()
             update_scroll_thumb(str(first), str(last))
+            h_first, h_last = canvas.xview()
+            update_h_scroll_thumb(str(h_first), str(h_last))
 
         def wheel(event):
             if win.winfo_exists():
@@ -139,7 +182,10 @@ class SettingsMixin:
                     "TCombobox", "Combobox", "Spinbox", "TSpinbox",
                 }:
                     return "break"
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                if event.state & 0x0001:
+                    canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+                else:
+                    canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
             return None
 
         content.bind("<Configure>", update_scroll_region)
@@ -744,8 +790,80 @@ class SettingsMixin:
         restore_shortcuts_button.pack(anchor="e", padx=18, pady=(8, 4))
 
         plugin_rows: list[dict[str, object]] = []
+        plugin_shortcut_entries: dict[str, tk.Label] = {}
+        plugin_shortcut_record_buttons: dict[str, tk.Button] = {}
+        plugin_shortcut_recording = False
+        current_plugin_shortcuts = normalize_plugin_shortcuts(getattr(self.config, "plugin_shortcuts", {}) or {})
+        sticky_plugin_double_ctrl = bool(getattr(self.config, "sticky_notes_double_ctrl", True))
         plugins_list = tk.Frame(plugins_page, bg=g["BG"])
         plugins_list.pack(fill="x", padx=18, pady=(0, 8))
+
+        def plugin_shortcut_display(plugin_id: str) -> str:
+            shortcut = current_plugin_shortcuts.get(plugin_id, "")
+            if plugin_id == "sticky_notes" and sticky_plugin_double_ctrl:
+                return t("settings.plugins.double_ctrl")
+            return format_hotkey_display(shortcut)
+
+        def set_plugin_shortcut_display(plugin_id: str) -> None:
+            label_widget = plugin_shortcut_entries.get(plugin_id)
+            if label_widget is not None:
+                label_widget.configure(text=plugin_shortcut_display(plugin_id) or t("settings.plugins.no_shortcut"))
+
+        def record_plugin_shortcut(plugin_id: str) -> None:
+            nonlocal plugin_shortcut_recording, sticky_plugin_double_ctrl
+            if plugin_shortcut_recording:
+                return
+            plugin_shortcut_recording = True
+            self._unregister_hotkey()
+            self._unregister_sticky_notes_hotkey()
+            self._unregister_plugin_shortcuts()
+            for key, button in plugin_shortcut_record_buttons.items():
+                button.configure(text=t("settings.recording") if key == plugin_id else t("settings.record"), state="disabled")
+            plugin = next((item for item in BUILTIN_PLUGINS if item.id == plugin_id), None)
+            label = t(plugin.name_key) if plugin is not None else plugin_id
+            msg.config(text=t("settings.msg.press_shortcut", label=label), fg=globals()["TEXT"])
+
+            def worker() -> None:
+                try:
+                    recorded = normalize_hotkey(read_hotkey_clean(suppress=False))
+                    if not validate_hotkey(recorded):
+                        raise ValueError(recorded)
+                except Exception:
+                    self.root.after(0, finish_recording, None)
+                else:
+                    self.root.after(0, finish_recording, recorded)
+
+            def finish_recording(recorded: str | None) -> None:
+                nonlocal plugin_shortcut_recording, sticky_plugin_double_ctrl
+                plugin_shortcut_recording = False
+                for key, button in plugin_shortcut_record_buttons.items():
+                    state = tk.NORMAL if next((item for item in BUILTIN_PLUGINS if item.id == key and item.entrypoint), None) else tk.DISABLED
+                    button.configure(text=t("settings.record"), state=state)
+                if recorded:
+                    if plugin_id == "sticky_notes" and normalize_hotkey(recorded) in {"ctrl", "control"}:
+                        sticky_plugin_double_ctrl = True
+                        current_plugin_shortcuts.pop(plugin_id, None)
+                        set_plugin_shortcut_display(plugin_id)
+                        msg.config(
+                            text=t("settings.msg.shortcut_recorded", label=label, hotkey=t("settings.plugins.double_ctrl")),
+                            fg=globals()["TEXT"],
+                        )
+                    elif is_modifier_only_hotkey(recorded):
+                        msg.config(text=t("settings.msg.shortcut_failed", label=label), fg=globals()["DANGER"])
+                    else:
+                        current_plugin_shortcuts[plugin_id] = recorded
+                        if plugin_id == "sticky_notes":
+                            sticky_plugin_double_ctrl = False
+                        set_plugin_shortcut_display(plugin_id)
+                        msg.config(text=t("settings.msg.shortcut_recorded", label=label, hotkey=format_hotkey_display(recorded)), fg=globals()["TEXT"])
+                else:
+                    msg.config(text=t("settings.msg.shortcut_failed", label=label), fg=globals()["DANGER"])
+                self._register_hotkey()
+                self._register_sticky_notes_hotkey()
+                self._register_plugin_shortcuts()
+                refresh_plugin_rows()
+
+            threading.Thread(target=worker, daemon=True).start()
 
         def refresh_plugin_rows() -> None:
             _g = globals()
@@ -759,6 +877,8 @@ class SettingsMixin:
                 status_label = row_state["status"]
                 toggle_button = row_state["toggle"]
                 remove_button = row_state["remove"]
+                shortcut_entry = row_state["shortcut_entry"]
+                shortcut_button = row_state["shortcut_button"]
                 is_removed = state == "removed"
                 frame.configure(
                     bg=_g["SURFACE"] if not is_removed else _g["BG"],
@@ -767,6 +887,11 @@ class SettingsMixin:
                 icon_label.configure(bg=frame.cget("bg"), fg=_g["TEXT"] if not is_removed else _g["MUTED"])
                 title_label.configure(text=t(plugin.name_key), bg=frame.cget("bg"), fg=_g["TEXT"] if not is_removed else _g["MUTED"])
                 description_label.configure(text=t(plugin.description_key), bg=frame.cget("bg"), fg=_g["TEXT_SOFT"] if not is_removed else _g["MUTED"])
+                shortcut_entry.configure(
+                    bg=_g["SURFACE"] if not is_removed else _g["BG"],
+                    fg=_g["TEXT"] if plugin.entrypoint and not is_removed else _g["MUTED"],
+                )
+                set_plugin_shortcut_display(plugin.id)
                 status_label.configure(
                     text=t(f"settings.plugins.status.{state}"),
                     bg=frame.cget("bg"),
@@ -775,13 +900,16 @@ class SettingsMixin:
                 if state == "removed":
                     toggle_button.configure(text=t("settings.plugins.restore"), state=tk.NORMAL)
                     remove_button.configure(text=t("settings.plugins.remove"), state=tk.DISABLED)
+                    shortcut_button.configure(text=t("settings.record"), state=tk.DISABLED)
                 elif state == "disabled":
                     toggle_button.configure(text=t("settings.plugins.enable"), state=tk.NORMAL)
                     remove_button.configure(text=t("settings.plugins.remove"), state=tk.NORMAL)
+                    shortcut_button.configure(text=t("settings.record"), state=tk.DISABLED if not plugin.entrypoint else tk.NORMAL)
                 else:
                     toggle_button.configure(text=t("settings.plugins.disable"), state=tk.NORMAL)
                     remove_button.configure(text=t("settings.plugins.remove"), state=tk.NORMAL)
-                for button in (toggle_button, remove_button):
+                    shortcut_button.configure(text=t("settings.record"), state=tk.DISABLED if not plugin.entrypoint else tk.NORMAL)
+                for button in (toggle_button, remove_button, shortcut_button):
                     button.configure(
                         bg=_g["BORDER"],
                         fg=_g["TEXT"],
@@ -860,6 +988,30 @@ class SettingsMixin:
                 cursor="hand2",
             )
             remove_button.pack(side="left")
+            shortcut_entry = tk.Label(
+                plugin_frame,
+                text=plugin_shortcut_display(plugin.id) or t("settings.plugins.no_shortcut"),
+                bg=g["SURFACE"],
+                fg=g["TEXT"],
+                font=("Segoe UI", 9),
+                width=14,
+                anchor="w",
+            )
+            shortcut_entry.pack(side="left", padx=(8, 6))
+            shortcut_button = tk.Button(
+                plugin_frame,
+                text=t("settings.record"),
+                command=lambda value=plugin.id: record_plugin_shortcut(value),
+                bg=g["BORDER"],
+                fg=g["TEXT"],
+                relief="flat",
+                padx=8,
+                pady=3,
+                cursor="hand2",
+            )
+            shortcut_button.pack(side="left")
+            plugin_shortcut_entries[plugin.id] = shortcut_entry
+            plugin_shortcut_record_buttons[plugin.id] = shortcut_button
             plugin_rows.append(
                 {
                     "plugin": plugin,
@@ -870,10 +1022,10 @@ class SettingsMixin:
                     "status": status_label,
                     "toggle": toggle_button,
                     "remove": remove_button,
+                    "shortcut_entry": shortcut_entry,
+                    "shortcut_button": shortcut_button,
                 }
             )
-        refresh_plugin_rows()
-
         e_notes = row(general_page, t("settings.notes_folder"), self.config.notes_directory, lambda: filedialog.askdirectory(parent=win), lambda: apply_workspace_only())
 
         def browse_attachments_folder() -> None:
@@ -920,8 +1072,15 @@ class SettingsMixin:
         e_hotkey: tk.Entry
 
         def set_entry(entry: tk.Entry, value: str) -> None:
+            state = str(entry.cget("state"))
+            if state == "disabled":
+                entry.configure(state="normal")
             entry.delete(0, tk.END)
             entry.insert(0, value)
+            if state == "disabled":
+                entry.configure(state="disabled")
+
+        refresh_plugin_rows()
 
         def apply_workspace_only() -> bool:
             old_notes_dir = self.config.notes_directory
@@ -1665,6 +1824,8 @@ class SettingsMixin:
             self._apply_content_opacity(self.config.alpha)
             self._apply_header_alignment()
             self._register_hotkey()
+            self._register_sticky_notes_hotkey()
+            self._register_plugin_shortcuts()
             self._register_command_shortcuts()
             position_changed = previous_position != self.config.app_position
 
@@ -1719,6 +1880,46 @@ class SettingsMixin:
             if panel_conflict:
                 label = command_label(panel_conflict[0])
                 msg.config(text=t("settings.msg.panel_hotkey_conflict", label=label), fg=_g["DANGER"])
+                return False
+            plugin_shortcuts = {
+                plugin_id: normalize_hotkey(shortcut)
+                for plugin_id, shortcut in current_plugin_shortcuts.items()
+                if normalize_hotkey(shortcut)
+            }
+            if sticky_plugin_double_ctrl:
+                plugin_shortcuts.pop("sticky_notes", None)
+            for plugin_id, shortcut in plugin_shortcuts.items():
+                if is_modifier_only_hotkey(shortcut) or not validate_hotkey(shortcut):
+                    plugin = next((item for item in BUILTIN_PLUGINS if item.id == plugin_id), None)
+                    label = t(plugin.name_key) if plugin is not None else plugin_id
+                    msg.config(text=t("settings.msg.invalid_shortcut", label=label), fg=_g["DANGER"])
+                    return False
+                if shortcut == new_hotkey:
+                    plugin = next((item for item in BUILTIN_PLUGINS if item.id == plugin_id), None)
+                    label = t(plugin.name_key) if plugin is not None else plugin_id
+                    msg.config(text=t("settings.msg.panel_hotkey_conflict", label=label), fg=_g["DANGER"])
+                    return False
+                for command_id, command_shortcut in command_shortcuts.items():
+                    if command_shortcut and command_shortcut == shortcut:
+                        plugin = next((item for item in BUILTIN_PLUGINS if item.id == plugin_id), None)
+                        plugin_label = t(plugin.name_key) if plugin is not None else plugin_id
+                        command_text = command_label(command_id)
+                        msg.config(
+                            text=t("settings.msg.shortcut_conflict", hotkey=format_hotkey_display(shortcut), labels=f"{plugin_label}, {command_text}"),
+                            fg=_g["DANGER"],
+                        )
+                        return False
+            seen_plugin_shortcuts: dict[str, list[str]] = {}
+            for plugin_id, shortcut in plugin_shortcuts.items():
+                seen_plugin_shortcuts.setdefault(shortcut, []).append(plugin_id)
+            plugin_conflicts = {shortcut: ids for shortcut, ids in seen_plugin_shortcuts.items() if len(ids) > 1}
+            if plugin_conflicts:
+                shortcut, plugin_ids = next(iter(plugin_conflicts.items()))
+                labels = []
+                for plugin_id in plugin_ids:
+                    plugin = next((item for item in BUILTIN_PLUGINS if item.id == plugin_id), None)
+                    labels.append(t(plugin.name_key) if plugin is not None else plugin_id)
+                msg.config(text=t("settings.msg.shortcut_conflict", hotkey=format_hotkey_display(shortcut), labels=", ".join(labels)), fg=_g["DANGER"])
                 return False
             try:
                 panel_width = int(e_width.get().strip())
@@ -1785,6 +1986,8 @@ class SettingsMixin:
             previous_explorer_width = self.explorer_w
             self.config.hotkey = new_hotkey
             self.config.command_shortcuts = command_shortcuts
+            self.config.plugin_shortcuts = plugin_shortcuts
+            self.config.sticky_notes_double_ctrl = sticky_plugin_double_ctrl
             self.config.obsidian_vault = ""
             self.config.width = panel_width
             self.config.explorer_width = explorer_width
@@ -1822,6 +2025,8 @@ class SettingsMixin:
             self.config.notes_directory = str(original["notes_directory"])
             self.config.hotkey = str(original["hotkey"])
             self.config.command_shortcuts = dict(original["command_shortcuts"])
+            self.config.plugin_shortcuts = dict(original["plugin_shortcuts"])
+            self.config.sticky_notes_double_ctrl = bool(original["sticky_notes_double_ctrl"])
             self.config.obsidian_vault = ""
             self.config.width = int(original["width"])
             self.config.explorer_width = int(original["explorer_width"])

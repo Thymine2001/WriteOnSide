@@ -3,6 +3,7 @@ from __future__ import annotations
 import queue
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -15,6 +16,7 @@ from ..diagnostics import export_diagnostic_report, get_logger
 from ..hotkeys import keyboard, format_hotkey_display, normalize_hotkey, purge_phantom_pressed_keys, validate_hotkey
 from ..i18n import t
 from ..platform import SingleInstanceGuard, get_system_color_mode
+from ..plugins import plugin_by_id, plugin_status
 from ..theme import *  # noqa: F401,F403
 
 
@@ -84,6 +86,79 @@ class TrayMixin:
         except Exception as exc:
             self._active_hotkey = None
             self._set_error(t("error.hotkey_unavailable", exc=exc))
+
+    def _unregister_sticky_notes_hotkey(self) -> None:
+        hook = getattr(self, "_active_sticky_notes_hook", None)
+        if hook is not None:
+            try:
+                keyboard.unhook(hook)
+            except Exception:
+                pass
+            self._active_sticky_notes_hook = None
+
+    def _unregister_plugin_shortcuts(self) -> None:
+        for handle in getattr(self, "_active_plugin_shortcuts", {}).values():
+            try:
+                keyboard.remove_hotkey(handle)
+            except Exception:
+                pass
+        self._active_plugin_shortcuts = {}
+
+    def _register_plugin_shortcuts(self) -> None:
+        self._unregister_plugin_shortcuts()
+        shortcuts = getattr(self.config, "plugin_shortcuts", {}) or {}
+        active: dict[str, object] = {}
+        for plugin_id, shortcut in shortcuts.items():
+            if plugin_id == "sticky_notes" and getattr(self.config, "sticky_notes_double_ctrl", True):
+                continue
+            plugin = plugin_by_id(plugin_id)
+            if plugin is None or not plugin.entrypoint or plugin_status(self.config, plugin.id) != "enabled":
+                continue
+            hotkey = normalize_hotkey(shortcut)
+            if not hotkey:
+                continue
+
+            def trigger(plugin_id=plugin.id, entrypoint=plugin.entrypoint) -> None:
+                if plugin_id == "sticky_notes":
+                    self._post_ui(self._open_sticky_notes)
+                    return
+                self._post_ui(lambda: self._run_plugin_entrypoint(entrypoint))
+
+            try:
+                active[plugin.id] = keyboard.add_hotkey(hotkey, trigger)
+            except Exception:
+                pass
+        self._active_plugin_shortcuts = active
+
+    def _register_sticky_notes_hotkey(self) -> None:
+        self._unregister_sticky_notes_hotkey()
+        if not getattr(self.config, "sticky_notes_double_ctrl", True):
+            return
+        if plugin_status(self.config, "sticky_notes") != "enabled":
+            return
+        self._sticky_notes_last_ctrl_down = 0.0
+
+        def on_key(event) -> None:
+            if getattr(event, "event_type", "") != "down":
+                return
+            name = str(getattr(event, "name", "") or "").casefold()
+            if name not in {"ctrl", "left ctrl", "right ctrl", "control", "left control", "right control"}:
+                return
+            now = time.monotonic()
+            last = getattr(self, "_sticky_notes_last_ctrl_down", 0.0)
+            self._sticky_notes_last_ctrl_down = now
+            if 0.05 <= now - last <= 0.42:
+                self._post_ui(self._open_sticky_notes)
+
+        try:
+            self._active_sticky_notes_hook = keyboard.hook(on_key, suppress=False)
+        except Exception:
+            self._active_sticky_notes_hook = None
+
+    def _open_sticky_notes(self) -> None:
+        from ..builtin_plugins.sticky_notes import open_sticky_notes_from_hotkey
+
+        open_sticky_notes_from_hotkey(self)
 
     def _create_new_note_from_tray(self) -> None:
         def create_when_ready() -> None:
@@ -189,6 +264,8 @@ class TrayMixin:
         self._stop_vault_watcher()
         self._unregister_command_shortcuts()
         self._unregister_hotkey()
+        self._unregister_sticky_notes_hotkey()
+        self._unregister_plugin_shortcuts()
         if self._instance_poll_after is not None:
             try:
                 self.root.after_cancel(self._instance_poll_after)

@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from writeonside_app.hotkeys import (
     filter_phantom_hotkey_names,
+    is_modifier_only_hotkey,
     is_phantom_hotkey_key,
     normalize_hotkey,
     purge_phantom_pressed_keys,
@@ -21,6 +22,11 @@ class HotkeyPhantomKeyTests(unittest.TestCase):
     def test_is_phantom_hotkey_key(self) -> None:
         self.assertTrue(is_phantom_hotkey_key("F22"))
         self.assertFalse(is_phantom_hotkey_key("ctrl"))
+
+    def test_modifier_only_hotkeys_are_detected(self) -> None:
+        self.assertTrue(is_modifier_only_hotkey("ctrl"))
+        self.assertTrue(is_modifier_only_hotkey("ctrl+shift"))
+        self.assertFalse(is_modifier_only_hotkey("ctrl+shift+s"))
 
     def test_purge_phantom_pressed_keys(self) -> None:
         fake_events = {

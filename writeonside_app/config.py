@@ -5,6 +5,7 @@ import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .hotkeys import is_modifier_only_hotkey, normalize_hotkey, validate_hotkey
 from .layout_metrics import (
     clamp_explorer_width,
     clamp_panel_width,
@@ -62,6 +63,10 @@ class AppConfig:
     enabled_plugins: list[str] = field(default_factory=list)
     disabled_plugins: list[str] = field(default_factory=list)
     removed_plugins: list[str] = field(default_factory=list)
+    plugin_shortcuts: dict[str, str] = field(default_factory=dict)
+    sticky_notes_double_ctrl: bool = True
+    sticky_notes_default_tag: str = "sticky"
+    sticky_notes_pinned: bool = False
 
 
 def clamp_int(value, low: int, high: int, default: int) -> int:
@@ -111,6 +116,20 @@ def normalize_plugin_ids(value: object) -> list[str]:
         seen.add(plugin_id)
         normalized.append(plugin_id)
     return normalized
+
+
+def normalize_plugin_shortcuts(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    shortcuts: dict[str, str] = {}
+    for raw_id, raw_shortcut in value.items():
+        plugin_ids = normalize_plugin_ids([raw_id])
+        if not plugin_ids:
+            continue
+        shortcut = normalize_hotkey(str(raw_shortcut or ""))
+        if shortcut and not is_modifier_only_hotkey(shortcut) and validate_hotkey(shortcut):
+            shortcuts[plugin_ids[0]] = shortcut
+    return shortcuts
 
 
 def load_config() -> AppConfig:
@@ -172,6 +191,10 @@ def load_config() -> AppConfig:
     merged["enabled_plugins"] = normalize_plugin_ids(merged.get("enabled_plugins"))
     merged["disabled_plugins"] = normalize_plugin_ids(merged.get("disabled_plugins"))
     merged["removed_plugins"] = normalize_plugin_ids(merged.get("removed_plugins"))
+    merged["plugin_shortcuts"] = normalize_plugin_shortcuts(merged.get("plugin_shortcuts"))
+    merged["sticky_notes_double_ctrl"] = bool(merged.get("sticky_notes_double_ctrl", True))
+    merged["sticky_notes_default_tag"] = str(merged.get("sticky_notes_default_tag") or "sticky").strip() or "sticky"
+    merged["sticky_notes_pinned"] = bool(merged.get("sticky_notes_pinned", False))
     raw_language = str(merged.get("language") or cfg.language).strip().lower()
     if raw_language.startswith("zh"):
         merged["language"] = "zh"

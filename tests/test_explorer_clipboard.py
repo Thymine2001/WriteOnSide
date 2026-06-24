@@ -7,10 +7,15 @@ from unittest.mock import patch
 from writeonside_app.dragdrop import compact_paths, format_paths_for_drag
 from writeonside_app.file_labels import colors_for_path
 from writeonside_app.platform import reveal_in_file_explorer
-from writeonside_app.ui.explorer import ExplorerMixin
+from writeonside_app.ui.explorer import ExplorerMixin, natural_sort_key
 
 
 class ExplorerClipboardTests(unittest.TestCase):
+    def test_natural_sort_key_orders_numbered_notes(self) -> None:
+        names = ["note1.md", "note11.md", "note2.md"]
+
+        self.assertEqual(["note1.md", "note2.md", "note11.md"], sorted(names, key=natural_sort_key))
+
     def test_create_folder_uses_context_destination(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir).resolve()

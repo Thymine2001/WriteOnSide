@@ -54,6 +54,12 @@ def normalize_hotkey(hotkey: str) -> str:
     return "+".join(filtered)
 
 
+def is_modifier_only_hotkey(hotkey: str) -> bool:
+    parts = [part for part in normalize_hotkey(hotkey).split("+") if part]
+    modifiers = {"ctrl", "control", "shift", "alt", "win", "windows", "cmd", "command"}
+    return bool(parts) and all(part in modifiers for part in parts)
+
+
 def format_hotkey_display(hotkey: str) -> str:
     labels = {"ctrl": "Ctrl", "shift": "Shift", "alt": "Alt", "win": "Win"}
     parts = [p for p in normalize_hotkey(hotkey).split("+") if p]
