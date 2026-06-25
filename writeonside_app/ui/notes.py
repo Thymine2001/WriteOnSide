@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import time
 from pathlib import Path
 from tkinter import filedialog
@@ -245,9 +246,14 @@ class NotesMixin:
         save_config(self.config)
         self.text.focus_set()
 
-    def _open_external_file(self, path: Path) -> None:
+    def _open_external_file(self, path: Path, *, choose_app: bool = False) -> None:
         try:
-            os.startfile(path)
+            if choose_app and path.exists() and path.is_dir():
+                os.startfile(path)
+            elif choose_app:
+                subprocess.Popen(["rundll32.exe", "shell32.dll,OpenAs_RunDLL", str(path)])
+            else:
+                os.startfile(path)
         except OSError as exc:
             self._set_error(t("error.open_failed", exc=exc))
 

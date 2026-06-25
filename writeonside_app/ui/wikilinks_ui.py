@@ -27,8 +27,15 @@ class WikiLinksMixin:
         self._wiki_completion_list: tk.Listbox | None = None
         self._wiki_completion_notes = []
         self._wiki_completion_start = ""
+        self._edit_link_open_btn: tk.Label | None = None
+        self._edit_link_open_action = None
+        self._edit_link_open_hide_after = None
         self.text.bind("<KeyRelease>", self._on_wiki_completion_keyrelease, add="+")
         self.text.bind("<Control-Button-1>", self._on_edit_wikilink_click, add="+")
+        self.text.bind("<Motion>", self._on_edit_link_hover, add="+")
+        self.text.bind("<Leave>", lambda _event: self._schedule_edit_link_open_button_hide(), add="+")
+        self.text.bind("<KeyRelease-Control_L>", lambda _event: self._hide_edit_link_open_button(), add="+")
+        self.text.bind("<KeyRelease-Control_R>", lambda _event: self._hide_edit_link_open_button(), add="+")
         self.text.bind("<Down>", lambda _event: self._move_wiki_completion(1), add="+")
         self.text.bind("<Up>", lambda _event: self._move_wiki_completion(-1), add="+")
         self.text.bind("<Tab>", lambda _event: self._accept_wiki_completion(), add="+")
@@ -112,7 +119,11 @@ class WikiLinksMixin:
         return "break"
 
     def _open_local_attachment(self, path: str | Path) -> str:
-        self._open_external_file(Path(path))
+        target = Path(path)
+        if is_markdown_note(target):
+            self._open_note_from_tree(target)
+        else:
+            self._open_external_file(target, choose_app=True)
         return "break"
 
     def _create_wikilink_note(self, target: str) -> Path | None:
@@ -163,8 +174,7 @@ class WikiLinksMixin:
             return
         self._set_status_key("status.heading_not_found", heading=heading)
 
-    def _on_edit_wikilink_click(self, event) -> str | None:
-        widget = event.widget if isinstance(getattr(event, "widget", None), tk.Text) else self.text
+    def _edit_link_action_at(self, widget: tk.Text, x: int, y: int):
         source = self.current_note_path
         is_main_editor = widget is self.text
         if not is_main_editor and hasattr(self, "_note_for_text_widget"):
@@ -173,21 +183,21 @@ class WikiLinksMixin:
                 source = Path(split_note["path"])
         if source is None or not is_markdown_note(source):
             return None
-        index = widget.index(f"@{event.x},{event.y}")
+        index = widget.index(f"@{x},{y}")
         line, column = (int(value) for value in index.split("."))
         line_text = widget.get(f"{line}.0", f"{line}.end")
         for match in MARKDOWN_URL_PATTERN.finditer(line_text):
             if match.start() <= column <= match.end():
-                return self._open_external_url(match.group(1))
+                return lambda target=match.group(1): self._open_external_url(target)
         for match in BARE_URL_PATTERN.finditer(line_text):
             if match.start() <= column <= match.end():
-                return self._open_external_url(match.group(0))
+                return lambda target=match.group(0): self._open_external_url(target)
         for match in MARKDOWN_LINK_PATTERN.finditer(line_text):
             if not (match.start() <= column <= match.end()):
                 continue
             target = resolve_markdown_path(match.group(1), source)
-            if target is not None and target.exists() and target.is_file() and target.suffix.casefold() != ".md":
-                return self._open_local_attachment(target)
+            if target is not None and target.exists() and (target.is_file() or target.is_dir()):
+                return lambda path=target: self._open_local_attachment(path)
         if not is_main_editor:
             return None
         for match in WIKI_LINK_PATTERN.finditer(line_text):
@@ -199,18 +209,111 @@ class WikiLinksMixin:
                 if heading.startswith("^"):
                     block_id = heading[1:].strip()
                     heading = ""
-                return self._open_wikilink(
-                    WikiLink(
-                        raw=match.group(0),
-                        target=target.strip(),
-                        heading=heading,
-                        alias=alias.strip() if separator else "",
-                        embed=bool(match.group(1)),
-                        start=match.start(),
-                        end=match.end(),
-                        block_id=block_id,
-                    )
+                link = WikiLink(
+                    raw=match.group(0),
+                    target=target.strip(),
+                    heading=heading,
+                    alias=alias.strip() if separator else "",
+                    embed=bool(match.group(1)),
+                    start=match.start(),
+                    end=match.end(),
+                    block_id=block_id,
                 )
+                return lambda target_link=link: self._open_wikilink(target_link)
+        return None
+
+    def _on_edit_wikilink_click(self, event) -> str | None:
+        widget = event.widget if isinstance(getattr(event, "widget", None), tk.Text) else self.text
+        try:
+            action = self._edit_link_action_at(widget, event.x, event.y)
+        except tk.TclError:
+            return None
+        if action is None:
+            return None
+        return action()
+
+    def _ensure_edit_link_open_button(self) -> tk.Label:
+        button = getattr(self, "_edit_link_open_btn", None)
+        if button is not None:
+            try:
+                if button.winfo_exists():
+                    return button
+            except tk.TclError:
+                pass
+        g = globals()
+        button = tk.Label(
+            self.edit_frame,
+            text=t("plugins.open"),
+            bg=g["ACCENT"],
+            fg=self._contrast_text(g["ACCENT"]),
+            font=("Segoe UI", 9, "bold"),
+            cursor="hand2",
+            padx=8,
+            pady=2,
+        )
+        button.bind("<Button-1>", lambda _event: self._run_edit_link_open_action())
+        button.bind("<Enter>", lambda _event: (self._cancel_edit_link_open_button_hide(), button.configure(bg=globals()["ACCENT_2"])))
+        button.bind("<Leave>", lambda _event: (button.configure(bg=globals()["ACCENT"]), self._schedule_edit_link_open_button_hide()))
+        self._edit_link_open_btn = button
+        return button
+
+    def _cancel_edit_link_open_button_hide(self) -> None:
+        after_id = getattr(self, "_edit_link_open_hide_after", None)
+        if after_id is not None:
+            try:
+                self.root.after_cancel(after_id)
+            except tk.TclError:
+                pass
+            self._edit_link_open_hide_after = None
+
+    def _schedule_edit_link_open_button_hide(self, delay_ms: int = 220) -> None:
+        self._cancel_edit_link_open_button_hide()
+        try:
+            self._edit_link_open_hide_after = self.root.after(delay_ms, self._hide_edit_link_open_button)
+        except tk.TclError:
+            self._edit_link_open_hide_after = None
+
+    def _hide_edit_link_open_button(self) -> None:
+        self._cancel_edit_link_open_button_hide()
+        self._edit_link_open_action = None
+        button = getattr(self, "_edit_link_open_btn", None)
+        if button is not None:
+            try:
+                button.place_forget()
+            except tk.TclError:
+                pass
+
+    def _run_edit_link_open_action(self) -> str:
+        action = getattr(self, "_edit_link_open_action", None)
+        self._hide_edit_link_open_button()
+        if action is not None:
+            return action()
+        return "break"
+
+    def _on_edit_link_hover(self, event) -> str | None:
+        if not (getattr(event, "state", 0) & 0x0004):
+            self._hide_edit_link_open_button()
+            return None
+        widget = event.widget if isinstance(getattr(event, "widget", None), tk.Text) else self.text
+        try:
+            action = self._edit_link_action_at(widget, event.x, event.y)
+        except tk.TclError:
+            self._hide_edit_link_open_button()
+            return None
+        if action is None:
+            self._hide_edit_link_open_button()
+            return None
+        self._edit_link_open_action = action
+        button = self._ensure_edit_link_open_button()
+        try:
+            x = widget.winfo_x() + event.x + 12
+            y = widget.winfo_y() + event.y + 10
+            max_x = max(0, self.edit_frame.winfo_width() - button.winfo_reqwidth() - 6)
+            max_y = max(0, self.edit_frame.winfo_height() - button.winfo_reqheight() - 6)
+            button.place(x=max(0, min(x, max_x)), y=max(0, min(y, max_y)), in_=self.edit_frame)
+            button.lift()
+        except tk.TclError:
+            pass
         return None
 
     def _on_wiki_completion_keyrelease(self, event) -> None:
