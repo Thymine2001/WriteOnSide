@@ -23,7 +23,7 @@ class ImageViewerMixin:
             return None
         path = images.get(image_name)
         if path:
-            self._open_image_viewer(Path(path))
+            self._open_external_file(Path(path))
             return "break"
         return None
 
