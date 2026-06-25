@@ -23,6 +23,12 @@ IMAGE_MD_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 PLUGIN_TAGS = ("plugin-sticky-notes", "sticky-notes")
 
 
+def sticky_image_preview_bounds(text_width: int, text_height: int) -> tuple[int, int]:
+    width = max(120, int(text_width) - 40)
+    height = max(140, min(520, int(text_height * 0.62) if text_height > 0 else 220))
+    return width, height
+
+
 def run(app) -> None:
     open_sticky_notes(app)
 
@@ -223,13 +229,13 @@ class StickyNotesWindow:
         accent_strip.pack(side="left", fill="y")
         title = tk.Label(
             header,
-            text="StickyNote",
+            text="🗒",
             bg=g["SURFACE"],
             fg=g["TEXT"],
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI Emoji", 16),
             anchor="w",
         )
-        title.pack(side="left", padx=(10, 8), fill="y")
+        title.pack(side="left", padx=(10, 4), fill="y")
         drag_state = {"x": 0, "y": 0}
 
         def activate(widget: tk.Widget | None = None) -> None:
@@ -251,12 +257,12 @@ class StickyNotesWindow:
             drag_target.bind("<ButtonPress-1>", start_drag)
             drag_target.bind("<B1-Motion>", drag_window)
 
-        new_btn = self._header_button(header, f"+ {t('sticky.new')}", self.new_note)
-        open_btn = self._header_button(header, f"↗ {t('sticky.open_main')}", self.open_in_main)
-        self.pin_btn = self._header_button(header, "📌", self.toggle_pin)
-        self.pin_btn.pack(side="right", padx=(2, 8), pady=8)
-        open_btn.pack(side="right", padx=2, pady=8)
-        new_btn.pack(side="right", padx=2, pady=8)
+        new_btn = self._header_button(header, "🆕", self.new_note, t("sticky.new"))
+        open_btn = self._header_button(header, "↗️", self.open_in_main, t("sticky.open_main"))
+        self.pin_btn = self._header_button(header, "📌", self.toggle_pin, t("sticky.pin"))
+        self.pin_btn.pack(side="right", padx=(2, 8), pady=7)
+        open_btn.pack(side="right", padx=2, pady=7)
+        new_btn.pack(side="right", padx=2, pady=7)
 
         self.title_var = tk.StringVar()
         title_row = tk.Frame(shell, bg=g["BG"])
@@ -325,6 +331,7 @@ class StickyNotesWindow:
         self.text.bind("<Control-v>", self.paste_from_clipboard)
         self.text.bind("<Control-V>", self.paste_from_clipboard)
         self.text.bind("<ButtonPress-1>", lambda _event: activate(self.text), add="+")
+        self.text.bind("<Configure>", lambda _event: self.schedule_image_preview_resize(), add="+")
 
         footer = tk.Frame(shell, bg=g["BG"])
         footer.pack(fill="x", padx=12, pady=(0, 9))
@@ -372,6 +379,8 @@ class StickyNotesWindow:
         self.resize_grip = resize_grip
         self._tag_dropdown = None
         self._image_previews: list[dict[str, object]] = []
+        self._image_preview_after = None
+        self._image_preview_bounds: tuple[int, int] | None = None
         controllers = [
             controller
             for controller in getattr(app, "_sticky_notes_controllers", [])
@@ -397,21 +406,33 @@ class StickyNotesWindow:
         activate(self.text)
         win.after(80, lambda: activate(self.text))
 
-    def _header_button(self, parent: tk.Widget, text: str, command) -> tk.Label:
+    def _header_button(self, parent: tk.Widget, text: str, command, tooltip: str = "") -> tk.Label:
         button = tk.Label(
             parent,
             text=text,
             bg=globals()["SURFACE_2"],
             fg=globals()["TEXT"],
-            font=("Segoe UI Emoji", 9, "bold"),
+            font=("Segoe UI Emoji", 12),
             cursor="hand2",
-            padx=9,
-            pady=3,
+            width=2,
+            padx=5,
+            pady=2,
         )
         button.bind("<Button-1>", lambda _event: command())
-        button.bind("<Enter>", lambda _event: self._style_header_button(button, hover=True))
-        button.bind("<Leave>", lambda _event: self._style_header_button(button, hover=False))
+        button.bind("<Enter>", lambda _event: self._on_header_button_enter(button, tooltip))
+        button.bind("<Leave>", lambda _event: self._on_header_button_leave(button))
         return button
+
+    def _on_header_button_enter(self, button: tk.Label, tooltip: str = "") -> None:
+        self._style_header_button(button, hover=True)
+        tooltip = str(getattr(button, "_sticky_tooltip", tooltip) or "")
+        if tooltip and hasattr(self.app, "_show_tooltip"):
+            self.app._show_tooltip(button, tooltip)
+
+    def _on_header_button_leave(self, button: tk.Label) -> None:
+        self._style_header_button(button, hover=False)
+        if hasattr(self.app, "_hide_tooltip"):
+            self.app._hide_tooltip()
 
     def _style_header_button(self, button: tk.Label, *, hover: bool = False) -> None:
         g = globals()
@@ -429,8 +450,8 @@ class StickyNotesWindow:
 
     def update_pin_button(self) -> None:
         pinned = bool(self.app.config.sticky_notes_pinned)
-        label = t("sticky.pin.pinned") if pinned else t("sticky.pin")
-        self.pin_btn.configure(text=f"📌 {label}")
+        self.pin_btn.configure(text="📍" if pinned else "📌")
+        self.pin_btn._sticky_tooltip = t("sticky.pin.pinned") if pinned else t("sticky.pin")
         self._style_header_button(self.pin_btn, hover=False)
 
     def _live_windows(self) -> list[tk.Toplevel]:
@@ -648,6 +669,19 @@ class StickyNotesWindow:
                 pass
         self._image_previews = []
 
+    def schedule_image_preview_resize(self) -> None:
+        if not hasattr(self, "win") or not hasattr(self, "text"):
+            return
+        bounds = sticky_image_preview_bounds(self.text.winfo_width(), self.text.winfo_height())
+        if bounds == getattr(self, "_image_preview_bounds", None):
+            return
+        if self._image_preview_after is not None:
+            try:
+                self.win.after_cancel(self._image_preview_after)
+            except tk.TclError:
+                pass
+        self._image_preview_after = self.win.after(160, self.refresh_image_previews)
+
     def resolve_markdown_image_path(self, raw_path: str) -> Path | None:
         if self.path is None:
             return None
@@ -661,11 +695,13 @@ class StickyNotesWindow:
         return path
 
     def refresh_image_previews(self) -> None:
+        self._image_preview_after = None
         if not hasattr(self, "text"):
             return
         self.clear_image_previews()
         try:
-            max_width = max(120, self.text.winfo_width() - 48)
+            preview_bounds = sticky_image_preview_bounds(self.text.winfo_width(), self.text.winfo_height())
+            self._image_preview_bounds = preview_bounds
             content = self.text.get("1.0", "end-1c")
         except tk.TclError:
             return
@@ -677,7 +713,7 @@ class StickyNotesWindow:
             if image_path is None or not image_path.exists():
                 continue
             try:
-                image = load_thumbnail_image(image_path, (max_width, 160))
+                image = load_thumbnail_image(image_path, preview_bounds)
                 photo = ImageTk.PhotoImage(image)
                 insert_at = f"{line_number}.end"
                 mark = f"sticky_image_preview_{line_number}_{len(self._image_previews)}"
@@ -839,6 +875,12 @@ class StickyNotesWindow:
             except tk.TclError:
                 pass
             self.refresh_after = None
+        if self._image_preview_after is not None:
+            try:
+                self.win.after_cancel(self._image_preview_after)
+            except tk.TclError:
+                pass
+            self._image_preview_after = None
         self.refresh_workspace()
         remaining = [window for window in self._live_windows() if window is not self.win]
         self.app._sticky_notes_windows = remaining

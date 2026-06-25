@@ -7,6 +7,7 @@ from writeonside_app.builtin_plugins.sticky_notes import (
     next_sticky_path,
     safe_attachment_name,
     normalize_sticky_tags,
+    sticky_image_preview_bounds,
     sticky_window_geometry,
     sticky_note_content,
     sticky_title,
@@ -179,6 +180,14 @@ class StickyNotesPluginTests(unittest.TestCase):
     def test_safe_attachment_name_preserves_png_suffix(self) -> None:
         self.assertEqual("sticky-20260623.png", safe_attachment_name("sticky-20260623.png"))
         self.assertEqual("bad-name.png", safe_attachment_name("bad/name.png"))
+
+    def test_sticky_image_preview_bounds_scale_with_window(self) -> None:
+        small = sticky_image_preview_bounds(280, 220)
+        large = sticky_image_preview_bounds(720, 700)
+
+        self.assertLess(small[0], large[0])
+        self.assertLess(small[1], large[1])
+        self.assertLessEqual(large[1], 520)
 
     def test_sticky_notes_module_is_theme_synced(self) -> None:
         from writeonside_app import theme
