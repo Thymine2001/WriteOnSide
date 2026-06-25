@@ -36,8 +36,21 @@ class PedigreeAnalysisWindow:
     def open(self) -> None:
         app = self.app
         if getattr(app, "_pedigree_plugin_open", False):
-            return
-        app._pedigree_plugin_open = True
+            existing = getattr(app, "_pedigree_plugin_window", None)
+            try:
+                if existing is not None and existing.winfo_exists():
+                    existing.deiconify()
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except tk.TclError:
+                pass
+            app._pedigree_plugin_open = False
+            if getattr(app, "_pedigree_plugin_window", None) is existing:
+                try:
+                    delattr(app, "_pedigree_plugin_window")
+                except AttributeError:
+                    pass
         g = globals()
         parent = getattr(app, "_plugin_parent_window", None)
         try:
@@ -46,6 +59,8 @@ class PedigreeAnalysisWindow:
         except tk.TclError:
             parent = app.root
         win = tk.Toplevel(parent)
+        app._pedigree_plugin_open = True
+        app._pedigree_plugin_window = win
         win.withdraw()
         win.title(t("pedigree.window_title"))
         work_width = max(420, app.work_right - app.work_left)
@@ -233,8 +248,18 @@ class PedigreeAnalysisWindow:
         build_row(4, "sex", "pedigree.column.sex")
         build_row(5, "birthdate", "pedigree.column.birthdate")
 
-        def close() -> None:
+        release_state_done = {"value": False}
+
+        def release_plugin_state() -> None:
+            if release_state_done["value"]:
+                return
+            release_state_done["value"] = True
             app._pedigree_plugin_open = False
+            if getattr(app, "_pedigree_plugin_window", None) is win:
+                try:
+                    delattr(app, "_pedigree_plugin_window")
+                except AttributeError:
+                    pass
             try:
                 content_canvas.unbind_all("<MouseWheel>")
             except tk.TclError:
@@ -244,10 +269,17 @@ class PedigreeAnalysisWindow:
                     delattr(app, "_refresh_pedigree_plugin_theme")
                 except AttributeError:
                     pass
+
+        def close() -> None:
+            release_plugin_state()
             try:
                 win.destroy()
             except tk.TclError:
                 pass
+
+        def on_window_destroy(event) -> None:
+            if event.widget is win:
+                release_plugin_state()
 
         def set_status(message: str, danger: bool = False, muted: bool = False) -> None:
             status.configure(text=message, fg=globals()["DANGER"] if danger else (globals()["MUTED"] if muted else globals()["TEXT"]))
@@ -700,6 +732,7 @@ class PedigreeAnalysisWindow:
 
         win.protocol("WM_DELETE_WINDOW", close)
         win.bind("<Escape>", lambda _event: close())
+        win.bind("<Destroy>", on_window_destroy, add="+")
         win.update_idletasks()
         win.deiconify()
         try:
