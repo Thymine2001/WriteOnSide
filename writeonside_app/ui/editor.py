@@ -240,6 +240,7 @@ class EditorMixin:
         self.text.tag_configure("md_obsidian_tag", foreground=g["ACCENT_2"])
         self.text.tag_configure("md_callout", background=g["SURFACE_2"], foreground=g["TEXT"])
         self.text.tag_configure("md_comment", foreground=g["DISABLED"], overstrike=True)
+        self.text.tag_configure("md_live_marker_elide", elide=True)
         self.text.tag_configure(EDITOR_IMAGE_ELIDE_TAG, elide=True)
         # Keep find/selection highlights above the content tags, otherwise
         # md_code / md_highlight backgrounds hide them

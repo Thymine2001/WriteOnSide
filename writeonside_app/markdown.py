@@ -136,7 +136,7 @@ INLINE_MD = re.compile(
     re.IGNORECASE,
 )
 IMAGE_MD = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
-TASK_LINE = re.compile(r"^\s*[-*+] \[([ xX*])\](?:\s+(.*))?$")
+TASK_LINE = re.compile(r"^\s*(?:-{1,2}|[*+])\s+\[([ xX*])\](?:\s+(.*))?$")
 EXTERNAL_URL_MD = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
 HTML_COLOR_MD = re.compile(
     r"<span\b[^>]*style=[\"'][^\"']*\bcolor\s*:\s*([^;\"']+)[^\"']*[\"'][^>]*>(.*?)</span>"

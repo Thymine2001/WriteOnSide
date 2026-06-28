@@ -31,12 +31,13 @@ class LiveHighlightTests(unittest.TestCase):
         self.assertEqual((), plan.spans)
 
     def test_task_lines_distinguish_checked_and_unchecked(self) -> None:
-        plan = plan_live_highlight("- [ ] open task\n- [x] done task\n- [*] marked task\n- [*]")
+        plan = plan_live_highlight("- [ ] open task\n- [x] done task\n- [*] marked task\n- [*]\n-- [ ] loose task")
         tags_by_line = {line_tag.line: line_tag.tag for line_tag in plan.line_tags}
         self.assertEqual("md_task", tags_by_line[1])
         self.assertEqual("md_task_done", tags_by_line[2])
         self.assertEqual("md_task_done", tags_by_line[3])
         self.assertEqual("md_task_done", tags_by_line[4])
+        self.assertEqual("md_task", tags_by_line[5])
 
     def test_color_spans_are_offset_to_their_line_position(self) -> None:
         content = 'Thermal stress (<span style="color: #3b82f6">cold</span> and <span style="color: #e05252">heat</span>)'
@@ -44,6 +45,55 @@ class LiveHighlightTests(unittest.TestCase):
         spans = {(span.color, span.start, span.end) for span in plan.color_spans}
         self.assertIn(("#3b82f6", content.index("cold"), content.index("cold") + len("cold")), spans)
         self.assertIn(("#e05252", content.index("heat"), content.index("heat") + len("heat")), spans)
+
+    def test_live_preview_marker_spans_hide_markdown_outside_active_line(self) -> None:
+        content = "\n".join(
+            [
+                "**Bold** and [Site](https://example.com)",
+                "- [*] marked task",
+                '<span style="color: #3b82f6">blue</span>',
+            ]
+        )
+        plan = plan_live_highlight(content, focus_line=2)
+        markers = {(span.line, span.start, span.end) for span in plan.marker_spans}
+        replacements = {(span.line, span.start, span.text) for span in plan.replacements}
+
+        self.assertIn((1, 0, 2), markers)
+        self.assertIn((1, 6, 8), markers)
+        self.assertIn((1, 13, 14), markers)
+        self.assertIn((1, 18, 40), markers)
+        self.assertFalse(any(line == 2 for line, _start, _end in markers))
+        self.assertFalse(any(line == 2 for line, _start, _text in replacements))
+        self.assertTrue(any(line == 3 and start == 0 for line, start, _end in markers))
+        self.assertTrue(any(line == 3 and end == len('<span style="color: #3b82f6">blue</span>') for line, _start, end in markers))
+
+    def test_live_preview_marker_spans_cover_list_prefixes(self) -> None:
+        content = "- bullet\n1. numbered\n> quote\n## Heading\n- [ ] task\n- [x] done"
+        plan = plan_live_highlight(content, focus_line=4)
+        markers = {(span.line, span.start, span.end) for span in plan.marker_spans}
+        replacements = {(span.line, span.start, span.text) for span in plan.replacements}
+
+        self.assertIn((1, 0, 2), markers)
+        self.assertIn((3, 0, 2), markers)
+        self.assertFalse(any(line == 4 for line, _start, _end in markers))
+        self.assertIn((1, 0, "• "), replacements)
+        self.assertIn((5, 0, "☐ "), replacements)
+        self.assertIn((6, 0, "☑ "), replacements)
+
+    def test_live_preview_leaves_standalone_media_embeds_to_editor_preview(self) -> None:
+        content = "\n".join(
+            [
+                "![Figure](figure.png)",
+                "![[paper.pdf]]",
+                "See ![Figure](figure.png) inline",
+            ]
+        )
+        plan = plan_live_highlight(content, focus_line=99)
+        markers = {(span.line, span.start, span.end) for span in plan.marker_spans}
+
+        self.assertFalse(any(line == 1 for line, _start, _end in markers))
+        self.assertFalse(any(line == 2 for line, _start, _end in markers))
+        self.assertTrue(any(line == 3 for line, _start, _end in markers))
 
     def test_full_color_refresh_clears_previous_dynamic_tags(self) -> None:
         class FakeText:
