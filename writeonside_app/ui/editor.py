@@ -33,7 +33,14 @@ from ..document_performance import (
     metrics_for_content,
 )
 from ..markdown import render_markdown
-from ..preview import render_file_preview
+from ..preview import (
+    PDF_ZOOM_STEP,
+    _is_pdf_path,
+    forward_mousewheel_to_text,
+    insert_pdf_preview_block,
+    render_file_preview,
+    set_pdf_preview_zoom,
+)
 from ..storage import safe_write_text  # Fix #7: moved from lazy import inside _save_note
 from ..syntax_highlight import source_token_spans, syntax_tag_name
 from ..text_files import is_markdown_note
@@ -533,7 +540,7 @@ class EditorMixin:
             max_width = 180
         editing_keys = self._editor_image_editing_keys
         desired_keys = {block.key for block in blocks if block.key not in editing_keys}
-        signature = tuple((block.key, block.markdown, str(block.image_path)) for block in blocks)
+        signature = tuple((block.key, block.markdown, str(block.image_path), block.asset_type, block.initial_page) for block in blocks)
         preview_state = (signature, max_width, frozenset(editing_keys), frozenset(self._editor_image_previews.keys()))
         if preview_state == getattr(self, "_editor_image_preview_state", None):
             return
@@ -551,6 +558,8 @@ class EditorMixin:
                     and preview.get("markdown") == block.markdown
                     and preview.get("max_width") == max_width
                     and preview.get("image_path") == str(block.image_path)
+                    and preview.get("asset_type", "image") == block.asset_type
+                    and preview.get("initial_page", 0) == block.initial_page
                 ):
                     continue
                 if preview:
@@ -567,6 +576,9 @@ class EditorMixin:
             self._editor_image_preview_busy = False
 
     def _insert_editor_image_preview(self, block: EditorImageBlock, max_width: int) -> None:
+        if block.asset_type == "pdf":
+            self._insert_editor_pdf_preview(block, max_width)
+            return
         photo = load_preview_photo(block.image_path, max_width)
         if photo is None:
             return
@@ -628,6 +640,7 @@ class EditorMixin:
         edit_btn.bind("<Leave>", lambda _e: edit_btn.config(fg=g["MUTED"]), add="+")
         edit_btn.bind("<Button-1>", on_edit)
         image_label.bind("<Button-1>", on_edit)
+        forward_mousewheel_to_text(outer, self.text)
 
         safe_key = re.sub(r"\W+", "_", block.key)
         window_mark = f"_editor_image_window_{safe_key}"
@@ -655,6 +668,8 @@ class EditorMixin:
                 "markdown": block.markdown,
                 "max_width": max_width,
                 "image_path": str(block.image_path),
+                "asset_type": block.asset_type,
+                "initial_page": block.initial_page,
                 "photo": photo,
             }
         except tk.TclError:
@@ -664,6 +679,58 @@ class EditorMixin:
                 except tk.TclError:
                     pass
             outer.destroy()
+
+    def _insert_editor_pdf_preview(self, block: EditorImageBlock, max_width: int) -> None:
+        safe_key = re.sub(r"\W+", "_", block.key)
+        window_mark = f"_editor_image_window_{safe_key}"
+        source_start_mark = f"_editor_image_source_start_{safe_key}"
+        source_end_mark = f"_editor_image_source_end_{safe_key}"
+        try:
+            if self.text.compare(block.start, ">", tk.END):
+                return
+            self.text.mark_set(window_mark, block.start)
+            self.text.mark_gravity(window_mark, tk.LEFT)
+
+            def edit_source() -> None:
+                self._show_editor_image_source(block)
+
+            preview_widget = insert_pdf_preview_block(
+                self.text,
+                block.image_path,
+                self.config.font_family,
+                self.config.font_size,
+                edit_command=edit_source,
+                insert_at=window_mark,
+                trailing_newline=False,
+                initial_page=block.initial_page,
+            )
+            if preview_widget is None:
+                return
+            md_start = self.text.index(f"{window_mark} + 1c")
+            md_end = self.text.index(f"{md_start} + {len(block.markdown)}c")
+            self.text.mark_set(source_start_mark, md_start)
+            self.text.mark_set(source_end_mark, md_end)
+            self.text.mark_gravity(source_start_mark, tk.LEFT)
+            self.text.mark_gravity(source_end_mark, tk.RIGHT)
+            self.text.tag_add(EDITOR_IMAGE_ELIDE_TAG, md_start, md_end)
+            self._editor_image_previews[block.key] = {
+                "window_mark": window_mark,
+                "window_widget": preview_widget,
+                "source_start_mark": source_start_mark,
+                "source_end_mark": source_end_mark,
+                "block": block,
+                "markdown": block.markdown,
+                "max_width": max_width,
+                "image_path": str(block.image_path),
+                "asset_type": block.asset_type,
+                "initial_page": block.initial_page,
+            }
+        except tk.TclError:
+            for mark in (window_mark, source_start_mark, source_end_mark):
+                try:
+                    self.text.mark_unset(mark)
+                except tk.TclError:
+                    pass
 
     def _show_editor_image_source(self, block: EditorImageBlock) -> None:
         self._editor_image_editing_keys.add(block.key)
@@ -2390,6 +2457,16 @@ class EditorMixin:
 
     def _on_read_mousewheel(self, event) -> str | None:
         self._hide_code_copy_btn()
+        if (
+            self.preview_path is not None
+            and _is_pdf_path(self.preview_path)
+            and getattr(event, "state", 0) & 0x0004
+        ):
+            current = getattr(self.read_text, "_pdf_preview_zoom", 1.0) or 1.0
+            factor = PDF_ZOOM_STEP if getattr(event, "delta", 0) > 0 else 1 / PDF_ZOOM_STEP
+            set_pdf_preview_zoom(self.read_text, current * factor)
+            self._render_read_content()
+            return "break"
         if not getattr(self, "_read_fragment_active", False):
             return None
         units = int(-1 * (event.delta / 120)) if getattr(event, "delta", 0) else 0

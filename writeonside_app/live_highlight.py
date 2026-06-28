@@ -6,7 +6,7 @@ from hashlib import sha1
 from typing import Callable, Iterable
 
 from .frontmatter import split_front_matter
-from .markdown import HTML_COLOR_MD, normalize_html_color
+from .markdown import HTML_COLOR_MD, TASK_LINE, normalize_html_color, task_state_from_marker
 from .obsidian_md import CALLOUT_LINE, TAG_PATTERN
 from .syntax_highlight import code_token_spans
 from . import theme
@@ -66,8 +66,6 @@ INLINE_MD_EDIT = re.compile(
     re.IGNORECASE,
 )
 
-_TASK_LINE = re.compile(r"^\s*[-*+] \[[ xX]\] ")
-_TASK_CHECKED = re.compile(r"^\s*[-*+] \[[xX]\] ")
 _LIST_LINE = re.compile(r"^(\s*[-*+] |\s*\d+\. )")
 
 
@@ -190,8 +188,9 @@ def _structure_line_tag(line: str) -> str | None:
         return "md_h1"
     if line.startswith("> "):
         return "md_quote"
-    if _TASK_LINE.match(line):
-        return "md_task_done" if _TASK_CHECKED.match(line) else "md_task"
+    task_match = TASK_LINE.match(line)
+    if task_match:
+        return "md_task_done" if task_state_from_marker(task_match.group(1)) == "done" else "md_task"
     if _LIST_LINE.match(line):
         return "md_list"
     if "|" in line:

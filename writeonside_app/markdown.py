@@ -20,6 +20,7 @@ from .obsidian_md import (
     strip_obsidian_comments,
 )
 from .image_safety import ImageTooLargeError, load_thumbnail_image
+from .preview import _is_pdf_path, insert_pdf_preview_block, pdf_page_index_from_fragment
 from .syntax_highlight import insert_syntax_highlighted_code_block
 from .wikilinks import WIKI_LINK_PATTERN, WikiLink, parse_wiki_links
 
@@ -135,6 +136,7 @@ INLINE_MD = re.compile(
     re.IGNORECASE,
 )
 IMAGE_MD = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+TASK_LINE = re.compile(r"^\s*[-*+] \[([ xX*])\](?:\s+(.*))?$")
 EXTERNAL_URL_MD = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
 HTML_COLOR_MD = re.compile(
     r"<span\b[^>]*style=[\"'][^\"']*\bcolor\s*:\s*([^;\"']+)[^\"']*[\"'][^>]*>(.*?)</span>"
@@ -455,6 +457,7 @@ def resolve_markdown_path(raw: str, base_path: Path | None) -> Path | None:
     target = unquote(raw.strip().strip("<>"))
     if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", target):
         return None
+    target = re.split(r"(?<!^)[#?]", target, maxsplit=1)[0]
     path = Path(target)
     if not path.is_absolute() and base_path:
         path = base_path.parent / path
@@ -465,6 +468,8 @@ def insert_markdown_image(widget: tk.Text, alt: str, raw_path: str, base_path: P
     path = resolve_markdown_path(raw_path, base_path)
     if not path or not path.exists() or not path.is_file():
         return False
+    if _is_pdf_path(path):
+        return insert_pdf_preview_block(widget, path, initial_page=pdf_page_index_from_fragment(raw_path))
     try:
         max_w = max(180, widget.winfo_width() - 48)
         img = load_thumbnail_image(path, (max_w, max_w * 4))
@@ -480,6 +485,16 @@ def insert_markdown_image(widget: tk.Text, alt: str, raw_path: str, base_path: P
     widget._clickable_images[str(image_name)] = str(path.resolve())
     widget.insert(tk.END, f"\n{alt}\n" if alt else "\n")
     return True
+
+
+def task_state_from_marker(marker: str) -> str:
+    return "open" if marker == " " else "done"
+
+
+def task_prefix_for_state(state: str) -> str:
+    if state == "done":
+        return "☑ "
+    return "☐ "
 
 
 def insert_note_embed(
@@ -530,8 +545,15 @@ def render_markdown(
     wiki_note_resolver: Callable[[str, Path | None], tuple[str, str] | None] | None = None,
 ) -> None:
     widget.config(state=tk.NORMAL)
+    for child in getattr(widget, "_file_preview_windows", []):
+        try:
+            child.destroy()
+        except tk.TclError:
+            pass
     widget.delete("1.0", tk.END)
     widget._markdown_images = []
+    widget._file_preview_images = []
+    widget._file_preview_windows = []
     widget._clickable_images = {}
     widget._wiki_links = {}
     widget._wiki_link_counter = 0
@@ -639,6 +661,14 @@ def render_markdown(
                 widget.insert(tk.END, line + "\n", "body")
             line_index += 1
             continue
+        file_link_match = re.fullmatch(r"\[([^\]]+)\]\(([^)]+)\)", stripped)
+        if file_link_match:
+            raw_target = file_link_match.group(2)
+            linked_path = resolve_markdown_path(raw_target, base_path)
+            if linked_path and linked_path.exists() and linked_path.is_file() and _is_pdf_path(linked_path):
+                if insert_pdf_preview_block(widget, linked_path, font_family, font_size, initial_page=pdf_page_index_from_fragment(raw_target)):
+                    line_index += 1
+                    continue
         wiki_links = parse_wiki_links(stripped)
         if len(wiki_links) == 1 and wiki_links[0].raw == stripped and wiki_links[0].embed:
             wiki_link = wiki_links[0]
@@ -653,6 +683,15 @@ def render_markdown(
                 if wiki_asset_resolver is not None
                 else resolve_markdown_path(wiki_link.target, base_path)
             )
+            if asset_path and _is_pdf_path(asset_path) and insert_pdf_preview_block(
+                widget,
+                asset_path,
+                font_family,
+                font_size,
+                initial_page=pdf_page_index_from_fragment(wiki_link.heading),
+            ):
+                line_index += 1
+                continue
             if asset_path and asset_path.suffix.casefold() in {
                 ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".tiff", ".ico"
             } and insert_markdown_image(widget, wiki_link.alias, str(asset_path), None):
@@ -675,11 +714,11 @@ def render_markdown(
             insert_inline_md(widget, line[2:] + "\n", "h1", base_path)
         elif line.startswith("> "):
             insert_inline_md(widget, line[2:] + "\n", "quote", base_path)
-        elif re.match(r"^\s*[-*+] \[[ xX]\] ", line):
-            match = re.match(r"^\s*[-*+] \[([ xX])\] (.*)$", line)
-            checked = bool(match and match.group(1).lower() == "x")
-            widget.insert(tk.END, "☑ " if checked else "☐ ", "task_done" if checked else "list")
-            insert_inline_md(widget, (match.group(2) if match else line) + "\n", "task_done" if checked else "list", base_path)
+        elif match := TASK_LINE.match(line):
+            task_state = task_state_from_marker(match.group(1))
+            tag = "task_done" if task_state == "done" else "list"
+            widget.insert(tk.END, task_prefix_for_state(task_state), tag)
+            insert_inline_md(widget, (match.group(2) or "") + "\n", tag, base_path)
         elif re.match(r"^[-*+] ", line):
             widget.insert(tk.END, "• ", "list")
             insert_inline_md(widget, line[2:] + "\n", "list", base_path)

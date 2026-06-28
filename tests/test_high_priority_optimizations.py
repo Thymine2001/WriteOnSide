@@ -31,10 +31,12 @@ class LiveHighlightTests(unittest.TestCase):
         self.assertEqual((), plan.spans)
 
     def test_task_lines_distinguish_checked_and_unchecked(self) -> None:
-        plan = plan_live_highlight("- [ ] open task\n- [x] done task")
+        plan = plan_live_highlight("- [ ] open task\n- [x] done task\n- [*] marked task\n- [*]")
         tags_by_line = {line_tag.line: line_tag.tag for line_tag in plan.line_tags}
         self.assertEqual("md_task", tags_by_line[1])
         self.assertEqual("md_task_done", tags_by_line[2])
+        self.assertEqual("md_task_done", tags_by_line[3])
+        self.assertEqual("md_task_done", tags_by_line[4])
 
     def test_color_spans_are_offset_to_their_line_position(self) -> None:
         content = 'Thermal stress (<span style="color: #3b82f6">cold</span> and <span style="color: #e05252">heat</span>)'

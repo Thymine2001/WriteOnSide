@@ -41,6 +41,48 @@ class EditorImageBlockTests(unittest.TestCase):
             self.assertEqual(1, len(blocks))
             self.assertEqual("![[photo.jpg]]", blocks[0].markdown)
 
+    def test_finds_markdown_pdf_on_its_own_line(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            pdf_path = directory / "paper.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7\n")
+            content = "Intro\n![Paper](paper.pdf)\nTail"
+            blocks = plan_editor_image_blocks(content, directory / "note.md")
+
+            self.assertEqual(1, len(blocks))
+            self.assertEqual("pdf", blocks[0].asset_type)
+            self.assertEqual(pdf_path.resolve(), blocks[0].image_path)
+
+    def test_finds_markdown_pdf_with_default_page(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            pdf_path = directory / "paper.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7\n")
+            blocks = plan_editor_image_blocks("![Paper](paper.pdf#page=3)", directory / "note.md")
+
+            self.assertEqual(1, len(blocks))
+            self.assertEqual(2, blocks[0].initial_page)
+
+    def test_finds_wiki_embed_pdf_line(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            pdf_path = directory / "paper.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7\n")
+            blocks = plan_editor_image_blocks("![[paper.pdf]]", directory / "note.md")
+
+            self.assertEqual(1, len(blocks))
+            self.assertEqual("pdf", blocks[0].asset_type)
+
+    def test_finds_wiki_embed_pdf_with_default_page(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            pdf_path = directory / "paper.pdf"
+            pdf_path.write_bytes(b"%PDF-1.7\n")
+            blocks = plan_editor_image_blocks("![[paper.pdf#page=4]]", directory / "note.md")
+
+            self.assertEqual(1, len(blocks))
+            self.assertEqual(3, blocks[0].initial_page)
+
     def test_respects_leading_whitespace(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             directory = Path(temp_dir)

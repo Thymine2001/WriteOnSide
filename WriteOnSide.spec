@@ -1,11 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+
 datas = [
     ('assets/icon_dark.png', 'assets'),
     ('assets/icon_light.png', 'assets'),
 ]
-binaries = []
+datas += collect_data_files('pypdfium2') + [
+    item for item in collect_data_files('pypdfium2_raw')
+    if not item[0].lower().endswith(('.dll', '.pyd'))
+]
+binaries = collect_dynamic_libs('pypdfium2_raw')
 hiddenimports = [
     'keyboard._winkeyboard',
+    'pypdfium2',
+    'pypdfium2_raw',
     'pystray._win32',
     'watchdog.observers.read_directory_changes',
     'watchdog.observers.winapi',
