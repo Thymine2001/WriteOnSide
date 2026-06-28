@@ -66,8 +66,8 @@ fn parse_birthdate(value: &str) -> Option<i64> {
     }
 }
 
-fn py_string_list(py: Python<'_>, values: &[String]) -> PyObject {
-    PyList::new_bound(py, values).into_py(py)
+fn py_string_list(py: Python<'_>, values: &[String]) -> PyResult<Py<PyAny>> {
+    Ok(PyList::new(py, values)?.into_any().unbind())
 }
 
 fn stats(values: &[f64]) -> (usize, f64, f64, f64, f64) {
@@ -103,7 +103,7 @@ fn set_stats(py: Python<'_>, values: &[f64]) -> PyResult<PyObject> {
     dict.set_item("max", max)?;
     dict.set_item("mean", mean)?;
     dict.set_item("sd", sd)?;
-    Ok(dict.into_py(py))
+    Ok(dict.into_any().unbind())
 }
 
 fn detect_loops(
@@ -781,31 +781,31 @@ fn analyze_pedigree(
     lap.set_item("distribution", lap_distribution)?;
 
     let errors = PyDict::new(py);
-    errors.set_item("duplicate_ids", py_string_list(py, &duplicate_ids))?;
-    errors.set_item("missing_sires", py_string_list(py, &missing_sires_vec))?;
-    errors.set_item("missing_dams", py_string_list(py, &missing_dams_vec))?;
-    errors.set_item("dual_role_ids", py_string_list(py, &dual_role_ids))?;
-    errors.set_item("self_parent_ids", py_string_list(py, &self_parent_ids))?;
-    errors.set_item("missing_progeny_ids", py_string_list(py, &missing_progeny))?;
+    errors.set_item("duplicate_ids", py_string_list(py, &duplicate_ids)?)?;
+    errors.set_item("missing_sires", py_string_list(py, &missing_sires_vec)?)?;
+    errors.set_item("missing_dams", py_string_list(py, &missing_dams_vec)?)?;
+    errors.set_item("dual_role_ids", py_string_list(py, &dual_role_ids)?)?;
+    errors.set_item("self_parent_ids", py_string_list(py, &self_parent_ids)?)?;
+    errors.set_item("missing_progeny_ids", py_string_list(py, &missing_progeny)?)?;
     errors.set_item(
         "sex_mismatch_sire_ids",
-        py_string_list(py, &sex_mismatch_sire_ids),
+        py_string_list(py, &sex_mismatch_sire_ids)?,
     )?;
     errors.set_item(
         "sex_mismatch_dam_ids",
-        py_string_list(py, &sex_mismatch_dam_ids),
+        py_string_list(py, &sex_mismatch_dam_ids)?,
     )?;
     errors.set_item(
         "birthdate_invalid_offspring_ids",
-        py_string_list(py, &birthdate_invalid_offspring_ids),
+        py_string_list(py, &birthdate_invalid_offspring_ids)?,
     )?;
     errors.set_item(
         "birthdate_invalid_sire_ids",
-        py_string_list(py, &birthdate_invalid_sire_ids),
+        py_string_list(py, &birthdate_invalid_sire_ids)?,
     )?;
     errors.set_item(
         "birthdate_invalid_dam_ids",
-        py_string_list(py, &birthdate_invalid_dam_ids),
+        py_string_list(py, &birthdate_invalid_dam_ids)?,
     )?;
     let loop_list = PyList::empty(py);
     for cycle in &loops {
@@ -910,7 +910,7 @@ fn analyze_pedigree(
     result.set_item("errors", errors)?;
     result.set_item("inbreeding", inbreeding_dict)?;
     result.set_item("group_summary", group_summary)?;
-    Ok(result.into_py(py))
+    Ok(result.into_any().unbind())
 }
 
 #[pymodule]
