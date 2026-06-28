@@ -8,7 +8,8 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from writeonside_app.markdown import _display_width, format_table_lines, parse_table_row, render_markdown
+from writeonside_app import theme
+from writeonside_app.markdown import _display_width, configure_markdown_tags, format_table_lines, parse_table_row, render_markdown
 
 
 class MarkdownTableAndAttachmentTests(unittest.TestCase):
@@ -45,6 +46,24 @@ class MarkdownTableAndAttachmentTests(unittest.TestCase):
             self.assertIn("☐ open", widget.get("1.0", "end-1c"))
             self.assertIn("☑ marked", widget.get("1.0", "end-1c"))
             self.assertIn("☑ done", widget.get("1.0", "end-1c"))
+        finally:
+            root.destroy()
+
+    def test_read_mode_list_text_uses_body_color(self) -> None:
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tk is unavailable: {exc}")
+        root.withdraw()
+        try:
+            widget = tk.Text(root, width=50, height=8)
+            widget.pack()
+            root.update_idletasks()
+
+            configure_markdown_tags(widget)
+
+            self.assertEqual(theme.TEXT, widget.tag_cget("body", "foreground"))
+            self.assertEqual(theme.TEXT, widget.tag_cget("list", "foreground"))
         finally:
             root.destroy()
 

@@ -638,7 +638,7 @@ class NotesMixin:
         text.tag_configure("md_h5", font=(family, 12 + delta, "bold"), foreground=g["TEXT_SOFT"], spacing3=3)
         text.tag_configure("md_h6", font=(family, 11 + delta, "bold"), foreground=g["MUTED"], spacing3=2)
         text.tag_configure("md_bold", font=(family, 13 + delta, "bold"), foreground=g["TEXT"])
-        text.tag_configure("md_italic", font=(family, 13 + delta, "italic"), foreground=g["TEXT_SOFT"])
+        text.tag_configure("md_italic", font=(family, 13 + delta, "italic"), foreground=g["TEXT"])
         text.tag_configure("md_underline", underline=True, foreground=g["TEXT"])
         text.tag_configure("md_strike", overstrike=True, foreground=g["TEXT_SOFT"])
         text.tag_configure("md_highlight", background=g["HIGHLIGHT_BG"], foreground=g["HIGHLIGHT_FG"])
@@ -648,8 +648,8 @@ class NotesMixin:
         text.tag_configure("md_link", foreground=g["LINK"], underline=True)
         text.tag_configure("md_image", foreground=g["IMAGE_LINK"], underline=True)
         text.tag_configure("md_quote", foreground=g["QUOTE"], lmargin1=18, lmargin2=18)
-        text.tag_configure("md_list", lmargin1=22, lmargin2=22)
-        text.tag_configure("md_task", lmargin1=22, lmargin2=22)
+        text.tag_configure("md_list", lmargin1=22, lmargin2=22, foreground=g["TEXT"])
+        text.tag_configure("md_task", lmargin1=22, lmargin2=22, foreground=g["TEXT"])
         text.tag_configure("md_task_done", lmargin1=22, lmargin2=22, foreground=g["MUTED"], overstrike=True)
         text.tag_configure("md_table", font=("Consolas", 11 + delta), foreground=g["TEXT_SOFT"])
         text.tag_configure("md_hr", foreground=g["MUTED"])
@@ -852,8 +852,7 @@ class NotesMixin:
         return True
 
     def _configure_split_color_tag(self, widget: tk.Text, tag: str, color: str) -> None:
-        family = self.config.font_family or "Segoe UI"
-        widget.tag_configure(tag, foreground=color, font=(family, self.config.font_size + 3))
+        widget.tag_configure(tag, foreground=color)
 
     def _remove_split_image_preview(self, note: dict[str, object], key: str) -> None:
         text = note.get("text")

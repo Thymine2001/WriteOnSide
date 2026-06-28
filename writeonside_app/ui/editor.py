@@ -215,7 +215,7 @@ class EditorMixin:
         self.text.tag_configure("md_h5", font=(family, 12 + delta, "bold"), foreground=g["TEXT_SOFT"], spacing3=3)
         self.text.tag_configure("md_h6", font=(family, 11 + delta, "bold"), foreground=g["MUTED"], spacing3=2)
         self.text.tag_configure("md_bold", font=(family, 13 + delta, "bold"), foreground=g["TEXT"])
-        self.text.tag_configure("md_italic", font=(family, 13 + delta, "italic"), foreground=g["TEXT_SOFT"])
+        self.text.tag_configure("md_italic", font=(family, 13 + delta, "italic"), foreground=g["TEXT"])
         self.text.tag_configure("md_underline", underline=True, foreground=g["TEXT"])
         self.text.tag_configure("md_strike", overstrike=True, foreground=g["TEXT_SOFT"])
         self.text.tag_configure("md_highlight", background=g["HIGHLIGHT_BG"], foreground=g["HIGHLIGHT_FG"])
@@ -225,8 +225,8 @@ class EditorMixin:
         self.text.tag_configure("md_link", foreground=g["LINK"], underline=True)
         self.text.tag_configure("md_image", foreground=g["IMAGE_LINK"], underline=True)
         self.text.tag_configure("md_quote", foreground=g["QUOTE"], lmargin1=18, lmargin2=18)
-        self.text.tag_configure("md_list", lmargin1=22, lmargin2=22)
-        self.text.tag_configure("md_task", lmargin1=22, lmargin2=22)
+        self.text.tag_configure("md_list", lmargin1=22, lmargin2=22, foreground=g["TEXT"])
+        self.text.tag_configure("md_task", lmargin1=22, lmargin2=22, foreground=g["TEXT"])
         self.text.tag_configure("md_task_done", lmargin1=22, lmargin2=22, foreground=g["MUTED"], overstrike=True)
         self.text.tag_configure("md_table", font=("Consolas", 11 + delta), foreground=g["TEXT_SOFT"])
         self.text.tag_configure("md_hr", foreground=g["MUTED"])
@@ -783,12 +783,7 @@ class EditorMixin:
         return True
 
     def _configure_editor_color_tag(self, tag: str, color: str) -> None:
-        family = self.config.font_family or "Segoe UI"
-        self.text.tag_configure(
-            tag,
-            foreground=color,
-            font=(family, self.config.font_size + 3),
-        )
+        self.text.tag_configure(tag, foreground=color)
 
     # ── Autosave & save ─────────────────────────────────────────────────────
 

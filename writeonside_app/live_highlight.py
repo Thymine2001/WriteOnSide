@@ -305,7 +305,7 @@ def _line_replacement_spans(line_no: int, line: str) -> list[ReplacementSpan]:
                 line_no,
                 len(task.group(1)),
                 "☑ " if state == "done" else "☐ ",
-                "md_task_done" if state == "done" else "md_task",
+                "md_task_done" if state == "done" else "md_list",
             )
         )
         return replacements
@@ -386,17 +386,20 @@ def _plan_line(
         line_tags.append(LineTag(line_no, "md_comment"))
 
     structure_tag = _structure_line_tag(line)
-    if structure_tag:
+    if structure_tag and active_line != line_no:
         line_tags.append(LineTag(line_no, structure_tag))
 
     if simplified:
         return False, "", line_tags, spans, marker_spans, replacements, colors
 
-    skip_live_preview_markers = active_line == line_no or _is_standalone_media_embed_line(line)
+    standalone_media_embed = _is_standalone_media_embed_line(line)
+    skip_inline_preview_markers = active_line == line_no or standalone_media_embed
 
-    if not skip_live_preview_markers:
-        marker_spans.extend(_line_marker_spans(line_no, line))
-        replacements.extend(_line_replacement_spans(line_no, line))
+    if active_line != line_no and not standalone_media_embed:
+        line_markers = _line_marker_spans(line_no, line)
+        line_replacements = _line_replacement_spans(line_no, line)
+        marker_spans.extend(line_markers)
+        replacements.extend(line_replacements)
 
     for match in INLINE_MD_EDIT.finditer(line):
         chunk = match.group(0)
@@ -405,13 +408,13 @@ def _plan_line(
             color_span = _color_span_for_match(line_no, match.start(), color_match)
             if color_span is not None:
                 colors.append(color_span)
-            if not skip_live_preview_markers:
+            if not skip_inline_preview_markers:
                 marker_spans.extend(_inline_marker_spans(line_no, line, match))
             continue
         tag = _inline_tag_for_match(chunk)
         if tag:
             spans.append(TagSpan(line_no, match.start(), match.end(), tag))
-            if not skip_live_preview_markers:
+            if not skip_inline_preview_markers:
                 marker_spans.extend(_inline_marker_spans(line_no, line, match))
 
     return False, "", line_tags, spans, marker_spans, replacements, colors
@@ -531,6 +534,24 @@ def color_tag_name(color: str) -> str:
     return f"md_color_{digest}"
 
 
+def _set_text_undo_temporarily(text_widget, enabled: bool) -> object | None:
+    try:
+        previous = text_widget.cget("undo")
+        text_widget.configure(undo=enabled)
+        return previous
+    except Exception:
+        return None
+
+
+def _restore_text_undo(text_widget, previous: object | None) -> None:
+    if previous is None:
+        return
+    try:
+        text_widget.configure(undo=previous)
+    except Exception:
+        pass
+
+
 def _clear_live_preview_replacements(text_widget) -> None:
     entries = getattr(text_widget, "_live_preview_replacements", [])
     for entry in entries:
@@ -569,7 +590,11 @@ def apply_live_highlight_plan(
 ) -> None:
     import tkinter as tk
 
-    _clear_live_preview_replacements(text_widget)
+    previous_undo = _set_text_undo_temporarily(text_widget, False)
+    try:
+        _clear_live_preview_replacements(text_widget)
+    finally:
+        _restore_text_undo(text_widget, previous_undo)
 
     if clear_line_range is None:
         for tag in clear_tags:
@@ -609,37 +634,88 @@ def apply_live_highlight_plan(
     replacements = []
     can_embed = hasattr(text_widget, "window_create")
     if can_embed:
-        for index, replacement in enumerate(plan.replacements):
-            mark = f"_live_preview_replacement_{index}"
-            insert_index = f"{replacement.line}.{replacement.start}"
-            try:
-                text_widget.mark_set(mark, insert_index)
-                text_widget.mark_gravity(mark, tk.LEFT)
-                label = tk.Label(
-                    text_widget,
-                    text=replacement.text,
-                    bg=theme.BG,
-                    fg=theme.MUTED if replacement.tag == "md_task_done" else theme.TEXT,
-                    font=("Segoe UI", 13),
-                    padx=0,
-                    pady=0,
-                    borderwidth=0,
-                    highlightthickness=0,
-                )
-                label.bind(
-                    "<Button-1>",
-                    lambda _event, idx=insert_index: (
-                        text_widget.mark_set(tk.INSERT, idx),
-                        text_widget.focus_set(),
-                    ),
-                )
-                text_widget.window_create(mark, window=label)
-                replacements.append({"mark": mark, "label": label})
-            except tk.TclError:
+        try:
+            line_height = max(12, int(text_widget.dlineinfo("insert")[3]))
+        except Exception:
+            line_height = 16
+        previous_undo = _set_text_undo_temporarily(text_widget, False)
+        try:
+            for replacement in plan.replacements:
+                mark = f"_live_preview_replacement_{len(replacements)}"
+                insert_index = f"{replacement.line}.{replacement.start}"
+                marker = None
                 try:
-                    text_widget.mark_unset(mark)
+                    bg = text_widget.cget("background")
+                    fg = theme.MUTED if replacement.tag == "md_task_done" else theme.TEXT
+                    marker_width = max(12, min(18, line_height))
+                    marker_height = max(10, line_height)
+                    marker = tk.Canvas(
+                        text_widget,
+                        width=marker_width,
+                        height=marker_height,
+                        bg=bg,
+                        borderwidth=0,
+                        highlightthickness=0,
+                    )
+                    if replacement.text.startswith("•"):
+                        diameter = max(4, min(6, line_height // 3))
+                        cx = marker_width // 2
+                        cy = marker_height // 2
+                        marker.create_oval(
+                            cx - diameter // 2,
+                            cy - diameter // 2,
+                            cx + diameter // 2,
+                            cy + diameter // 2,
+                            fill=fg,
+                            outline=fg,
+                        )
+                    else:
+                        box_size = max(8, min(12, line_height - 4))
+                        box_x = max(1, (marker_width - box_size) // 2)
+                        box_y = max(1, (marker_height - box_size) // 2)
+                        marker.create_rectangle(
+                            box_x,
+                            box_y,
+                            box_x + box_size,
+                            box_y + box_size,
+                            outline=fg,
+                            width=1,
+                        )
+                        if replacement.text.startswith("☑"):
+                            marker.create_line(
+                                box_x + 2,
+                                box_y + box_size // 2,
+                                box_x + box_size // 2 - 1,
+                                box_y + box_size - 3,
+                                box_x + box_size - 2,
+                                box_y + 3,
+                                fill=fg,
+                                width=2,
+                                joinstyle=tk.ROUND,
+                            )
+                    marker.bind(
+                        "<Button-1>",
+                        lambda _event, idx=insert_index: (
+                            text_widget.mark_set(tk.INSERT, idx),
+                            text_widget.focus_set(),
+                        ),
+                    )
+                    text_widget.mark_set(mark, insert_index)
+                    text_widget.mark_gravity(mark, tk.LEFT)
+                    text_widget.window_create(mark, window=marker, padx=0, pady=0)
+                    replacements.append({"mark": mark, "label": marker})
                 except tk.TclError:
-                    pass
+                    if marker is not None:
+                        try:
+                            marker.destroy()
+                        except Exception:
+                            pass
+                    try:
+                        text_widget.mark_unset(mark)
+                    except tk.TclError:
+                        pass
+        finally:
+            _restore_text_undo(text_widget, previous_undo)
     try:
         text_widget._live_preview_replacements = replacements
     except Exception:

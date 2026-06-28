@@ -1,4 +1,5 @@
 import unittest
+import tkinter as tk
 
 from writeonside_app.live_highlight import (
     MD_EDITOR_TAGS,
@@ -7,6 +8,7 @@ from writeonside_app.live_highlight import (
     plan_live_highlight,
 )
 from writeonside_app.theme import ActiveTheme, ThemePalette, get_theme
+from writeonside_app.ui.editor import EditorMixin
 
 
 class LiveHighlightTests(unittest.TestCase):
@@ -46,7 +48,7 @@ class LiveHighlightTests(unittest.TestCase):
         self.assertIn(("#3b82f6", content.index("cold"), content.index("cold") + len("cold")), spans)
         self.assertIn(("#e05252", content.index("heat"), content.index("heat") + len("heat")), spans)
 
-    def test_live_preview_marker_spans_hide_markdown_outside_active_line(self) -> None:
+    def test_live_preview_marker_spans_keep_inline_source_on_active_line(self) -> None:
         content = "\n".join(
             [
                 "**Bold** and [Site](https://example.com)",
@@ -67,18 +69,29 @@ class LiveHighlightTests(unittest.TestCase):
         self.assertTrue(any(line == 3 and start == 0 for line, start, _end in markers))
         self.assertTrue(any(line == 3 and end == len('<span style="color: #3b82f6">blue</span>') for line, _start, end in markers))
 
+    def test_active_task_line_keeps_source_prefix_for_editing(self) -> None:
+        plan = plan_live_highlight("- [ ] Copy of all pages of passport", focus_line=1)
+
+        markers = {(span.line, span.start, span.end) for span in plan.marker_spans}
+        replacements = {(span.line, span.start, span.text, span.tag) for span in plan.replacements}
+        line_tags = {(tag.line, tag.tag) for tag in plan.line_tags}
+
+        self.assertFalse(markers)
+        self.assertFalse(replacements)
+        self.assertNotIn((1, "md_task"), line_tags)
+
     def test_live_preview_marker_spans_cover_list_prefixes(self) -> None:
         content = "- bullet\n1. numbered\n> quote\n## Heading\n- [ ] task\n- [x] done"
         plan = plan_live_highlight(content, focus_line=4)
         markers = {(span.line, span.start, span.end) for span in plan.marker_spans}
-        replacements = {(span.line, span.start, span.text) for span in plan.replacements}
+        replacements = {(span.line, span.start, span.text, span.tag) for span in plan.replacements}
 
         self.assertIn((1, 0, 2), markers)
         self.assertIn((3, 0, 2), markers)
         self.assertFalse(any(line == 4 for line, _start, _end in markers))
-        self.assertIn((1, 0, "• "), replacements)
-        self.assertIn((5, 0, "☐ "), replacements)
-        self.assertIn((6, 0, "☑ "), replacements)
+        self.assertIn((1, 0, "• ", "md_list"), replacements)
+        self.assertIn((5, 0, "☐ ", "md_list"), replacements)
+        self.assertIn((6, 0, "☑ ", "md_task_done"), replacements)
 
     def test_live_preview_leaves_standalone_media_embeds_to_editor_preview(self) -> None:
         content = "\n".join(
@@ -137,6 +150,60 @@ class LiveHighlightTests(unittest.TestCase):
         removed_tags = {tag for tag, _start, _end in widget.removed}
         self.assertTrue(old_tags <= removed_tags)
         self.assertTrue(color_tags.isdisjoint(old_tags))
+
+    def test_editor_color_tags_match_read_mode_font_behavior(self) -> None:
+        class FakeText:
+            def __init__(self) -> None:
+                self.configured: dict[str, object] = {}
+
+            def tag_configure(self, tag: str, **options) -> None:
+                self.configured = {"tag": tag, **options}
+
+        class Harness(EditorMixin):
+            text = FakeText()
+
+        Harness()._configure_editor_color_tag("md_color_test", "#3b82f6")
+
+        self.assertEqual("#3b82f6", Harness.text.configured["foreground"])
+        self.assertNotIn("font", Harness.text.configured)
+
+    def test_live_preview_replacements_do_not_enter_undo_stack(self) -> None:
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tk is unavailable: {exc}")
+        root.withdraw()
+        try:
+            widget = tk.Text(root, undo=True, width=40, height=5)
+            widget.pack()
+            widget.tag_configure("md_live_marker_elide", elide=True)
+            widget.insert("1.0", "- [ ] task")
+            widget.edit_reset()
+            widget.insert("end-1c", "!")
+            widget.edit_separator()
+            root.update_idletasks()
+
+            plan = plan_live_highlight(widget.get("1.0", "end-1c"), focus_line=99)
+            apply_live_highlight_plan(
+                widget,
+                plan,
+                clear_tags=MD_EDITOR_TAGS,
+                clear_line_range=None,
+                validate_color=lambda _color: True,
+                configure_color_tag=lambda tag, color: widget.tag_configure(tag, foreground=color),
+                editor_color_tags=set(),
+            )
+            labels = getattr(widget, "_live_preview_replacements", [])
+            self.assertTrue(labels)
+            marker = labels[0]["label"]
+            self.assertEqual("Canvas", marker.winfo_class())
+            self.assertEqual("", marker.place_info())
+            self.assertTrue(labels[0].get("mark"))
+            widget.edit_undo()
+
+            self.assertEqual("- [ ] task", widget.get("1.0", "end-1c"))
+        finally:
+            root.destroy()
 
 
 class ThemePaletteTests(unittest.TestCase):
