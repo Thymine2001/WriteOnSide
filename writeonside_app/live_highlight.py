@@ -664,10 +664,14 @@ def apply_live_highlight_plan(
                 mark = f"_live_preview_replacement_{len(replacements)}"
                 marker = None
                 try:
+                    try:
+                        current_line_height = max(12, int(text_widget.dlineinfo(f"{replacement.line}.0")[3]))
+                    except Exception:
+                        current_line_height = line_height
                     bg = text_widget.cget("background")
                     fg = theme.MUTED if replacement.tag == "md_task_done" else theme.TEXT
-                    marker_width = max(12, min(18, line_height))
-                    marker_height = max(10, line_height)
+                    marker_height = max(8, min(12, current_line_height - 4))
+                    marker_width = max(10, min(14, marker_height + 2))
                     marker = tk.Canvas(
                         text_widget,
                         width=marker_width,
@@ -677,7 +681,7 @@ def apply_live_highlight_plan(
                         highlightthickness=0,
                     )
                     if replacement.text.startswith("\u2022"):
-                        diameter = max(4, min(6, line_height // 3))
+                        diameter = max(4, min(6, marker_height // 2))
                         cx = marker_width // 2
                         cy = marker_height // 2
                         marker.create_oval(
@@ -689,7 +693,7 @@ def apply_live_highlight_plan(
                             outline=fg,
                         )
                     else:
-                        box_size = max(8, min(12, line_height - 4))
+                        box_size = max(7, min(10, marker_height - 2))
                         box_x = max(1, (marker_width - box_size) // 2)
                         box_y = max(1, (marker_height - box_size) // 2)
                         marker.create_rectangle(

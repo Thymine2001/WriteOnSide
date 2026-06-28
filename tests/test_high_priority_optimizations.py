@@ -285,6 +285,10 @@ class LiveHighlightTests(unittest.TestCase):
             widget.tag_configure("md_live_marker_elide", elide=True)
             widget.insert("1.0", "- [ ] task")
             root.update()
+            before_line_info = widget.dlineinfo("1.0")
+            self.assertIsNotNone(before_line_info)
+            assert before_line_info is not None
+            before_line_height = before_line_info[3]
 
             plan = plan_live_highlight(widget.get("1.0", "end-1c"), focus_line=99)
             apply_live_highlight_plan(
@@ -309,6 +313,7 @@ class LiveHighlightTests(unittest.TestCase):
             self.assertIsNotNone(line_info)
             assert marker_bbox is not None
             assert line_info is not None
+            self.assertEqual(before_line_height, line_info[3])
             self.assertLessEqual(abs(marker_bbox[1] - line_info[1]), 2)
         finally:
             root.destroy()
