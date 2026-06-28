@@ -295,6 +295,47 @@ class TextFileTests(unittest.TestCase):
         self.assertTrue(read_app.read_frame.packed)
         self.assertFalse(read_app.edit_frame.packed)
 
+    def test_highlight_current_note_prefers_preview_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            note = root / "1.md"
+            preview = root / "paper.pdf"
+            note.write_text("# One", encoding="utf-8")
+            preview.write_bytes(b"%PDF-1.7\n")
+
+            class TreeSpy:
+                def __init__(self) -> None:
+                    self.selected = None
+                    self.seen = None
+
+                def exists(self, iid: str) -> bool:
+                    return iid == str(preview.resolve())
+
+                def selection_set(self, iid: str) -> None:
+                    self.selected = iid
+
+                def see(self, iid: str) -> None:
+                    self.seen = iid
+
+            class HighlightHarness(NotesMixin):
+                def __init__(self) -> None:
+                    self.current_note_path = note
+                    self.preview_path = preview
+                    self.file_tree = TreeSpy()
+                    self._ignore_tree_events = False
+                    self.revealed = None
+
+                def _reveal_path_in_tree(self, path: Path) -> None:
+                    self.revealed = path
+
+            app = HighlightHarness()
+            app._highlight_current_note()
+
+            self.assertEqual(preview.resolve(), app.revealed)
+            self.assertEqual(str(preview.resolve()), app.file_tree.selected)
+            self.assertEqual(str(preview.resolve()), app.file_tree.seen)
+            self.assertFalse(app._ignore_tree_events)
+
 
 if __name__ == "__main__":
     unittest.main()

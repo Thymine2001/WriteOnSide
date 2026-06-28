@@ -2,6 +2,7 @@ import tempfile
 import tkinter as tk
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from PIL import Image
@@ -194,6 +195,54 @@ class PdfPreviewTests(unittest.TestCase):
         self.assertEqual("break", Harness()._on_read_mousewheel(event))
         self.assertGreater(Harness.read_text._pdf_preview_zoom, 1.0)
         self.assertEqual(["hide", "render"], calls)
+
+    def test_read_preview_configure_skips_rerender_when_layout_is_unchanged(self) -> None:
+        class ReadText:
+            def __init__(self) -> None:
+                self.width = 500
+                self.height = 700
+                self.options = {"padx": 10}
+
+            def winfo_width(self) -> int:
+                return self.width
+
+            def winfo_height(self) -> int:
+                return self.height
+
+            def configure(self, **options) -> None:
+                self.options.update(options)
+
+            def cget(self, key: str):
+                return self.options.get(key, "")
+
+        class Root:
+            def __init__(self) -> None:
+                self.after_calls = []
+
+            def after(self, delay: int, callback):
+                self.after_calls.append((delay, callback))
+                return f"after-{len(self.after_calls)}"
+
+            def after_cancel(self, _after_id: str) -> None:
+                return None
+
+        class Harness(EditorMixin):
+            def __init__(self) -> None:
+                self.preview_path = Path("report.pdf")
+                self.read_text = ReadText()
+                self.root = Root()
+                self.config = SimpleNamespace(font_family="Segoe UI", font_size=10)
+                self._preview_render_after = None
+                self._preview_render_signature = self._preview_layout_signature()
+
+        app = Harness()
+
+        app._on_read_view_configure()
+        self.assertEqual([], app.root.after_calls)
+
+        app.read_text.width = 560
+        app._on_read_view_configure()
+        self.assertEqual(1, len(app.root.after_calls))
 
     def test_embedded_preview_mousewheel_forwards_to_text_widget(self) -> None:
         class Widget:

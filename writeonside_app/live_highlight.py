@@ -552,6 +552,22 @@ def _restore_text_undo(text_widget, previous: object | None) -> None:
         pass
 
 
+def _text_modified_state(text_widget) -> bool | None:
+    try:
+        return bool(text_widget.edit_modified())
+    except Exception:
+        return None
+
+
+def _restore_text_modified_state(text_widget, previous: bool | None) -> None:
+    if previous is None:
+        return
+    try:
+        text_widget.edit_modified(previous)
+    except Exception:
+        pass
+
+
 def _clear_live_preview_replacements(text_widget) -> None:
     entries = getattr(text_widget, "_live_preview_replacements", [])
     for entry in entries:
@@ -591,9 +607,11 @@ def apply_live_highlight_plan(
     import tkinter as tk
 
     previous_undo = _set_text_undo_temporarily(text_widget, False)
+    previous_modified = _text_modified_state(text_widget)
     try:
         _clear_live_preview_replacements(text_widget)
     finally:
+        _restore_text_modified_state(text_widget, previous_modified)
         _restore_text_undo(text_widget, previous_undo)
 
     if clear_line_range is None:
@@ -639,10 +657,11 @@ def apply_live_highlight_plan(
         except Exception:
             line_height = 16
         previous_undo = _set_text_undo_temporarily(text_widget, False)
+        previous_modified = _text_modified_state(text_widget)
         try:
             for replacement in plan.replacements:
-                mark = f"_live_preview_replacement_{len(replacements)}"
                 insert_index = f"{replacement.line}.{replacement.start}"
+                mark = f"_live_preview_replacement_{len(replacements)}"
                 marker = None
                 try:
                     bg = text_widget.cget("background")
@@ -657,7 +676,7 @@ def apply_live_highlight_plan(
                         borderwidth=0,
                         highlightthickness=0,
                     )
-                    if replacement.text.startswith("•"):
+                    if replacement.text.startswith("\u2022"):
                         diameter = max(4, min(6, line_height // 3))
                         cx = marker_width // 2
                         cy = marker_height // 2
@@ -681,7 +700,7 @@ def apply_live_highlight_plan(
                             outline=fg,
                             width=1,
                         )
-                        if replacement.text.startswith("☑"):
+                        if replacement.text.startswith("\u2611"):
                             marker.create_line(
                                 box_x + 2,
                                 box_y + box_size // 2,
@@ -702,7 +721,8 @@ def apply_live_highlight_plan(
                     )
                     text_widget.mark_set(mark, insert_index)
                     text_widget.mark_gravity(mark, tk.LEFT)
-                    text_widget.window_create(mark, window=marker, padx=0, pady=0)
+                    text_widget.window_create(mark, window=marker, padx=0, pady=0, align="center")
+                    text_widget.tag_remove("md_live_marker_elide", mark, f"{mark}+1c")
                     replacements.append({"mark": mark, "label": marker})
                 except tk.TclError:
                     if marker is not None:
@@ -712,9 +732,10 @@ def apply_live_highlight_plan(
                             pass
                     try:
                         text_widget.mark_unset(mark)
-                    except tk.TclError:
+                    except Exception:
                         pass
         finally:
+            _restore_text_modified_state(text_widget, previous_modified)
             _restore_text_undo(text_widget, previous_undo)
     try:
         text_widget._live_preview_replacements = replacements

@@ -221,6 +221,58 @@ class ExplorerClipboardTests(unittest.TestCase):
                 reveal_in_file_explorer(file_path)
             popen.assert_called_once_with(["explorer", "/select,", str(file_path.resolve())])
 
+    def test_delayed_tree_selection_does_not_reopen_stale_note_over_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            note = root / "1.md"
+            preview = root / "paper.pdf"
+            note.write_text("# One", encoding="utf-8")
+            preview.write_bytes(b"%PDF-1.7\n")
+
+            class RootStub:
+                def __init__(self) -> None:
+                    self.callbacks = []
+
+                def after_idle(self, callback):
+                    self.callbacks.append(callback)
+
+            class TreeStub:
+                def __init__(self) -> None:
+                    self.selected = ()
+
+                def selection(self):
+                    return self.selected
+
+            class Harness(ExplorerMixin):
+                def __init__(self) -> None:
+                    self.root = RootStub()
+                    self.file_tree = TreeStub()
+                    self._ignore_tree_events = False
+                    self.opened_notes = []
+                    self.previewed_files = []
+
+                def _open_note_from_tree(self, path: Path) -> None:
+                    self.opened_notes.append(path)
+
+                def _open_text_file_from_tree(self, path: Path) -> None:
+                    self.fail(f"Unexpected text open: {path}")
+
+                def _preview_explorer_file(self, path: Path) -> None:
+                    self.previewed_files.append(path)
+
+            app = Harness()
+            app.file_tree.selected = (str(note),)
+            app._on_tree_select(None)
+            app.file_tree.selected = (str(preview),)
+            app._on_tree_select(None)
+
+            callbacks = list(app.root.callbacks)
+            for callback in callbacks:
+                callback()
+
+            self.assertEqual([], app.opened_notes)
+            self.assertEqual([preview], app.previewed_files)
+
 
 if __name__ == "__main__":
     unittest.main()

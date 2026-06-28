@@ -1395,9 +1395,9 @@ class ExplorerMixin:
                 self._load_dir_children(root_id, root, force=True)
                 if expanded_ids:
                     self._restore_explorer_tree_state(expanded_ids)
-            current = getattr(self, "current_note_path", None)
-            if current is not None:
-                self._reveal_path_in_tree(Path(current))
+            active_path = getattr(self, "preview_path", None) or getattr(self, "current_note_path", None)
+            if active_path is not None:
+                self._reveal_path_in_tree(Path(active_path))
             self._highlight_current_note()
             self.root.after_idle(self._fit_file_tree_width)
         finally:
@@ -1724,12 +1724,30 @@ class ExplorerMixin:
             return
         if not path.is_file():
             return
+        generation = getattr(self, "_tree_selection_generation", 0) + 1
+        self._tree_selection_generation = generation
+
+        def still_selected(expected_path: Path = path, expected_generation: int = generation) -> bool:
+            if getattr(self, "_tree_selection_generation", None) != expected_generation:
+                return False
+            try:
+                current = self.file_tree.selection()
+            except tk.TclError:
+                return False
+            return len(current) == 1 and current[0] == str(expected_path)
+
         if is_markdown_note(path):
-            self.root.after_idle(lambda p=path: self._open_note_from_tree(p))
+            self.root.after_idle(
+                lambda p=path: self._open_note_from_tree(p) if still_selected(p) else None
+            )
         elif is_editable_text_path(path):
-            self.root.after_idle(lambda p=path: self._open_text_file_from_tree(p))
+            self.root.after_idle(
+                lambda p=path: self._open_text_file_from_tree(p) if still_selected(p) else None
+            )
         else:
-            self.root.after_idle(lambda p=path: self._preview_explorer_file(p))
+            self.root.after_idle(
+                lambda p=path: self._preview_explorer_file(p) if still_selected(p) else None
+            )
 
     def _clear_tree_context_ignore(self) -> None:
         self._ignore_tree_events = False

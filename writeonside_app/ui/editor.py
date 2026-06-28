@@ -513,7 +513,7 @@ class EditorMixin:
         self._editor_image_preview_state = None
         try:
             self.text.tag_remove(EDITOR_IMAGE_ELIDE_TAG, "1.0", tk.END)
-        except tk.TclError:
+        except (tk.TclError, TypeError, ValueError):
             pass
 
     def _apply_editor_image_previews(self, content: str | None = None) -> None:
@@ -2325,25 +2325,54 @@ class EditorMixin:
         width = self.read_text.winfo_width()
         pad = 4 if width < 320 else 8 if width < 420 else 10
         try:
-            self.read_text.configure(padx=pad, wrap="char")
+            current_pad = int(self.read_text.cget("padx") or 0)
+            current_wrap = str(self.read_text.cget("wrap") or "")
+            if current_pad != pad or current_wrap != "char":
+                self.read_text.configure(padx=pad, wrap="char")
         except tk.TclError:
             pass
+
+    def _preview_layout_signature(self) -> tuple[object, ...] | None:
+        if self.preview_path is None or not hasattr(self, "read_text"):
+            return None
+        try:
+            path = str(self.preview_path.resolve())
+        except OSError:
+            path = str(self.preview_path)
+        try:
+            width = int(self.read_text.winfo_width())
+            padx = int(self.read_text.cget("padx") or 0)
+        except (tk.TclError, TypeError, ValueError):
+            return None
+        return (
+            path,
+            width,
+            padx,
+            self.config.font_family,
+            self.config.font_size,
+        )
 
     def _render_read_content(self) -> None:
         if not hasattr(self, "read_text"):
             return
         if self.preview_path is not None:
-            self._cancel_large_read_fragment()
-            self._read_fragment_active = False
-            self._read_content_limited = False
-            # Fix #10: pass user font settings so preview matches the rest of the UI
-            render_file_preview(
-                self.read_text,
-                self.preview_path,
-                font_family=self.config.font_family,
-                font_size=self.config.font_size,
-            )
+            self._preview_rendering = True
+            try:
+                self._cancel_large_read_fragment()
+                self._read_fragment_active = False
+                self._read_content_limited = False
+                # Fix #10: pass user font settings so preview matches the rest of the UI
+                render_file_preview(
+                    self.read_text,
+                    self.preview_path,
+                    font_family=self.config.font_family,
+                    font_size=self.config.font_size,
+                )
+                self._preview_render_signature = self._preview_layout_signature()
+            finally:
+                self._preview_rendering = False
         else:
+            self._preview_render_signature = None
             metrics = self._editor_document_metrics()
             if self.current_note_path and is_markdown_note(self.current_note_path) and metrics.is_large:
                 self._render_large_read_fragment(
@@ -2476,6 +2505,11 @@ class EditorMixin:
             if getattr(self, "_read_fragment_active", False):
                 self._schedule_large_read_fragment(getattr(self, "_read_fragment_anchor_line", 1), delay_ms=120)
             return
+        if getattr(self, "_preview_rendering", False):
+            return
+        signature = self._preview_layout_signature()
+        if signature == getattr(self, "_preview_render_signature", None):
+            return
         if self._preview_render_after is not None:
             try:
                 self.root.after_cancel(self._preview_render_after)
@@ -2486,6 +2520,9 @@ class EditorMixin:
     def _rerender_file_preview(self) -> None:
         self._preview_render_after = None
         if self.preview_path is not None and self.read_frame.winfo_ismapped():
+            signature = self._preview_layout_signature()
+            if signature == getattr(self, "_preview_render_signature", None):
+                return
             self._render_read_content()
 
     def _switch_to_edit(self) -> None:

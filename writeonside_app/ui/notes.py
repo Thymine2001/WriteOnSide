@@ -280,6 +280,7 @@ class NotesMixin:
         previous_mode = self._preview_previous_mode or self.view_mode
         self.preview_path = None
         self._preview_previous_mode = None
+        self._preview_render_signature = None
         self.view_mode = previous_mode
         if self._preview_render_after is not None:
             try:
@@ -375,9 +376,10 @@ class NotesMixin:
             self._position_nav_bar()
 
     def _highlight_current_note(self) -> None:
-        if not self.current_note_path or not hasattr(self, "file_tree"):
+        active_path = getattr(self, "preview_path", None) or self.current_note_path
+        if not active_path or not hasattr(self, "file_tree"):
             return
-        path = self.current_note_path.resolve()
+        path = active_path.resolve()
         self._ignore_tree_events = True
         try:
             self._reveal_path_in_tree(path)

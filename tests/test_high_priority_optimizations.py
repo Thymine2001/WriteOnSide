@@ -9,6 +9,7 @@ from writeonside_app.live_highlight import (
 )
 from writeonside_app.theme import ActiveTheme, ThemePalette, get_theme
 from writeonside_app.ui.editor import EditorMixin
+from writeonside_app.ui.editor_structure import EditorStructureMixin
 
 
 class LiveHighlightTests(unittest.TestCase):
@@ -184,6 +185,7 @@ class LiveHighlightTests(unittest.TestCase):
             root.update_idletasks()
 
             plan = plan_live_highlight(widget.get("1.0", "end-1c"), focus_line=99)
+            before_modified = bool(widget.edit_modified())
             apply_live_highlight_plan(
                 widget,
                 plan,
@@ -197,11 +199,117 @@ class LiveHighlightTests(unittest.TestCase):
             self.assertTrue(labels)
             marker = labels[0]["label"]
             self.assertEqual("Canvas", marker.winfo_class())
-            self.assertEqual("", marker.place_info())
+            self.assertEqual({}, marker.place_info())
             self.assertTrue(labels[0].get("mark"))
+            self.assertTrue(widget.window_cget(labels[0]["mark"], "window"))
+            self.assertEqual(before_modified, bool(widget.edit_modified()))
             widget.edit_undo()
 
             self.assertEqual("- [ ] task", widget.get("1.0", "end-1c"))
+        finally:
+            root.destroy()
+
+    def test_live_preview_skips_embedded_markers_when_text_widget_cannot_host_them(self) -> None:
+        class FakeText:
+            def __init__(self) -> None:
+                self.removed: list[tuple[str, str, str]] = []
+                self.added: list[tuple[str, str, str]] = []
+                self._live_preview_replacements = []
+                self.undo = True
+
+            def cget(self, key: str):
+                if key == "undo":
+                    return self.undo
+                return ""
+
+            def configure(self, **options) -> None:
+                if "undo" in options:
+                    self.undo = options["undo"]
+
+            def tag_remove(self, tag: str, start: str, end: str) -> None:
+                self.removed.append((tag, start, end))
+
+            def tag_add(self, tag: str, start: str, end: str) -> None:
+                self.added.append((tag, start, end))
+
+        widget = FakeText()
+        plan = plan_live_highlight("- [ ] offscreen", focus_line=99)
+
+        apply_live_highlight_plan(
+            widget,
+            plan,
+            clear_tags=MD_EDITOR_TAGS,
+            clear_line_range=None,
+            validate_color=lambda _color: True,
+            configure_color_tag=lambda _tag, _color: None,
+            editor_color_tags=set(),
+        )
+
+        self.assertEqual([], widget._live_preview_replacements)
+        self.assertTrue(widget.undo)
+
+    def test_editor_scroll_does_not_rerender_inline_live_preview_windows(self) -> None:
+        class Text:
+            _live_preview_replacements = [{"label": object()}]
+
+        class Harness(EditorStructureMixin):
+            def __init__(self) -> None:
+                self.text = Text()
+                self.structure_refreshes = 0
+                self.live_refreshes = 0
+
+            def _schedule_editor_structure_refresh(self) -> None:
+                self.structure_refreshes += 1
+
+            def _schedule_live_render(self) -> None:
+                self.live_refreshes += 1
+
+            def _should_refresh_live_render_on_scroll(self) -> bool:
+                return False
+
+        app = Harness()
+        app._on_editor_scroll()
+
+        self.assertEqual(1, app.structure_refreshes)
+        self.assertEqual(0, app.live_refreshes)
+
+    def test_live_preview_task_symbol_aligns_with_text_line(self) -> None:
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tk is unavailable: {exc}")
+        try:
+            widget = tk.Text(root, font=("Segoe UI", 12), width=40, height=5)
+            widget.pack()
+            widget.tag_configure("md_task", lmargin1=22, lmargin2=22)
+            widget.tag_configure("md_live_marker_elide", elide=True)
+            widget.insert("1.0", "- [ ] task")
+            root.update()
+
+            plan = plan_live_highlight(widget.get("1.0", "end-1c"), focus_line=99)
+            apply_live_highlight_plan(
+                widget,
+                plan,
+                clear_tags=MD_EDITOR_TAGS,
+                clear_line_range=None,
+                validate_color=lambda _color: True,
+                configure_color_tag=lambda tag, color: widget.tag_configure(tag, foreground=color),
+                editor_color_tags=set(),
+            )
+            root.update()
+
+            replacement = getattr(widget, "_live_preview_replacements", [])[0]
+            marker = replacement["label"]
+            mark = replacement["mark"]
+            marker_bbox = widget.bbox(mark)
+            line_info = widget.dlineinfo("1.0")
+            self.assertEqual({}, marker.place_info())
+            self.assertTrue(widget.window_cget(mark, "window"))
+            self.assertIsNotNone(marker_bbox)
+            self.assertIsNotNone(line_info)
+            assert marker_bbox is not None
+            assert line_info is not None
+            self.assertLessEqual(abs(marker_bbox[1] - line_info[1]), 2)
         finally:
             root.destroy()
 
