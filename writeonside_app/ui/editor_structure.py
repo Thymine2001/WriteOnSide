@@ -2,7 +2,32 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from ..frontmatter import split_front_matter
 from ..theme import *  # noqa: F401,F403
+
+
+def frontmatter_prefix_line_count(content: str) -> int:
+    header, body = split_front_matter(content)
+    if header is None:
+        return 0
+    return content[: len(content) - len(body)].count("\n")
+
+
+def body_display_line_number(line: int, frontmatter_lines: int) -> int | None:
+    value = int(line) - max(0, int(frontmatter_lines))
+    return value if value >= 1 else None
+
+
+def line_number_center_y(
+    line_info: tuple[int, int, int, int, int],
+    *,
+    single_line_height: int | None = None,
+) -> int:
+    y = int(line_info[1])
+    block_height = max(1, int(line_info[3]))
+    if single_line_height is None or single_line_height >= block_height:
+        return y + max(1, block_height // 2)
+    return y + max(1, single_line_height // 2)
 
 
 class EditorStructureMixin:
@@ -114,8 +139,10 @@ class EditorStructureMixin:
             return
         g = globals()
         canvas.configure(bg=g["SURFACE"])
-        self._fit_line_number_gutter()
+        frontmatter_lines = self._editor_frontmatter_line_offset()
+        self._fit_line_number_gutter(frontmatter_lines)
         headings = {int(item["line"]): item for item in self._heading_sections()}
+        single_line_height = self._editor_single_line_height()
         top_line = int(self.text.index("@0,0").split(".")[0])
         bottom_line = int(self.text.index(f"@0,{max(1, self.text.winfo_height())}").split(".")[0]) + 1
         for line in range(max(1, top_line - 1), bottom_line + 1):
@@ -132,12 +159,16 @@ class EditorStructureMixin:
                 continue
             if visible_line != line:
                 continue
+            display_line = body_display_line_number(line, frontmatter_lines)
+            if display_line is None:
+                continue
+            center_y = line_number_center_y(info, single_line_height=single_line_height)
             canvas_width = max(1, canvas.winfo_width())
             canvas.create_text(
                 canvas_width - 9,
-                y,
-                anchor="ne",
-                text=str(line),
+                center_y,
+                anchor="e",
+                text=str(display_line),
                 fill=g["TEXT_SOFT"],
                 font=("Consolas", max(8, self.config.font_size - 1)),
             )
@@ -147,8 +178,8 @@ class EditorStructureMixin:
                 marker = "\u25b8" if collapsed else "\u25be"
                 canvas.create_text(
                     8,
-                    y - 1,
-                    anchor="nw",
+                    center_y,
+                    anchor="w",
                     text=marker,
                     fill=g["ACCENT"] if collapsed else g["TEXT_SOFT"],
                     font=("Segoe UI", 11, "bold"),
@@ -162,12 +193,35 @@ class EditorStructureMixin:
             fill=g["BORDER"],
         )
 
-    def _fit_line_number_gutter(self) -> None:
+    def _editor_single_line_height(self) -> int:
+        try:
+            import tkinter.font as tkfont
+
+            font = tkfont.Font(font=self.text.cget("font"))
+            spacing1 = int(self.text.cget("spacing1") or 0)
+            spacing3 = int(self.text.cget("spacing3") or 0)
+            return max(1, font.metrics("linespace") + spacing1 + spacing3)
+        except (AttributeError, tk.TclError, TypeError, ValueError):
+            return max(12, self.config.font_size + 6)
+
+    def _editor_frontmatter_line_offset(self) -> int:
+        try:
+            if not self._is_markdown_document():
+                return 0
+            content = self._get_editor_content()
+        except (AttributeError, tk.TclError):
+            return 0
+        return frontmatter_prefix_line_count(content)
+
+    def _fit_line_number_gutter(self, frontmatter_lines: int | None = None) -> None:
         try:
             total_lines = int(str(self.text.index("end-1c")).split(".")[0])
         except (ValueError, tk.TclError):
             total_lines = 1
-        digits = max(2, len(str(max(1, total_lines))))
+        if frontmatter_lines is None:
+            frontmatter_lines = self._editor_frontmatter_line_offset()
+        body_lines = max(1, total_lines - max(0, int(frontmatter_lines)))
+        digits = max(2, len(str(body_lines)))
         font_size = max(8, self.config.font_size - 1)
         try:
             import tkinter.font as tkfont

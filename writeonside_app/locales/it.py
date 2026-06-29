@@ -46,7 +46,7 @@ MESSAGES = {
     "cmd.backlinks": "Backlink",
     "cmd.find": "Trova",
     "cmd.replace": "Trova e sostituisci",
-    "cmd.frontmatter": "Crea YAML Front Matter",
+    "cmd.frontmatter": "Mostra/nascondi YAML Front Matter",
     "cmd.bold": "Grassetto",
     "cmd.italic": "Corsivo",
     "cmd.underline": "Sottolineato",

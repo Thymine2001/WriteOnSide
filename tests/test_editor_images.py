@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL import Image
 
 from writeonside_app.editor_images import plan_editor_image_blocks
-from writeonside_app.image_safety import ImageTooLargeError, open_image_checked
+from writeonside_app.image_safety import ImageTooLargeError, load_thumbnail_image, open_image_checked
 
 
 class EditorImageBlockTests(unittest.TestCase):
@@ -40,6 +40,40 @@ class EditorImageBlockTests(unittest.TestCase):
             blocks = plan_editor_image_blocks(content, directory / "note.md")
             self.assertEqual(1, len(blocks))
             self.assertEqual("![[photo.jpg]]", blocks[0].markdown)
+
+    def test_finds_jfif_image_line(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            image_path = directory / "photo.jfif"
+            Image.new("RGB", (24, 16), "#884422").save(image_path, format="JPEG")
+            content = "![Photo](photo.jfif)"
+
+            blocks = plan_editor_image_blocks(content, directory / "note.md")
+
+            self.assertEqual(1, len(blocks))
+            self.assertEqual("image", blocks[0].asset_type)
+            self.assertEqual(image_path.resolve(), blocks[0].image_path)
+
+    def test_finds_and_renders_svg_image_line(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            image_path = directory / "diagram.svg"
+            image_path.write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 24 16">'
+                '<rect width="24" height="16" fill="#336699"/>'
+                "</svg>",
+                encoding="utf-8",
+            )
+
+            blocks = plan_editor_image_blocks("![[diagram.svg]]", directory / "note.md")
+            preview = load_thumbnail_image(image_path, (12, 12))
+
+            self.assertEqual(1, len(blocks))
+            self.assertEqual("image", blocks[0].asset_type)
+            self.assertEqual("RGBA", preview.mode)
+            self.assertLessEqual(preview.width, 12)
+            self.assertLessEqual(preview.height, 12)
+            self.assertEqual((0, 0, preview.width, preview.height), preview.getbbox())
 
     def test_finds_markdown_pdf_on_its_own_line(self):
         with tempfile.TemporaryDirectory() as temp_dir:

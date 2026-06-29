@@ -119,6 +119,8 @@ class TrayMixin:
                 continue
 
             def trigger(plugin_id=plugin.id, entrypoint=plugin.entrypoint) -> None:
+                if plugin_status(self.config, plugin_id) != "enabled":
+                    return
                 if plugin_id == "sticky_notes":
                     self._post_ui(self._open_sticky_notes)
                     return
@@ -148,6 +150,8 @@ class TrayMixin:
             last = getattr(self, "_sticky_notes_last_ctrl_down", 0.0)
             self._sticky_notes_last_ctrl_down = now
             if 0.05 <= now - last <= 0.42:
+                if plugin_status(self.config, "sticky_notes") != "enabled":
+                    return
                 self._post_ui(self._open_sticky_notes)
 
         try:
@@ -156,6 +160,8 @@ class TrayMixin:
             self._active_sticky_notes_hook = None
 
     def _open_sticky_notes(self) -> None:
+        if plugin_status(self.config, "sticky_notes") != "enabled":
+            return
         from ..builtin_plugins.sticky_notes import open_sticky_notes_from_hotkey
 
         open_sticky_notes_from_hotkey(self)

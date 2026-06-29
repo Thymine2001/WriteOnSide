@@ -46,7 +46,7 @@ MESSAGES = {
     "cmd.backlinks": "백링크",
     "cmd.find": "찾기",
     "cmd.replace": "찾기 및 바꾸기",
-    "cmd.frontmatter": "YAML Front Matter 만들기",
+    "cmd.frontmatter": "YAML Front Matter 표시/숨기기",
     "cmd.bold": "굵게",
     "cmd.italic": "기울임",
     "cmd.underline": "밑줄",

@@ -23,6 +23,16 @@ from ..shortcuts import (
 )
 from ..storage import BACKUP_DIR
 from ..theme import *  # noqa: F401,F403
+from .typography import (
+    FONT_CARD_TITLE_STRONG,
+    FONT_CONTROL,
+    FONT_PLUGIN_ICON_SMALL,
+    FONT_PREVIEW_LABEL,
+    FONT_PREVIEW_TITLE,
+    FONT_UI,
+    FONT_UI_SMALL,
+    FONT_WINDOW_TITLE,
+)
 
 
 class SettingsMixin:
@@ -194,7 +204,7 @@ class SettingsMixin:
 
         footer = tk.Frame(win, bg=g["BG"])
         footer.pack(fill="x", side="bottom")
-        msg = tk.Label(footer, text=t("settings.footer_hint"), bg=g["BG"], fg=g["MUTED"], font=("Segoe UI", 9), anchor="w")
+        msg = tk.Label(footer, text=t("settings.footer_hint"), bg=g["BG"], fg=g["MUTED"], font=FONT_UI, anchor="w")
         msg.pack(fill="x", padx=22, pady=(8, 12))
         win.bind(
             "<Configure>",
@@ -219,7 +229,7 @@ class SettingsMixin:
                 text=label,
                 bg=_g["BG"],
                 fg=_g["TEXT"],
-                font=("Segoe UI", 10),
+                font=FONT_CONTROL,
                 width=16,
                 anchor="w",
             )
@@ -230,7 +240,7 @@ class SettingsMixin:
                 fg=_g["TEXT"],
                 insertbackground=_g["TEXT"],
                 relief="flat",
-                font=("Segoe UI", 10),
+                font=FONT_CONTROL,
             )
             entry.insert(0, value)
             entry.pack(side="left", fill="x", expand=True, ipady=5, padx=(4, 6))
@@ -273,7 +283,7 @@ class SettingsMixin:
             frame.after_idle(layout_row)
             return entry
 
-        settings_title_label = tk.Label(content, text=t("settings.title"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 15, "bold"))
+        settings_title_label = tk.Label(content, text=t("settings.title"), bg=g["BG"], fg=g["TEXT"], font=FONT_WINDOW_TITLE)
         settings_title_label.pack(pady=(18, 10))
         settings_body = tk.Frame(content, bg=g["BG"])
         settings_body.pack(fill="both", expand=True, padx=14, pady=(0, 12))
@@ -306,7 +316,7 @@ class SettingsMixin:
                 button.configure(
                     bg=_g["SURFACE_2"] if selected else _g["SURFACE"],
                     fg=_g["TEXT"] if selected else _g["TEXT_SOFT"],
-                    font=("Segoe UI", 10, "bold" if selected else "normal"),
+                    font=FONT_CONTROL,
                     highlightbackground=_g["ACCENT"] if selected else _g["SURFACE"],
                     highlightcolor=_g["ACCENT"] if selected else _g["SURFACE"],
                 )
@@ -335,7 +345,7 @@ class SettingsMixin:
                 text=label_text,
                 bg=_g["SURFACE"],
                 fg=_g["TEXT_SOFT"],
-                font=("Segoe UI", 10),
+                font=FONT_CONTROL,
                 anchor="center",
                 padx=14,
                 pady=7,
@@ -352,36 +362,26 @@ class SettingsMixin:
         layout_page = pages["layout"]
         shortcuts_page = pages["shortcuts"]
         plugins_page = pages["plugins"]
-        general_section_label = tk.Label(general_page, text=t("settings.section.general"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
-        general_section_label.pack(fill="x", padx=18, pady=(2, 10))
-        appearance_section_label = tk.Label(appearance_page, text=t("settings.section.appearance"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
-        appearance_section_label.pack(fill="x", padx=18, pady=(2, 10))
-        layout_section_label = tk.Label(layout_page, text=t("settings.section.layout"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
-        layout_section_label.pack(fill="x", padx=18, pady=(2, 10))
-        shortcuts_section_label = tk.Label(shortcuts_page, text=t("settings.section.shortcuts"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
-        shortcuts_section_label.pack(fill="x", padx=18, pady=(2, 4))
         shortcuts_hint_label = tk.Label(
             shortcuts_page,
             text=t("settings.shortcuts_hint"),
             bg=g["BG"],
             fg=g["MUTED"],
-            font=("Segoe UI", 9),
+            font=FONT_UI,
             anchor="w",
         )
-        shortcuts_hint_label.pack(fill="x", padx=18, pady=(0, 8))
-        plugins_section_label = tk.Label(plugins_page, text=t("settings.section.plugins"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 13, "bold"), anchor="w")
-        plugins_section_label.pack(fill="x", padx=18, pady=(2, 4))
+        shortcuts_hint_label.pack(fill="x", padx=18, pady=(2, 8))
         plugins_hint_label = tk.Label(
             plugins_page,
             text=t("settings.plugins_hint"),
             bg=g["BG"],
             fg=g["MUTED"],
-            font=("Segoe UI", 9),
+            font=FONT_UI,
             anchor="w",
             justify="left",
             wraplength=520,
         )
-        plugins_hint_label.pack(fill="x", padx=18, pady=(0, 10))
+        plugins_hint_label.pack(fill="x", padx=18, pady=(2, 10))
         show_settings_page("general")
 
         def dropdown_control(
@@ -408,7 +408,7 @@ class SettingsMixin:
                 text=variable.get(),
                 bg=g["SURFACE"],
                 fg=g["TEXT"],
-                font=("Segoe UI", 10),
+                font=FONT_CONTROL,
                 anchor="w",
                 cursor="hand2",
             )
@@ -441,7 +441,7 @@ class SettingsMixin:
                     try:
                         value_label.configure(font=(value or "Segoe UI", 10))
                     except tk.TclError:
-                        value_label.configure(font=("Segoe UI", 10))
+                        value_label.configure(font=FONT_CONTROL)
 
             def close_dropdown() -> None:
                 if not state["open"]:
@@ -493,7 +493,7 @@ class SettingsMixin:
                     highlightthickness=0,
                     activestyle="none",
                     exportselection=False,
-                    font=("Segoe UI", 10),
+                    font=FONT_CONTROL,
                     height=rows,
                 )
                 scroll_canvas = tk.Canvas(
@@ -650,7 +650,7 @@ class SettingsMixin:
             text=t("settings.language"),
             bg=g["BG"],
             fg=g["TEXT"],
-            font=("Segoe UI", 10),
+            font=FONT_CONTROL,
             anchor="w",
         )
         language_label.pack(fill="x", pady=(0, 6))
@@ -736,7 +736,7 @@ class SettingsMixin:
                 text=command_label(command_id),
                 bg=g["BG"],
                 fg=g["TEXT"],
-                font=("Segoe UI", 9),
+                font=FONT_CONTROL,
                 width=25,
                 anchor="w",
             )
@@ -747,7 +747,7 @@ class SettingsMixin:
                 fg=g["TEXT"],
                 insertbackground=g["TEXT"],
                 relief="flat",
-                font=("Segoe UI", 9),
+                font=FONT_CONTROL,
             )
             shortcut_entry.insert(0, format_hotkey_display(current_shortcuts.get(command_id, "")))
             shortcut_entry.pack(side="left", fill="x", expand=True, ipady=4)
@@ -904,7 +904,7 @@ class SettingsMixin:
                 elif state == "disabled":
                     toggle_button.configure(text=t("settings.plugins.enable"), state=tk.NORMAL)
                     remove_button.configure(text=t("settings.plugins.remove"), state=tk.NORMAL)
-                    shortcut_button.configure(text=t("settings.record"), state=tk.DISABLED if not plugin.entrypoint else tk.NORMAL)
+                    shortcut_button.configure(text=t("settings.record"), state=tk.DISABLED)
                 else:
                     toggle_button.configure(text=t("settings.plugins.disable"), state=tk.NORMAL)
                     remove_button.configure(text=t("settings.plugins.remove"), state=tk.NORMAL)
@@ -928,11 +928,15 @@ class SettingsMixin:
             else:
                 disable_plugin(self.config, plugin_id)
                 msg.config(text=t("settings.plugins.msg.disabled"), fg=globals()["TEXT"])
+            self._register_sticky_notes_hotkey()
+            self._register_plugin_shortcuts()
             refresh_plugin_rows()
 
         def delete_plugin(plugin_id: str) -> None:
             remove_plugin(self.config, plugin_id)
             msg.config(text=t("settings.plugins.msg.removed"), fg=globals()["TEXT"])
+            self._register_sticky_notes_hotkey()
+            self._register_plugin_shortcuts()
             refresh_plugin_rows()
 
         for plugin in BUILTIN_PLUGINS:
@@ -945,24 +949,24 @@ class SettingsMixin:
                 pady=8,
             )
             plugin_frame.pack(fill="x", pady=5)
-            icon_label = tk.Label(plugin_frame, text=plugin.icon, bg=g["SURFACE"], fg=g["TEXT"], font=("Segoe UI Emoji", 18), width=3)
+            icon_label = tk.Label(plugin_frame, text=plugin.icon, bg=g["SURFACE"], fg=g["TEXT"], font=FONT_PLUGIN_ICON_SMALL, width=3)
             icon_label.pack(side="left", padx=(0, 8))
             text_frame = tk.Frame(plugin_frame, bg=g["SURFACE"])
             text_frame.pack(side="left", fill="x", expand=True)
-            title_label = tk.Label(text_frame, text=t(plugin.name_key), bg=g["SURFACE"], fg=g["TEXT"], font=("Segoe UI", 10, "bold"), anchor="w")
+            title_label = tk.Label(text_frame, text=t(plugin.name_key), bg=g["SURFACE"], fg=g["TEXT"], font=FONT_CARD_TITLE_STRONG, anchor="w")
             title_label.pack(fill="x")
             description_label = tk.Label(
                 text_frame,
                 text=t(plugin.description_key),
                 bg=g["SURFACE"],
                 fg=g["TEXT_SOFT"],
-                font=("Segoe UI", 8),
+                font=FONT_UI_SMALL,
                 anchor="w",
                 justify="left",
                 wraplength=320,
             )
             description_label.pack(fill="x", pady=(2, 0))
-            status_label = tk.Label(plugin_frame, text="", bg=g["SURFACE"], fg=g["MUTED"], font=("Segoe UI", 8), width=10)
+            status_label = tk.Label(plugin_frame, text="", bg=g["SURFACE"], fg=g["MUTED"], font=FONT_UI_SMALL, width=10)
             status_label.pack(side="left", padx=(8, 6))
             toggle_button = tk.Button(
                 plugin_frame,
@@ -993,7 +997,7 @@ class SettingsMixin:
                 text=plugin_shortcut_display(plugin.id) or t("settings.plugins.no_shortcut"),
                 bg=g["SURFACE"],
                 fg=g["TEXT"],
-                font=("Segoe UI", 9),
+                font=FONT_UI,
                 width=14,
                 anchor="w",
             )
@@ -1061,7 +1065,7 @@ class SettingsMixin:
             text=t("settings.backups", path=BACKUP_DIR),
             bg=g["BG"],
             fg=g["MUTED"],
-            font=("Segoe UI", 8),
+            font=FONT_UI_SMALL,
             anchor="w",
             wraplength=390,
             justify="left",
@@ -1160,7 +1164,7 @@ class SettingsMixin:
 
         position_frame = tk.Frame(layout_page, bg=g["BG"])
         position_frame.pack(fill="x", padx=18, pady=6)
-        position_label = tk.Label(position_frame, text=t("settings.app_position"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 10), width=16, anchor="w")
+        position_label = tk.Label(position_frame, text=t("settings.app_position"), bg=g["BG"], fg=g["TEXT"], font=FONT_CONTROL, width=16, anchor="w")
         position_label.pack(side="left")
         position_var = tk.StringVar(value=self.config.app_position)
         position_choices = tk.Frame(position_frame, bg=g["SURFACE"])
@@ -1179,7 +1183,7 @@ class SettingsMixin:
                     text=position_labels[key],
                     bg=_g["SIDEBAR_HOVER"] if selected else _g["SURFACE"],
                     fg=_g["TEXT"] if selected else _g["TEXT_SOFT"],
-                    font=("Segoe UI", 10, "bold" if selected else "normal"),
+                    font=FONT_CONTROL,
                     highlightbackground=_g["ACCENT_2"] if selected else _g["BORDER"],
                     highlightcolor=_g["ACCENT_2"] if selected else _g["BORDER"],
                     highlightthickness=2 if selected else 1,
@@ -1216,7 +1220,7 @@ class SettingsMixin:
                 text=label_text,
                 bg=_g["SURFACE"],
                 fg=_g["TEXT_SOFT"],
-                font=("Segoe UI", 10),
+                font=FONT_CONTROL,
                 cursor="hand2",
                 pady=5,
                 highlightthickness=1,
@@ -1234,7 +1238,7 @@ class SettingsMixin:
             text=t("settings.color_theme"),
             bg=g["BG"],
             fg=g["TEXT"],
-            font=("Segoe UI", 10),
+            font=FONT_CONTROL,
             width=16,
             anchor="nw",
             pady=7,
@@ -1266,7 +1270,7 @@ class SettingsMixin:
                     text=palette["NAME"],
                     bg=tile_bg,
                     fg=_g["TEXT"] if selected else _g["TEXT_SOFT"],
-                    font=("Segoe UI", 9, "bold" if selected else "normal"),
+                    font=FONT_UI,
                 )
 
         def select_theme(value: str) -> None:
@@ -1310,7 +1314,7 @@ class SettingsMixin:
                 text=palette["NAME"],
                 bg=_g["SURFACE"],
                 fg=_g["TEXT_SOFT"],
-                font=("Segoe UI", 9),
+                font=FONT_UI,
                 anchor="w",
                 cursor="hand2",
             )
@@ -1327,7 +1331,7 @@ class SettingsMixin:
             text=t("settings.typography"),
             bg=g["BG"],
             fg=g["TEXT"],
-            font=("Segoe UI", 10),
+            font=FONT_CONTROL,
             anchor="w",
         )
         typography_label.pack(fill="x", pady=(0, 6))
@@ -1370,7 +1374,7 @@ class SettingsMixin:
             text="-",
             bg=g["SURFACE_2"],
             fg=g["TEXT_SOFT"],
-            font=("Segoe UI", 12, "bold"),
+            font=FONT_PREVIEW_TITLE,
             padx=10,
             pady=4,
             cursor="hand2",
@@ -1380,7 +1384,7 @@ class SettingsMixin:
             text=str(font_size_var.get()),
             bg=g["SURFACE_2"],
             fg=g["TEXT"],
-            font=("Segoe UI", 10, "bold"),
+            font=FONT_PREVIEW_LABEL,
             width=3,
             pady=6,
         )
@@ -1389,7 +1393,7 @@ class SettingsMixin:
             text="+",
             bg=g["SURFACE_2"],
             fg=g["TEXT_SOFT"],
-            font=("Segoe UI", 12, "bold"),
+            font=FONT_PREVIEW_TITLE,
             padx=10,
             pady=4,
             cursor="hand2",
@@ -1451,7 +1455,7 @@ class SettingsMixin:
             text="",
             bg=g["BG"],
             fg=g["MUTED"],
-            font=("Segoe UI", 9),
+            font=FONT_UI,
             anchor="w",
         )
         width_hint.pack(fill="x", padx=18, pady=(0, 6))
@@ -1546,7 +1550,7 @@ class SettingsMixin:
             text=t("settings.opacity"),
             bg=g["BG"],
             fg=g["TEXT"],
-            font=("Segoe UI", 10),
+            font=FONT_CONTROL,
             width=16,
             anchor="w",
         )
@@ -1557,7 +1561,7 @@ class SettingsMixin:
             text=f"{round(self.config.alpha * 100)}%",
             bg=g["BG"],
             fg=g["TEXT_SOFT"],
-            font=("Segoe UI", 9),
+            font=FONT_UI,
             width=5,
             anchor="e",
         )
@@ -1704,7 +1708,7 @@ class SettingsMixin:
                     text=t(text_key),
                     bg=_g["SURFACE"],
                     fg=_g["TEXT"] if selected else _g["TEXT_SOFT"],
-                    font=("Segoe UI", 9),
+                    font=FONT_UI,
                 )
 
         def add_setting_toggle(text_key: str, var: tk.BooleanVar) -> None:
@@ -1726,7 +1730,7 @@ class SettingsMixin:
                 text=t(text_key),
                 bg=_g["SURFACE"],
                 fg=_g["TEXT"],
-                font=("Segoe UI", 9),
+                font=FONT_UI,
                 anchor="w",
                 cursor="hand2",
             )
@@ -1765,12 +1769,7 @@ class SettingsMixin:
         def refresh_settings_language() -> None:
             win.title(t("settings.window_title", app=APP_NAME))
             settings_title_label.configure(text=t("settings.title"))
-            general_section_label.configure(text=t("settings.section.general"))
-            appearance_section_label.configure(text=t("settings.section.appearance"))
-            layout_section_label.configure(text=t("settings.section.layout"))
-            shortcuts_section_label.configure(text=t("settings.section.shortcuts"))
             shortcuts_hint_label.configure(text=t("settings.shortcuts_hint"))
-            plugins_section_label.configure(text=t("settings.section.plugins"))
             plugins_hint_label.configure(text=t("settings.plugins_hint"))
             for key, button in page_buttons.items():
                 button.configure(text=t(f"settings.page.{key}"))

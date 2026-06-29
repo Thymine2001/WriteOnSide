@@ -8,6 +8,7 @@ from writeonside_app.dragdrop import compact_paths, format_paths_for_drag
 from writeonside_app.file_labels import colors_for_path
 from writeonside_app.platform import reveal_in_file_explorer
 from writeonside_app.ui.explorer import ExplorerMixin, natural_sort_key
+from writeonside_app.ui.notes import NotesMixin
 
 
 class ExplorerClipboardTests(unittest.TestCase):
@@ -53,6 +54,75 @@ class ExplorerClipboardTests(unittest.TestCase):
 
             self.assertTrue((parent / "Alpha").is_dir())
             self.assertEqual(("status.folder_created", {"name": "Alpha"}), app.created_status)
+
+    def test_create_note_uses_context_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            parent = root / "Projects"
+            parent.mkdir()
+
+            class NoteHarness(NotesMixin):
+                def __init__(self) -> None:
+                    self.opened_path = None
+                    self.marked_path = None
+                    self.refreshed = False
+                    self.wiki_refreshed = False
+
+                def _workspace_dir(self) -> Path:
+                    return root
+
+                def _is_in_workspace(self, path: Path) -> bool:
+                    return path.resolve().is_relative_to(root)
+
+                def _save_note(self, _show_indicator: bool) -> None:
+                    return
+
+                def _ask_new_note_name(self) -> str:
+                    return "Idea.md"
+
+                def _mark_vault_internal_write(self, path: Path) -> None:
+                    self.marked_path = path
+
+                def _open_note_file(self, path: Path) -> None:
+                    self.opened_path = path
+
+                def _refresh_explorer(self) -> None:
+                    self.refreshed = True
+
+                def _schedule_wiki_index_refresh(self) -> None:
+                    self.wiki_refreshed = True
+
+                def _set_error(self, _text: str) -> None:
+                    self.fail("Note creation unexpectedly failed")
+
+            app = NoteHarness()
+            app._create_new_note(parent)
+
+            expected = parent / "Idea.md"
+            self.assertTrue(expected.is_file())
+            self.assertEqual(expected, app.marked_path)
+            self.assertEqual(expected, app.opened_path)
+            self.assertTrue(app.refreshed)
+            self.assertTrue(app.wiki_refreshed)
+
+    def test_explorer_destination_for_context_file_is_parent_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            parent = root / "Projects"
+            parent.mkdir()
+            note = parent / "Existing.md"
+            note.write_text("body", encoding="utf-8")
+
+            class DestinationHarness(ExplorerMixin):
+                def _workspace_dir(self) -> Path:
+                    return root
+
+                def _is_dummy_id(self, _item: str) -> bool:
+                    return False
+
+            app = DestinationHarness()
+
+            self.assertEqual(parent, app._explorer_paste_destination(str(note)))
 
     def test_compact_paths_drops_nested_selection(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -15,9 +15,12 @@ executables produced from that source using `WriteOnSide.spec`.
 | Tcl/Tk | 8.6 | Tkinter GUI runtime | [`tcl-tk-license.txt`](licenses/tcl-tk-license.txt) |
 | keyboard | 0.13.5 | Global keyboard shortcuts | [`keyboard-MIT.txt`](licenses/keyboard-MIT.txt) |
 | Pillow | 12.2.0 | Image loading, rendering, and icon generation | [`pillow-MIT-CMU.txt`](licenses/pillow-MIT-CMU.txt) |
+| pypdfium2 | 5.10.1 | Python bindings for PDF preview rendering | [`pypdfium2-BSD-3-Clause.txt`](licenses/pypdfium2-BSD-3-Clause.txt), [`watchdog-Apache-2.0.txt`](licenses/watchdog-Apache-2.0.txt) |
+| PDFium / pypdfium2_raw | bundled with pypdfium2 5.10.1 | Native PDF rendering library used by pypdfium2 | [`pdfium-BSD-Apache.txt`](licenses/pdfium-BSD-Apache.txt), [`watchdog-Apache-2.0.txt`](licenses/watchdog-Apache-2.0.txt) |
 | Pygments | 2.19.2 | Syntax highlighting for fenced code blocks | [`pygments-BSD-2-Clause.txt`](licenses/pygments-BSD-2-Clause.txt) |
 | pystray | 0.19.5 | Windows system tray integration | [`pystray-LGPL-3.0.txt`](licenses/pystray-LGPL-3.0.txt) |
 | six | 1.17.0 | Compatibility dependency used by pystray | [`six-MIT.txt`](licenses/six-MIT.txt) |
+| svg2png-py | 1.1.0 | SVG image rendering | [`svg2png-py-MIT.txt`](licenses/svg2png-py-MIT.txt) |
 | tkinterdnd2 | 0.5.0 | Tkinter drag-and-drop wrapper | [`tkinterdnd2-MIT.txt`](licenses/tkinterdnd2-MIT.txt) |
 | tkDnD | 2.9.x | Native drag-and-drop extension bundled by tkinterdnd2 | [`tkdnd-license.txt`](licenses/tkdnd-license.txt) |
 | watchdog | 6.0.0 | File-system change monitoring for note vault refreshes | [`watchdog-Apache-2.0.txt`](licenses/watchdog-Apache-2.0.txt) |

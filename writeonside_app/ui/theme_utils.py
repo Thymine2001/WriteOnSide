@@ -219,6 +219,9 @@ class ThemeMixin:
                 btn._normal_fg = palette["MUTED"]
             except tk.TclError:
                 pass
+        update_frontmatter = getattr(self, "_update_frontmatter_button_state", None)
+        if update_frontmatter is not None:
+            update_frontmatter()
 
     def _suspend_theme_redraw(self, roots: list[tk.Misc]) -> list[int]:
         window_handle = getattr(self, "_window_handle", None)

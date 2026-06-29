@@ -46,7 +46,7 @@ MESSAGES = {
     "cmd.backlinks": "बैकलिंक",
     "cmd.find": "खोजें",
     "cmd.replace": "खोजें और बदलें",
-    "cmd.frontmatter": "YAML Front Matter बनाएँ",
+    "cmd.frontmatter": "YAML Front Matter दिखाएँ/छिपाएँ",
     "cmd.bold": "मोटा",
     "cmd.italic": "तिरछा",
     "cmd.underline": "रेखांकित",

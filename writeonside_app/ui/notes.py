@@ -37,8 +37,9 @@ class NotesMixin:
 
     # ── Note CRUD ────────────────────────────────────────────────────────────
 
-    def _new_note_path(self, suggested: str = "Untitled.md") -> Path:
-        return unique_note_path(self._workspace_dir(), suggested)
+    def _new_note_path(self, suggested: str = "Untitled.md", parent: Path | None = None) -> Path:
+        base = parent if parent is not None else self._workspace_dir()
+        return unique_note_path(base, suggested)
 
     def _ask_new_item_name(self, title: str, prompt: str, initial_value: str = "") -> str | None:
         return self._ask_text_dialog(title, prompt, initial_value)
@@ -50,12 +51,17 @@ class NotesMixin:
             "Untitled.md",
         )
 
-    def _create_new_note(self) -> None:
+    def _create_new_note(self, parent: Path | None = None) -> None:
         self._save_note(False)
         name = self._ask_new_note_name()
         if name is None:
             return
-        path = self._new_note_path(name)
+        if parent is not None:
+            parent = parent.expanduser().resolve()
+            if not parent.is_dir() or not self._is_in_workspace(parent):
+                self._set_error(t("error.explorer_outside_workspace"))
+                return
+        path = self._new_note_path(name, parent)
         try:
             self._mark_vault_internal_write(path)
             safe_write_text(path, note_template(path))

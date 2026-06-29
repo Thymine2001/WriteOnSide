@@ -59,6 +59,33 @@ class PdfPreviewTests(unittest.TestCase):
         finally:
             root.destroy()
 
+    def test_svg_file_preview_renders_as_image(self) -> None:
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tk is unavailable: {exc}")
+        root.withdraw()
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                svg = Path(temp_dir) / "diagram.svg"
+                svg.write_text(
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="16">'
+                    '<rect width="24" height="16" fill="#336699"/>'
+                    "</svg>",
+                    encoding="utf-8",
+                )
+                widget = tk.Text(root, width=60, height=20)
+                widget.pack()
+                root.update_idletasks()
+
+                result = render_file_preview(widget, svg)
+
+                self.assertEqual("image", result)
+                self.assertEqual(1, len(widget._file_preview_images))
+                self.assertIn("24 x 16", widget.get("1.0", "end-1c"))
+        finally:
+            root.destroy()
+
     def test_pdf_block_frame_uses_text_width(self) -> None:
         try:
             root = tk.Tk()

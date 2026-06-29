@@ -1,11 +1,27 @@
 """Bundle only the image decoders that WriteOnSide exposes on Windows."""
 
 hiddenimports = [
+    "PIL.BlpImagePlugin",
     "PIL.BmpImagePlugin",
+    "PIL.CurImagePlugin",
+    "PIL.DdsImagePlugin",
+    "PIL.EpsImagePlugin",
     "PIL.GifImagePlugin",
+    "PIL.IcnsImagePlugin",
     "PIL.IcoImagePlugin",
+    "PIL.Jpeg2KImagePlugin",
     "PIL.JpegImagePlugin",
+    "PIL.MpoImagePlugin",
+    "PIL.MspImagePlugin",
+    "PIL.PcxImagePlugin",
     "PIL.PngImagePlugin",
+    "PIL.PpmImagePlugin",
+    "PIL.PsdImagePlugin",
+    "PIL.QoiImagePlugin",
+    "PIL.SgiImagePlugin",
+    "PIL.TgaImagePlugin",
     "PIL.TiffImagePlugin",
     "PIL.WebPImagePlugin",
+    "PIL.XbmImagePlugin",
+    "PIL.XpmImagePlugin",
 ]

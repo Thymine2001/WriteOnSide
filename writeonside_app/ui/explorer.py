@@ -2148,7 +2148,10 @@ class ExplorerMixin:
             activeforeground=g["TEXT"],
             font=("Segoe UI", 10),
         )
-        menu.add_command(label=t("explorer.menu.new_note"), command=self._create_new_note)
+        menu.add_command(
+            label=t("explorer.menu.new_note"),
+            command=lambda: self._create_new_note(self._explorer_paste_destination(item)),
+        )
         menu.add_command(
             label=t("explorer.menu.new_folder"),
             command=lambda: self._create_explorer_folder(item),

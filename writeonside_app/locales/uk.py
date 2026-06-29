@@ -46,7 +46,7 @@ MESSAGES = {
     "cmd.backlinks": "Зворотні посилання",
     "cmd.find": "Знайти",
     "cmd.replace": "Знайти та замінити",
-    "cmd.frontmatter": "Створити YAML Front Matter",
+    "cmd.frontmatter": "Показати/приховати YAML Front Matter",
     "cmd.bold": "Жирний",
     "cmd.italic": "Курсив",
     "cmd.underline": "Підкреслений",

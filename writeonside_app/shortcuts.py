@@ -14,7 +14,7 @@ COMMAND_SHORTCUTS = {
     "backlinks": ("Backlinks", "ctrl+shift+b"),
     "find": ("Find", "ctrl+f"),
     "replace": ("Find and replace", "ctrl+h"),
-    "frontmatter": ("Create YAML Front Matter", "ctrl+alt+y"),
+    "frontmatter": ("Show/hide YAML Front Matter", "ctrl+alt+y"),
     "bold": ("Bold", "ctrl+b"),
     "italic": ("Italic", "ctrl+i"),
     "underline": ("Underline", "ctrl+u"),

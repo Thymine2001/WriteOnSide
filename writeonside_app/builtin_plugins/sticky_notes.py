@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import time
 from datetime import date, datetime
 from pathlib import Path
 import tkinter as tk
+from urllib.parse import unquote
 
 from PIL import Image, ImageGrab, ImageTk
+from tkinterdnd2 import DND_FILES, DND_TEXT
 
 from ..config import save_config
+from ..dragdrop import is_image_path, is_image_url, is_url, local_path_from_drop, split_drop_data
 from ..frontmatter import build_front_matter, parse_front_matter, split_front_matter
 from ..image_safety import load_thumbnail_image
 from ..i18n import t
@@ -119,6 +123,11 @@ def unique_sticky_path_for_title(folder: Path, title: str, current: Path | None 
 def safe_attachment_name(name: str) -> str:
     cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", name).strip().strip(".")
     return cleaned or "attachment"
+
+
+def sticky_attachment_markdown(target: Path, relative_path: str, *, image: bool) -> str:
+    label = target.stem.replace("_", " ")
+    return f"![{label}]({relative_path})" if image else f"[{target.name}]({relative_path})"
 
 
 def open_sticky_notes(app, *, force_new_window: bool = False, create_new_note: bool = False, path: Path | None = None) -> None:
@@ -332,6 +341,7 @@ class StickyNotesWindow:
         self.text.bind("<Control-V>", self.paste_from_clipboard)
         self.text.bind("<ButtonPress-1>", lambda _event: activate(self.text), add="+")
         self.text.bind("<Configure>", lambda _event: self.schedule_image_preview_resize(), add="+")
+        self.register_drop_target(self.text)
 
         footer = tk.Frame(shell, bg=g["BG"])
         footer.pack(fill="x", padx=12, pady=(0, 9))
@@ -622,6 +632,90 @@ class StickyNotesWindow:
         except (OSError, ValueError):
             return target.as_posix()
 
+    def copy_attachment(self, source: Path) -> Path | None:
+        folder = self.attachment_folder()
+        if folder is None:
+            self.status.configure(text=t("error.attachments_need_note"), fg=globals()["DANGER"])
+            return None
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            target = self.unique_attachment_path(folder, source.name)
+            shutil.copy2(source, target)
+            return target
+        except OSError as exc:
+            self.status.configure(text=t("error.attachment_failed", exc=exc), fg=globals()["DANGER"])
+            return None
+
+    def insert_attachment_markdown(self, target: Path, *, image: bool) -> None:
+        rel = self.markdown_relative_path(target)
+        snippet = sticky_attachment_markdown(target, rel, image=image)
+        if self.text.compare("insert", "!=", "1.0"):
+            before = self.text.get("insert -1c", "insert")
+            if before not in {"", "\n"}:
+                self.text.insert("insert", "\n")
+        self.text.insert("insert", f"{snippet}\n")
+
+    def register_drop_target(self, widget: tk.Misc) -> None:
+        try:
+            widget.drop_target_register(DND_FILES, DND_TEXT)
+            widget.dnd_bind("<<Drop>>", self.on_drop)
+        except (AttributeError, tk.TclError):
+            pass
+
+    def drop_index(self) -> str:
+        x = self.text.winfo_pointerx() - self.text.winfo_rootx()
+        y = self.text.winfo_pointery() - self.text.winfo_rooty()
+        return self.text.index(f"@{max(0, x)},{max(0, y)}")
+
+    def insert_dropped_text(self, value: str) -> bool:
+        value = value.strip()
+        if not value:
+            return False
+        if is_image_url(value):
+            self.text.insert("insert", f"![]({value})\n")
+        elif is_url(value):
+            self.text.insert("insert", f"[{value}]({value})\n")
+        else:
+            self.text.insert("insert", value)
+        return True
+
+    def on_drop(self, event):
+        drop_widget = getattr(event, "widget", None)
+        if not hasattr(drop_widget, "tk"):
+            drop_widget = self.text
+        values = split_drop_data(drop_widget, event.data)
+        if not any(
+            (path := local_path_from_drop(value)) is not None and path.exists()
+            for value in values
+        ):
+            values = [str(event.data).strip()]
+
+        self.save_now()
+        self.clear_image_previews()
+        self.text.mark_set(tk.INSERT, self.drop_index())
+        inserted = 0
+        for value in values:
+            source = local_path_from_drop(value)
+            if source and source.is_file():
+                target = self.copy_attachment(source)
+                if target:
+                    self.insert_attachment_markdown(target, image=is_image_path(target))
+                    inserted += 1
+                continue
+            if source and source.is_dir():
+                continue
+            if self.insert_dropped_text(value):
+                inserted += 1
+
+        if inserted:
+            self.text.focus_set()
+            self.status.configure(text=t("status.inserted_items", count=inserted), fg=globals()["MUTED"])
+            self.refresh_image_previews()
+            self.save_now()
+        else:
+            self.status.configure(text=t("error.nothing_supported_drop"), fg=globals()["DANGER"])
+        return getattr(event, "action", None)
+
     def paste_from_clipboard(self, _event=None):
         if self.save_clipboard_image():
             return "break"
@@ -685,14 +779,17 @@ class StickyNotesWindow:
     def resolve_markdown_image_path(self, raw_path: str) -> Path | None:
         if self.path is None:
             return None
-        cleaned = raw_path.strip().strip("<>").replace("%20", " ")
+        cleaned = unquote(raw_path.strip().strip("<>"))
         is_windows_drive = bool(re.match(r"^[a-zA-Z]:[\\/]", cleaned))
         if not is_windows_drive and re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", cleaned):
             return None
         path = Path(cleaned)
         if not path.is_absolute():
             path = self.path.parent / path
-        return path
+        try:
+            return path.resolve()
+        except OSError:
+            return path
 
     def refresh_image_previews(self) -> None:
         self._image_preview_after = None

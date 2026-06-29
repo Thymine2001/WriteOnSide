@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import colorchooser
 
 from ..config import APP_NAME, save_config
-from ..format_icons import FORMAT_MDL2_FONT, FORMAT_MDL2_ICONS, format_menu_label
+from ..format_icons import FORMAT_MDL2_FONT, FORMAT_MDL2_ICONS
 from ..frontmatter import ensure_complete_front_matter, split_front_matter
 from ..i18n import command_label, t
 from ..editor_images import (
@@ -54,6 +54,7 @@ READ_MODE_PAGE_LINES = 600
 TYPE_COMPLETION_MIN_PREFIX = 3
 TYPE_COMPLETION_MAX_SCAN_CHARS = 600_000
 TYPE_COMPLETION_WORD_RE = re.compile(r"[A-Za-z][A-Za-z'-]{2,}[A-Za-z]")
+FRONTMATTER_HIDDEN_TAG = "md_frontmatter_hidden"
 
 
 def _plain_heading_text_value(text: str) -> str:
@@ -78,6 +79,13 @@ def _iter_lines_without_list(content: str):
         yield line_no, content[start:end]
         start = end + 1
         line_no += 1
+
+
+def _frontmatter_prefix_line_count(content: str) -> int:
+    header, body = split_front_matter(content)
+    if header is None:
+        return 0
+    return content[: len(content) - len(body)].count("\n")
 
 
 def _set_text_undo_temporarily(widget: tk.Text, enabled: bool) -> object | None:
@@ -242,6 +250,7 @@ class EditorMixin:
         self.text.tag_configure("md_comment", foreground=g["DISABLED"], overstrike=True)
         self.text.tag_configure("md_live_marker_elide", elide=True)
         self.text.tag_configure(EDITOR_IMAGE_ELIDE_TAG, elide=True)
+        self.text.tag_configure(FRONTMATTER_HIDDEN_TAG, elide=not getattr(self, "_frontmatter_visible", False))
         # Keep find/selection highlights above the content tags, otherwise
         # md_code / md_highlight backgrounds hide them
         for tag in ("find_match", "find_current", "outline_current", "sel"):
@@ -257,11 +266,66 @@ class EditorMixin:
         for tag in ("source_code", *_MD_EDITOR_TAGS, *getattr(self, "_editor_color_tags", set())):
             self.text.tag_remove(tag, "1.0", tk.END)
         self._editor_color_tags.clear()
+        self.text.tag_remove(FRONTMATTER_HIDDEN_TAG, "1.0", tk.END)
+
+    def _set_frontmatter_visible(self, visible: bool) -> None:
+        self._frontmatter_visible = bool(visible)
+        self._sync_frontmatter_visibility()
+        self._update_frontmatter_button_state()
+        self._schedule_editor_structure_refresh()
+
+    def _update_frontmatter_button_state(self) -> None:
+        buttons = getattr(self, "_format_buttons", {})
+        btn = buttons.get("frontmatter") if isinstance(buttons, dict) else None
+        if btn is None:
+            return
+        editable_markdown = (
+            getattr(self, "preview_path", None) is None
+            and getattr(self, "view_mode", "") == "edit"
+            and self._is_markdown_document()
+        )
+        if not editable_markdown:
+            return
+        active = getattr(self, "_frontmatter_visible", False)
+        g = globals()
+        if active:
+            bg = g["ACCENT"]
+            fg = self._contrast_text(g["ACCENT"])
+        else:
+            bg = g["SURFACE_2"]
+            fg = g["MUTED"]
+        try:
+            btn.configure(bg=bg, fg=fg)
+            btn._normal_bg = bg
+            btn._normal_fg = fg
+        except tk.TclError:
+            pass
+
+    def _sync_frontmatter_visibility(self) -> None:
+        if not hasattr(self, "text"):
+            return
+        try:
+            self.text.tag_remove(FRONTMATTER_HIDDEN_TAG, "1.0", tk.END)
+        except tk.TclError:
+            return
+        if not self._is_markdown_document() or self._showing_placeholder:
+            return
+        content = self._get_editor_content()
+        prefix_lines = _frontmatter_prefix_line_count(content)
+        if not prefix_lines:
+            return
+        try:
+            self.text.tag_configure(FRONTMATTER_HIDDEN_TAG, elide=not getattr(self, "_frontmatter_visible", False))
+            self.text.tag_add(FRONTMATTER_HIDDEN_TAG, "1.0", f"{prefix_lines + 1}.0")
+            self.text.tag_raise("sel")
+        except tk.TclError:
+            pass
 
     def _clear_editor_markdown_only_tags(self) -> None:
         self._clear_editor_image_previews()
         for tag in _MD_EDITOR_TAGS:
             self.text.tag_remove(tag, "1.0", tk.END)
+        self.text.tag_remove(FRONTMATTER_HIDDEN_TAG, "1.0", tk.END)
 
     def _clear_editor_source_tags(self, start: str, end: str) -> None:
         for tag in ("source_code", *getattr(self, "_editor_color_tags", set())):
@@ -414,6 +478,7 @@ class EditorMixin:
                 editor_color_tags=self._editor_color_tags,
             )
             self._clear_editor_image_previews()
+            self._sync_frontmatter_visibility()
             self._schedule_editor_structure_refresh(reapply_folds=True)
             return
 
@@ -440,6 +505,7 @@ class EditorMixin:
                 self.text.tag_raise(tag)
             except tk.TclError:
                 pass
+        self._sync_frontmatter_visibility()
         self._apply_editor_image_previews(content)
         self._schedule_editor_structure_refresh(reapply_folds=True)
 
@@ -878,6 +944,8 @@ class EditorMixin:
         self._read_fragment_end_line = 1
         self._read_fragment_anchor_line = 1
         self._showing_placeholder = False
+        if reset_undo:
+            self._frontmatter_visible = False
         self._editor_image_editing_keys.clear()
         self._editor_image_preview_state = None
         metrics = metrics_for_content(content)
@@ -900,6 +968,7 @@ class EditorMixin:
         else:
             self._rebuild_outline_cache(content)
         self._apply_live_render()
+        self._sync_frontmatter_visibility()
         self._schedule_editor_structure_refresh(reapply_folds=True)
 
     def _on_text_modified(self, _event) -> None:
@@ -1246,6 +1315,9 @@ class EditorMixin:
         )
 
     def _ensure_current_front_matter(self) -> None:
+        self._toggle_current_front_matter()
+
+    def _toggle_current_front_matter(self) -> None:
         if self.preview_path is not None:
             self._close_file_preview(restore_note=True)
         if self.view_mode != "edit":
@@ -1264,11 +1336,17 @@ class EditorMixin:
             self._schedule_live_render()
             self._schedule_autosave()
             header, body = split_front_matter(content)
+        next_visible = not getattr(self, "_frontmatter_visible", False)
+        self._set_frontmatter_visible(next_visible)
         span = max(1, len(content) - len(body))
         self.text.tag_remove(tk.SEL, "1.0", tk.END)
-        self.text.tag_add(tk.SEL, "1.0", f"1.0+{span}c")
-        self.text.mark_set(tk.INSERT, f"1.0+{span}c")
-        self.text.see("1.0")
+        if next_visible:
+            self.text.tag_add(tk.SEL, "1.0", f"1.0+{span}c")
+            self.text.mark_set(tk.INSERT, f"1.0+{span}c")
+            self.text.see("1.0")
+        elif self.text.compare(tk.INSERT, "<", f"1.0+{span}c"):
+            self.text.mark_set(tk.INSERT, f"1.0+{span}c")
+            self.text.see(tk.INSERT)
         self.text.focus_set()
 
     def _copy_selected_text(self) -> None:
@@ -1300,6 +1378,15 @@ class EditorMixin:
         self.text.focus_set()
 
     # ── Heading / more-format popups ─────────────────────────────────────────
+
+    def _compact_format_menu_label(self, key: str, glyph: str, text: str) -> str:
+        short_labels = {
+            "frontmatter": "YAML",
+            "paste_clipboard_image": "Paste image",
+            "clear_formatting": "Clear",
+            "attachment": "Attachment",
+        }
+        return f"{glyph} {short_labels.get(key, text)}"
 
     def _show_heading_popup(self, anchor: tk.Widget) -> None:
         self._hide_tooltip()
@@ -1395,6 +1482,7 @@ class EditorMixin:
     def _show_more_format_popup(self, anchor: tk.Widget) -> None:
         self._hide_tooltip()
         g = globals()
+        quick_anchor = anchor is getattr(self, "quick_more_btn", None)
         menu = tk.Menu(
             self.root,
             tearoff=False,
@@ -1402,14 +1490,17 @@ class EditorMixin:
             fg=g["TEXT"],
             activebackground=g["ACCENT"],
             activeforeground=self._contrast_text(g["ACCENT"]),
-            borderwidth=1,
+            borderwidth=0,
+            activeborderwidth=0,
             relief="solid",
-            font=("Segoe UI", 11),
+            font=("Segoe UI", 9),
         )
         visible = getattr(self, "_visible_format_keys", set())
-        quick_anchor = anchor is getattr(self, "quick_more_btn", None)
-        quick_visible = {"bold", "italic", "underline", "strike", "heading", "highlight", "code", "link"} if quick_anchor else visible
+        quick_visible = {"bold", "italic", "underline", "strike", "color"} if quick_anchor else visible
+        quick_overflow = {"heading", "highlight", "code", "link", "quote", "bullet", "ordered", "task"}
         for key, glyph, command in self._format_actions:
+            if quick_anchor and key not in quick_overflow:
+                continue
             if key in quick_visible:
                 continue
             if key == "heading":
@@ -1417,32 +1508,46 @@ class EditorMixin:
             else:
                 action = command
             menu.add_command(
-                label=format_menu_label(glyph, command_label(key)),
+                label=self._compact_format_menu_label(key, glyph, command_label(key)),
                 command=lambda callback=action: self._finish_popup_format(callback),
             )
         menu.add_separator()
         menu.add_command(
-            label=format_menu_label("x²", t("cmd.superscript")),
+            label=self._compact_format_menu_label("superscript", "x²", t("cmd.superscript")),
             command=lambda: self._finish_popup_format(lambda: self._wrap_selection("<sup>", "</sup>", "text")),
         )
         menu.add_command(
-            label=format_menu_label("x₂", t("cmd.subscript")),
+            label=self._compact_format_menu_label("subscript", "x₂", t("cmd.subscript")),
             command=lambda: self._finish_popup_format(lambda: self._wrap_selection("<sub>", "</sub>", "text")),
         )
+        if not quick_anchor:
+            menu.add_separator()
+            menu.add_command(
+                label=self._compact_format_menu_label("attachment", FORMAT_MDL2_ICONS["attachment"], t("dialog.insert_attachment")),
+                command=lambda: self._finish_popup_format(self._insert_attachment_file),
+            )
+            menu.add_command(
+                label=self._compact_format_menu_label(
+                    "paste_clipboard_image",
+                    FORMAT_MDL2_ICONS["paste_clipboard_image"],
+                    t("cmd.paste_clipboard_image"),
+                ),
+                command=lambda: self._finish_popup_format(self._insert_clipboard_image),
+            )
         menu.add_separator()
         menu.add_command(
-            label=format_menu_label(FORMAT_MDL2_ICONS["attachment"], t("dialog.insert_attachment")),
-            command=lambda: self._finish_popup_format(self._insert_attachment_file),
-        )
-        menu.add_command(
-            label=format_menu_label(FORMAT_MDL2_ICONS["paste_clipboard_image"], t("cmd.paste_clipboard_image")),
-            command=lambda: self._finish_popup_format(self._insert_clipboard_image),
-        )
-        menu.add_command(
-            label=format_menu_label(FORMAT_MDL2_ICONS["clear_formatting"], t("cmd.clear_formatting")),
+            label=self._compact_format_menu_label("clear_formatting", FORMAT_MDL2_ICONS["clear_formatting"], t("cmd.clear_formatting")),
             command=lambda: self._finish_popup_format(self._clear_selected_markdown),
         )
-        menu.tk_popup(anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height() + 3)
+        menu.update_idletasks()
+        x = anchor.winfo_rootx()
+        y = anchor.winfo_rooty() + anchor.winfo_height() + 3
+        menu_width = max(140, menu.winfo_reqwidth())
+        menu_height = max(80, menu.winfo_reqheight())
+        x = max(self.work_left + 4, min(x, self.work_right - menu_width - 4))
+        if y + menu_height > self.work_bottom - 4:
+            y = max(self.work_top + 4, anchor.winfo_rooty() - menu_height - 3)
+        menu.tk_popup(x, y)
 
     def _finish_popup_format(self, command: Callable[[], None]) -> None:
         command()
@@ -1478,7 +1583,7 @@ class EditorMixin:
         else:
             button.bind("<Button-1>", lambda _e: command())
         button.bind("<Enter>", lambda _e: (button.config(bg=globals()["ACCENT"], fg=self._contrast_text(globals()["ACCENT"])), self._show_tooltip(button, tooltip)))
-        button.bind("<Leave>", lambda _e: (button.config(bg=globals()["SURFACE"], fg=globals()["TEXT_SOFT"]), self._hide_tooltip()))
+        button.bind("<Leave>", lambda _e: (button.config(bg=getattr(button, "_normal_bg", globals()["SURFACE"]), fg=getattr(button, "_normal_fg", globals()["TEXT_SOFT"])), self._hide_tooltip()))
         return button
 
     def _build_quick_format_toolbar(self) -> None:
@@ -1496,14 +1601,11 @@ class EditorMixin:
             ("I", "Italic", lambda: self._wrap_selection("*", "*", "italic"), False, True, "italic"),
             ("U", "Underline", lambda: self._wrap_selection("<u>", "</u>", "text"), False, True, "underline"),
             ("S", "Strikethrough", lambda: self._wrap_selection("~~", "~~", "text"), False, True, "strike"),
-            ("H", "Heading", lambda: self._show_heading_popup(self.quick_heading_btn), False, False, "heading"),
-            ("==", "Highlight", lambda: self._wrap_selection("==", "==", "text"), False, True, "highlight"),
-            ("<>", "Inline code / code block", self._smart_code_format, False, True, "code"),
-            ("🔗", "Link", lambda: self._wrap_selection("[", "](url)", "text"), False, True, "link"),
+            ("A", "Text color", lambda: self._show_text_color_popup(self.quick_color_btn), False, False, "color"),
             ("•••", "More formatting", lambda: self._show_more_format_popup(self.quick_more_btn), False, False, "more"),
         )
         for index, (label, tooltip, command, icon_font, close_after, key) in enumerate(actions):
-            if index in {1, 5, 9}:
+            if index in {1, 5, 6}:
                 tk.Frame(shell, bg=g["BORDER"], width=1).pack(side="left", fill="y", padx=3, pady=3)
             button = self._quick_format_button(shell, label, tooltip, command, icon_font, close_after)
             if key == "underline":
@@ -1512,9 +1614,14 @@ class EditorMixin:
                 button.configure(font=("Segoe UI", 10, "italic"))
             elif key == "link":
                 button.configure(font=("Segoe UI Emoji", 10))
+            elif key == "color":
+                button.configure(font=("Segoe UI", 10, "bold"), fg=g["ACCENT"])
+                button._normal_fg = g["ACCENT"]
             button.pack(side="left")
             if key == "heading":
                 self.quick_heading_btn = button
+            elif key == "color":
+                self.quick_color_btn = button
             elif key == "more":
                 self.quick_more_btn = button
         toolbar.bind("<Escape>", lambda _e: self._hide_quick_format())
@@ -2595,6 +2702,7 @@ class EditorMixin:
                 btn._normal_fg = g["DISABLED"]
             if relayout:
                 self._relayout_toolbar(force=True)
+            self._update_frontmatter_button_state()
             self._update_command_tooltips()
             return
         if self.preview_path is not None:
@@ -2612,6 +2720,7 @@ class EditorMixin:
                 btn._normal_fg = g["DISABLED"]
             if relayout:
                 self._relayout_toolbar(force=True)
+            self._update_frontmatter_button_state()
             self._update_command_tooltips()
             return
         if self.view_mode == "edit":
@@ -2644,6 +2753,7 @@ class EditorMixin:
                 btn._normal_fg = g["DISABLED"]
             if relayout:
                 self._relayout_toolbar(force=True)
+        self._update_frontmatter_button_state()
         self._update_command_tooltips()
 
     # ── Read mode copy ───────────────────────────────────────────────────────

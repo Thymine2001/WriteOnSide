@@ -156,7 +156,9 @@ Markdown, plain-text, log, CSV, web, configuration, data, script, and common
 source-code formats can be edited directly. This includes Python, JavaScript,
 TypeScript, HTML, CSS, JSON, YAML, TOML, PowerShell, shell scripts, C/C++, C#,
 Java, Kotlin, Rust, Go.
-Images in PNG, JPEG, GIF, BMP, WebP, TIFF, and ICO formats can be inserted or previewed.
+Images in PNG, APNG, JPEG/JFIF, GIF, BMP/DIB, WebP, TIFF, ICO/CUR,
+JPEG 2000, SVG/SVGZ, ICNS, DDS, PSD, TGA, PCX, PPM/PGM/PBM,
+QOI, XBM, XPM, and other Pillow-decodable formats can be inserted or previewed.
 Other files can be opened with their default Windows application.
 
 ## Privacy and data safety

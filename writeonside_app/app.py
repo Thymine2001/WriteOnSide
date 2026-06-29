@@ -282,14 +282,14 @@ class WriteOnSideApp(
         self.toolbar_sep.pack(side="left", fill="y", padx=8, pady=7)
 
         self._format_actions = [
-            ("frontmatter", "Y", self._ensure_current_front_matter),
+            ("frontmatter", "Y", self._toggle_current_front_matter),
             ("bold", "B", lambda: self._wrap_selection("**", "**", "bold")),
             ("italic", "I", lambda: self._wrap_selection("*", "*", "italic")),
             ("underline", "U", lambda: self._wrap_selection("<u>", "</u>", "text")),
             ("strike", "S", lambda: self._wrap_selection("~~", "~~", "text")),
+            ("color", "A", lambda: self._show_text_color_popup(self._format_buttons["color"])),
             ("heading", "H", lambda: self._show_heading_popup(self._format_buttons["heading"])),
             ("highlight", "==", lambda: self._wrap_selection("==", "==", "text")),
-            ("color", "A", lambda: self._show_text_color_popup(self._format_buttons["color"])),
             ("code", "</>", self._smart_code_format),
             ("quote", format_action_glyph("quote", "“"), lambda: self._line_prefix("> ")),
             ("link", "🔗", lambda: self._wrap_selection("[", "](url)", "text")),

@@ -7,6 +7,7 @@ from writeonside_app.builtin_plugins.sticky_notes import (
     next_sticky_path,
     safe_attachment_name,
     normalize_sticky_tags,
+    sticky_attachment_markdown,
     sticky_image_preview_bounds,
     sticky_window_geometry,
     sticky_note_content,
@@ -169,13 +170,40 @@ class StickyNotesPluginTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             window = StickyNotesWindow(DummyApp(workspace))
-            window.path = workspace / "Plugins" / "StickyNotes" / "New sticky note-2.md"
-            target = workspace / "Attachments" / "Plugins" / "StickyNotes" / "New sticky note-2" / "sticky.png"
+            window.path = workspace / "Plugins" / "StickyNotes" / "新便签-2.md"
+            target = workspace / "Attachments" / "Plugins" / "StickyNotes" / "新便签-2" / "sticky image.png"
 
             rel = window.markdown_relative_path(target)
 
-        self.assertEqual("../../Attachments/Plugins/StickyNotes/New sticky note-2/sticky.png", rel)
+        self.assertEqual("../../Attachments/Plugins/StickyNotes/新便签-2/sticky image.png", rel)
         self.assertNotIn(":", rel)
+
+    def test_sticky_attachment_markdown_formats_images_and_files(self) -> None:
+        image = sticky_attachment_markdown(Path("My image.png"), "../Attachments/新便签/My image.png", image=True)
+        document = sticky_attachment_markdown(Path("Report 2026.pdf"), "../Attachments/新便签/Report 2026.pdf", image=False)
+
+        self.assertEqual("![My image](../Attachments/新便签/My image.png)", image)
+        self.assertEqual("[Report 2026.pdf](../Attachments/新便签/Report 2026.pdf)", document)
+
+    def test_sticky_image_preview_decodes_existing_encoded_paths(self) -> None:
+        class DummyApp:
+            def __init__(self, workspace: Path) -> None:
+                self.workspace = workspace
+
+            def _workspace_dir(self) -> Path:
+                return self.workspace
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            note = workspace / "Plugins" / "StickyNotes" / "新便签-3.md"
+            window = StickyNotesWindow(DummyApp(workspace))
+            window.path = note
+
+            resolved = window.resolve_markdown_image_path(
+                "../../Attachments/Plugins/StickyNotes/%E6%96%B0%E4%BE%BF%E7%AD%BE-3/icon_light.jfif"
+            )
+
+        self.assertEqual(workspace / "Attachments" / "Plugins" / "StickyNotes" / "新便签-3" / "icon_light.jfif", resolved)
 
     def test_safe_attachment_name_preserves_png_suffix(self) -> None:
         self.assertEqual("sticky-20260623.png", safe_attachment_name("sticky-20260623.png"))

@@ -5,12 +5,16 @@ import tkinter as tk
 
 from ..i18n import t
 from ..platform import show_window_in_taskbar
-from ..plugins import enabled_plugins
+from ..plugins import BUILTIN_PLUGINS, enabled_plugins, plugin_status
 from ..theme import *  # noqa: F401,F403
+from .typography import FONT_CARD_TITLE, FONT_PLUGIN_ICON, FONT_UI, FONT_UI_SMALL, FONT_WINDOW_TITLE
 
 
 class PluginsMixin:
     def _run_plugin_entrypoint(self, entrypoint: str) -> None:
+        plugin = next((item for item in BUILTIN_PLUGINS if item.entrypoint == entrypoint), None)
+        if plugin is not None and plugin_status(self.config, plugin.id) != "enabled":
+            return
         module_name, _, function_name = entrypoint.partition(":")
         if not module_name or not function_name:
             return
@@ -121,7 +125,7 @@ class PluginsMixin:
             text=t("plugins.footer_hint"),
             bg=g["BG"],
             fg=g["MUTED"],
-            font=("Segoe UI", 9),
+            font=FONT_UI,
             anchor="w",
         )
         footer_msg.pack(fill="x", padx=22, pady=(8, 12))
@@ -131,14 +135,14 @@ class PluginsMixin:
             add="+",
         )
 
-        title = tk.Label(content, text=t("plugins.title"), bg=g["BG"], fg=g["TEXT"], font=("Segoe UI", 15, "bold"))
+        title = tk.Label(content, text=t("plugins.title"), bg=g["BG"], fg=g["TEXT"], font=FONT_WINDOW_TITLE)
         title.pack(pady=(18, 8))
         subtitle = tk.Label(
             content,
             text=t("plugins.subtitle"),
             bg=g["BG"],
             fg=g["MUTED"],
-            font=("Segoe UI", 9),
+            font=FONT_UI,
             anchor="w",
             justify="left",
         )
@@ -208,7 +212,7 @@ class PluginsMixin:
                 text=t("plugins.empty"),
                 bg=g["SURFACE"],
                 fg=g["MUTED"],
-                font=("Segoe UI", 10),
+                font=FONT_UI,
                 anchor="center",
             )
             empty.grid(row=0, column=0, columnspan=1, rowspan=1, sticky="nsew")
@@ -217,14 +221,14 @@ class PluginsMixin:
             card = tk.Frame(grid, bg=g["SURFACE"], highlightthickness=1, highlightbackground=g["BORDER"])
             card.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
             card.grid_propagate(False)
-            icon_label = tk.Label(card, text=plugin.icon, bg=g["SURFACE"], fg=g["TEXT"], font=("Segoe UI Emoji", 22))
+            icon_label = tk.Label(card, text=plugin.icon, bg=g["SURFACE"], fg=g["TEXT"], font=FONT_PLUGIN_ICON)
             icon_label.pack(pady=(14, 4))
             name_label = tk.Label(
                 card,
                 text=t(plugin.name_key),
                 bg=g["SURFACE"],
                 fg=g["TEXT_SOFT"],
-                font=("Segoe UI", 9),
+                font=FONT_CARD_TITLE,
                 wraplength=86,
                 justify="center",
             )
@@ -234,7 +238,7 @@ class PluginsMixin:
                 text=t("plugins.open") if plugin.entrypoint else t("plugins.placeholder.coming_soon"),
                 bg=g["SURFACE"],
                 fg=g["MUTED"],
-                font=("Segoe UI", 8),
+                font=FONT_UI_SMALL,
             )
             hint_label.pack(pady=(3, 8))
             card_state = {

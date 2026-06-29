@@ -96,6 +96,84 @@ class AppLifecycleTests(unittest.TestCase):
 
         self.assertEqual(["sticky-hotkey"], calls)
 
+    def test_disabled_sticky_notes_plugin_shortcut_is_not_registered(self) -> None:
+        callbacks = []
+
+        class Harness(TrayMixin):
+            config = AppConfig(
+                plugin_shortcuts={"sticky_notes": "ctrl+alt+s"},
+                sticky_notes_double_ctrl=False,
+                disabled_plugins=["sticky_notes"],
+            )
+
+        def fake_add_hotkey(_hotkey, callback):
+            callbacks.append(callback)
+            return "handle"
+
+        app = Harness()
+        app._active_plugin_shortcuts = {}
+        with patch("writeonside_app.ui.tray_manager.keyboard.add_hotkey", fake_add_hotkey):
+            app._register_plugin_shortcuts()
+
+        self.assertEqual([], callbacks)
+        self.assertEqual({}, app._active_plugin_shortcuts)
+
+    def test_stale_sticky_notes_plugin_shortcut_rechecks_plugin_status(self) -> None:
+        callbacks = []
+        calls: list[str] = []
+
+        class Harness(TrayMixin):
+            config = AppConfig(plugin_shortcuts={"sticky_notes": "ctrl+alt+s"}, sticky_notes_double_ctrl=False)
+
+            def _post_ui(self, callback) -> None:
+                callback()
+
+            def _open_sticky_notes(self) -> None:
+                calls.append("sticky-hotkey")
+
+        def fake_add_hotkey(_hotkey, callback):
+            callbacks.append(callback)
+            return "handle"
+
+        app = Harness()
+        app._active_plugin_shortcuts = {}
+        with patch("writeonside_app.ui.tray_manager.keyboard.add_hotkey", fake_add_hotkey):
+            app._register_plugin_shortcuts()
+
+        app.config.disabled_plugins = ["sticky_notes"]
+        callbacks[0]()
+
+        self.assertEqual([], calls)
+
+    def test_disabled_sticky_notes_double_ctrl_hook_does_not_open(self) -> None:
+        hooks = []
+        calls: list[str] = []
+
+        class Harness(TrayMixin):
+            config = AppConfig(sticky_notes_double_ctrl=True)
+
+            def _post_ui(self, callback) -> None:
+                callback()
+
+            def _open_sticky_notes(self) -> None:
+                calls.append("sticky-hotkey")
+
+        def fake_hook(callback, suppress=False):
+            hooks.append(callback)
+            return "hook"
+
+        app = Harness()
+        app._active_sticky_notes_hook = None
+        with patch("writeonside_app.ui.tray_manager.keyboard.hook", fake_hook):
+            app._register_sticky_notes_hotkey()
+
+        app.config.removed_plugins = ["sticky_notes"]
+        event = type("Event", (), {"event_type": "down", "name": "ctrl"})()
+        hooks[0](event)
+        hooks[0](event)
+
+        self.assertEqual([], calls)
+
     def test_shutdown_saves_main_and_split_notes(self) -> None:
         class Root:
             def quit(self) -> None:

@@ -407,6 +407,321 @@ fn inbreeding(ids: &[String], sires: &[String], dams: &[String]) -> Result<Vec<f
     Ok(result)
 }
 
+fn row_completeness(values: &[&String]) -> usize {
+    values.iter().filter(|value| !is_missing(value)).count()
+}
+
+fn detect_loops_for_fix(ids: &[String], sires: &[String], dams: &[String]) -> Vec<Vec<String>> {
+    let id_set: HashSet<String> = ids.iter().cloned().collect();
+    detect_loops(ids, sires, dams, &id_set)
+}
+
+fn push_dict(py: Python<'_>, list: &Bound<'_, PyList>, pairs: &[(&str, String)]) -> PyResult<()> {
+    let row = PyDict::new(py);
+    for (key, value) in pairs {
+        row.set_item(*key, value)?;
+    }
+    list.append(row)?;
+    Ok(())
+}
+
+fn break_cycles_for_fix(
+    ids: &[String],
+    sires: &mut [String],
+    dams: &mut [String],
+) -> Vec<(String, String, String, Vec<String>)> {
+    let mut breaks = Vec::new();
+    let id_to_index: HashMap<String, usize> = ids
+        .iter()
+        .enumerate()
+        .map(|(index, id)| (id.clone(), index))
+        .collect();
+    for _attempt in 0..ids.len().saturating_mul(2).max(1) {
+        let cycles = detect_loops_for_fix(ids, sires, dams);
+        if cycles.is_empty() {
+            break;
+        }
+        let mut changed = false;
+        for cycle in cycles {
+            if cycle.len() < 3 {
+                continue;
+            }
+            let child = cycle[cycle.len() - 2].clone();
+            let parent = cycle[cycle.len() - 1].clone();
+            if let Some(index) = id_to_index.get(&child).copied() {
+                if sires[index] == parent {
+                    sires[index] = "0".to_string();
+                    breaks.push((child, parent, "Sire".to_string(), cycle));
+                    changed = true;
+                } else if dams[index] == parent {
+                    dams[index] = "0".to_string();
+                    breaks.push((child, parent, "Dam".to_string(), cycle));
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    breaks
+}
+
+#[pyfunction]
+#[pyo3(signature = (ids, sires, dams, groups=None, sex=None, birthdates=None))]
+#[allow(clippy::too_many_arguments)]
+fn auto_fix_pedigree(
+    py: Python<'_>,
+    ids: Vec<String>,
+    sires: Vec<String>,
+    dams: Vec<String>,
+    groups: Option<Vec<String>>,
+    sex: Option<Vec<String>>,
+    birthdates: Option<Vec<String>>,
+) -> PyResult<PyObject> {
+    let n = ids.len();
+    if sires.len() != n || dams.len() != n {
+        return Err(PyValueError::new_err(
+            "ids, sires, and dams must have the same length.",
+        ));
+    }
+    if groups.as_ref().map_or(false, |values| values.len() != n)
+        || sex.as_ref().map_or(false, |values| values.len() != n)
+        || birthdates
+            .as_ref()
+            .map_or(false, |values| values.len() != n)
+    {
+        return Err(PyValueError::new_err(
+            "optional columns must have the same length as ids.",
+        ));
+    }
+
+    let mut clean_ids = Vec::with_capacity(n);
+    let mut clean_sires = Vec::with_capacity(n);
+    let mut clean_dams = Vec::with_capacity(n);
+    let mut clean_groups = Vec::with_capacity(n);
+    let mut clean_sex = Vec::with_capacity(n);
+    let mut clean_birthdates = Vec::with_capacity(n);
+    let missing_id_rows = PyList::empty(py);
+
+    for i in 0..n {
+        let id = norm(&ids[i]);
+        if is_missing(&id) {
+            let row = PyDict::new(py);
+            row.set_item("row", i + 1)?;
+            missing_id_rows.append(row)?;
+            continue;
+        }
+        clean_ids.push(id);
+        clean_sires.push(normalize_parent(&sires[i]));
+        clean_dams.push(normalize_parent(&dams[i]));
+        clean_groups.push(
+            groups
+                .as_ref()
+                .and_then(|values| values.get(i))
+                .map(|v| norm(v))
+                .unwrap_or_default(),
+        );
+        clean_sex.push(
+            sex.as_ref()
+                .and_then(|values| values.get(i))
+                .map(|v| norm(v))
+                .unwrap_or_default(),
+        );
+        clean_birthdates.push(
+            birthdates
+                .as_ref()
+                .and_then(|values| values.get(i))
+                .map(|v| norm(v))
+                .unwrap_or_default(),
+        );
+    }
+
+    let mut best_by_id: HashMap<String, (usize, usize)> = HashMap::new();
+    let mut id_counts: HashMap<String, usize> = HashMap::new();
+    for i in 0..clean_ids.len() {
+        *id_counts.entry(clean_ids[i].clone()).or_insert(0) += 1;
+        let score = row_completeness(&[
+            &clean_ids[i],
+            &clean_sires[i],
+            &clean_dams[i],
+            &clean_groups[i],
+            &clean_sex[i],
+            &clean_birthdates[i],
+        ]);
+        match best_by_id.get(&clean_ids[i]).copied() {
+            Some((_best_index, best_score)) if best_score >= score => {}
+            _ => {
+                best_by_id.insert(clean_ids[i].clone(), (i, score));
+            }
+        }
+    }
+    let duplicate_records = PyList::empty(py);
+    let kept_duplicate_records = PyList::empty(py);
+    let mut duplicate_ids: Vec<String> = id_counts
+        .iter()
+        .filter(|(_id, count)| **count > 1)
+        .map(|(id, _count)| id.clone())
+        .collect();
+    duplicate_ids.sort();
+    let duplicate_id_set: HashSet<String> = duplicate_ids.iter().cloned().collect();
+    let mut keep = vec![false; clean_ids.len()];
+    for id in &duplicate_ids {
+        if let Some((kept, _score)) = best_by_id.get(id).copied() {
+            keep[kept] = true;
+            push_dict(
+                py,
+                &kept_duplicate_records,
+                &[("id", id.clone()), ("row", (kept + 1).to_string())],
+            )?;
+        }
+    }
+    for (id, (index, _score)) in &best_by_id {
+        if !duplicate_id_set.contains(id) {
+            keep[*index] = true;
+        }
+    }
+    for i in 0..clean_ids.len() {
+        if duplicate_id_set.contains(&clean_ids[i]) && !keep[i] {
+            push_dict(
+                py,
+                &duplicate_records,
+                &[("id", clean_ids[i].clone()), ("row", (i + 1).to_string())],
+            )?;
+        }
+    }
+
+    let mut ids_fixed = Vec::new();
+    let mut sires_fixed = Vec::new();
+    let mut dams_fixed = Vec::new();
+    let mut groups_fixed = Vec::new();
+    let mut sex_fixed = Vec::new();
+    let mut birthdates_fixed = Vec::new();
+    for i in 0..clean_ids.len() {
+        if keep[i] {
+            ids_fixed.push(clean_ids[i].clone());
+            sires_fixed.push(clean_sires[i].clone());
+            dams_fixed.push(clean_dams[i].clone());
+            groups_fixed.push(clean_groups[i].clone());
+            sex_fixed.push(clean_sex[i].clone());
+            birthdates_fixed.push(clean_birthdates[i].clone());
+        }
+    }
+
+    let self_parent_records = PyList::empty(py);
+    for i in 0..ids_fixed.len() {
+        if sires_fixed[i] == ids_fixed[i] {
+            push_dict(py, &self_parent_records, &[("id", ids_fixed[i].clone()), ("field", "Sire".to_string())])?;
+            sires_fixed[i] = "0".to_string();
+        }
+        if dams_fixed[i] == ids_fixed[i] {
+            push_dict(py, &self_parent_records, &[("id", ids_fixed[i].clone()), ("field", "Dam".to_string())])?;
+            dams_fixed[i] = "0".to_string();
+        }
+    }
+
+    let mut id_set: HashSet<String> = ids_fixed.iter().cloned().collect();
+    let mut missing_parents: HashSet<String> = HashSet::new();
+    for i in 0..ids_fixed.len() {
+        for parent in [&sires_fixed[i], &dams_fixed[i]] {
+            if parent != "0" && !id_set.contains(parent) {
+                missing_parents.insert(parent.clone());
+            }
+        }
+    }
+    let mut missing_parent_ids: Vec<String> = missing_parents.into_iter().collect();
+    missing_parent_ids.sort();
+    for parent in &missing_parent_ids {
+        ids_fixed.push(parent.clone());
+        sires_fixed.push("0".to_string());
+        dams_fixed.push("0".to_string());
+        groups_fixed.push(String::new());
+        sex_fixed.push(String::new());
+        birthdates_fixed.push(String::new());
+        id_set.insert(parent.clone());
+    }
+
+    let birthdate_records = PyList::empty(py);
+    if birthdates.is_some() {
+        let mut birth_map: HashMap<String, i64> = HashMap::new();
+        for i in 0..ids_fixed.len() {
+            if let Some(value) = parse_birthdate(&birthdates_fixed[i]) {
+                birth_map.insert(ids_fixed[i].clone(), value);
+            }
+        }
+        let mut invalid: HashSet<String> = HashSet::new();
+        for i in 0..ids_fixed.len() {
+            if let Some(child_date) = birth_map.get(&ids_fixed[i]) {
+                for parent in [&sires_fixed[i], &dams_fixed[i]] {
+                    if let Some(parent_date) = birth_map.get(parent) {
+                        if parent_date >= child_date {
+                            invalid.insert(ids_fixed[i].clone());
+                        }
+                    }
+                }
+            }
+        }
+        let mut invalid_vec: Vec<String> = invalid.into_iter().collect();
+        invalid_vec.sort();
+        for item_id in invalid_vec {
+            if let Some(index) = ids_fixed.iter().position(|value| *value == item_id) {
+                birthdates_fixed[index] = "0".to_string();
+                push_dict(py, &birthdate_records, &[("id", item_id), ("field", "BirthDate".to_string())])?;
+            }
+        }
+    }
+
+    let loop_breaks = PyList::empty(py);
+    let broken = break_cycles_for_fix(&ids_fixed, &mut sires_fixed, &mut dams_fixed);
+    for (child, parent, field, cycle) in &broken {
+        let row = PyDict::new(py);
+        row.set_item("child", child)?;
+        row.set_item("parent", parent)?;
+        row.set_item("field", field)?;
+        row.set_item("cycle", PyList::new(py, cycle)?)?;
+        loop_breaks.append(row)?;
+    }
+
+    let missing_ids_count = missing_id_rows.len();
+    let duplicates_count = duplicate_records.len();
+    let missing_parents_count = missing_parent_ids.len();
+    let self_parent_count = self_parent_records.len();
+    let birthdate_count = birthdate_records.len();
+    let loops_count = loop_breaks.len();
+    let total_actions = missing_ids_count
+        + duplicates_count
+        + missing_parents_count
+        + self_parent_count
+        + birthdate_count
+        + loops_count;
+
+    let autofix = PyDict::new(py);
+    autofix.set_item("missing_ids", missing_ids_count)?;
+    autofix.set_item("duplicates", duplicates_count)?;
+    autofix.set_item("missing_parents", missing_parents_count)?;
+    autofix.set_item("self_parent", self_parent_count)?;
+    autofix.set_item("birthdate", birthdate_count)?;
+    autofix.set_item("loops", loops_count)?;
+    autofix.set_item("missing_id_rows", missing_id_rows)?;
+    autofix.set_item("duplicate_records", duplicate_records)?;
+    autofix.set_item("kept_duplicate_records", kept_duplicate_records)?;
+    autofix.set_item("missing_parent_ids", PyList::new(py, &missing_parent_ids)?)?;
+    autofix.set_item("self_parent_records", self_parent_records)?;
+    autofix.set_item("birthdate_records", birthdate_records)?;
+    autofix.set_item("loop_breaks", loop_breaks)?;
+    autofix.set_item("total_actions", total_actions)?;
+
+    let result = PyDict::new(py);
+    result.set_item("ids", PyList::new(py, &ids_fixed)?)?;
+    result.set_item("sires", PyList::new(py, &sires_fixed)?)?;
+    result.set_item("dams", PyList::new(py, &dams_fixed)?)?;
+    result.set_item("groups", PyList::new(py, &groups_fixed)?)?;
+    result.set_item("sex", PyList::new(py, &sex_fixed)?)?;
+    result.set_item("birthdates", PyList::new(py, &birthdates_fixed)?)?;
+    result.set_item("autofix", autofix)?;
+    Ok(result.into_any().unbind())
+}
+
 #[pyfunction]
 #[pyo3(signature = (ids, sires, dams, groups=None, sex=None, birthdates=None))]
 #[allow(clippy::too_many_arguments)]
@@ -610,9 +925,10 @@ fn analyze_pedigree(
         birthdate_invalid_dam_ids.dedup();
     }
 
-    let loops = detect_loops(&clean_ids, &clean_sires, &clean_dams, &id_set);
+    let loops = py.allow_threads(|| detect_loops(&clean_ids, &clean_sires, &clean_dams, &id_set));
     let f_values = if duplicate_ids.is_empty() && loops.is_empty() {
-        inbreeding(&clean_ids, &clean_sires, &clean_dams).unwrap_or_else(|_| vec![f64::NAN; n])
+        py.allow_threads(|| inbreeding(&clean_ids, &clean_sires, &clean_dams))
+            .unwrap_or_else(|_| vec![f64::NAN; n])
     } else {
         vec![f64::NAN; n]
     };
@@ -697,7 +1013,8 @@ fn analyze_pedigree(
     let full_sib_max = full_sib_sizes.iter().copied().max().unwrap_or(0);
     let full_sib_min = full_sib_sizes.iter().copied().min().unwrap_or(0);
 
-    let lap_depths = longest_ancestral_path(&clean_ids, &clean_sires, &clean_dams, &id_set);
+    let lap_depths =
+        py.allow_threads(|| longest_ancestral_path(&clean_ids, &clean_sires, &clean_dams, &id_set));
     let lap_mean = if lap_depths.is_empty() {
         0.0
     } else {
@@ -916,5 +1233,6 @@ fn analyze_pedigree(
 #[pymodule]
 fn writeonside_pedigree(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(analyze_pedigree, module)?)?;
+    module.add_function(wrap_pyfunction!(auto_fix_pedigree, module)?)?;
     Ok(())
 }

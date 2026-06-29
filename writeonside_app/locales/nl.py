@@ -46,7 +46,7 @@ MESSAGES = {
     "cmd.backlinks": "Backlinks",
     "cmd.find": "Zoeken",
     "cmd.replace": "Zoeken en vervangen",
-    "cmd.frontmatter": "YAML Front Matter maken",
+    "cmd.frontmatter": "YAML Front Matter tonen/verbergen",
     "cmd.bold": "Vet",
     "cmd.italic": "Cursief",
     "cmd.underline": "Onderstrepen",

@@ -23,7 +23,7 @@ class CommandShortcutsMixin:
             "backlinks": self._show_backlinks_popup,
             "find": lambda: self._open_find_panel(False),
             "replace": lambda: self._open_find_panel(True),
-            "frontmatter": self._ensure_current_front_matter,
+            "frontmatter": self._toggle_current_front_matter,
             "bold": lambda: self._wrap_selection("**", "**", "bold"),
             "italic": lambda: self._wrap_selection("*", "*", "italic"),
             "underline": lambda: self._wrap_selection("<u>", "</u>", "text"),
