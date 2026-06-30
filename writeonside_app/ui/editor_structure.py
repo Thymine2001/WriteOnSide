@@ -30,6 +30,38 @@ def line_number_center_y(
     return y + max(1, single_line_height // 2)
 
 
+def should_stick_heading_line(
+    line_y: int | None,
+    *,
+    was_sticky: bool,
+    show_y: int = -8,
+    hide_y: int = 4,
+) -> bool:
+    if line_y is None:
+        return True
+    if was_sticky:
+        return line_y < hide_y
+    return line_y < show_y
+
+
+def sticky_heading_stack_from_headings(
+    headings: list[dict[str, int | str]],
+    *,
+    line_y_by_line: dict[int, int | None],
+    sticky_state: dict[int, bool],
+) -> list[dict[str, int | str]]:
+    sticky: list[dict[str, int | str]] = []
+    for heading in headings:
+        line = int(heading["line"])
+        was_sticky = sticky_state.get(line, False)
+        line_y = line_y_by_line.get(line)
+        is_sticky = should_stick_heading_line(line_y, was_sticky=was_sticky)
+        sticky_state[line] = is_sticky
+        if is_sticky:
+            sticky.append(heading)
+    return sticky
+
+
 class EditorStructureMixin:
     def _setup_editor_structure(self) -> None:
         self._folded_heading_keys: set[tuple[int, str, int]] = set()
@@ -37,6 +69,9 @@ class EditorStructureMixin:
         self._editor_structure_after: str | None = None
         self._fold_layout_dirty = True
         self._sticky_heading_rows: list[tk.Frame] = []
+        self._sticky_heading_signature: tuple[tuple[int, int, str, bool], ...] = ()
+        self._sticky_heading_state: dict[int, bool] = {}
+        self._editor_structure_line_count = -1
         self.line_number_canvas.bind("<Button-1>", self._on_line_number_click)
         self.line_number_canvas.bind("<MouseWheel>", self._forward_gutter_wheel)
         self.text.bind(
@@ -46,7 +81,7 @@ class EditorStructureMixin:
         )
         self.text.bind(
             "<KeyRelease>",
-            lambda _event: self._schedule_editor_structure_refresh(reapply_folds=True),
+            lambda _event: self._schedule_editor_structure_refresh(),
             add="+",
         )
         self.text.bind("<ButtonRelease-1>", lambda _event: self._schedule_editor_structure_refresh(), add="+")
@@ -72,7 +107,12 @@ class EditorStructureMixin:
         self._editor_structure_after = None
         if not hasattr(self, "line_number_canvas"):
             return
-        if self._fold_layout_dirty:
+        try:
+            line_count = int(self.text.index("end-1c").split(".")[0])
+        except (ValueError, tk.TclError):
+            line_count = self._editor_structure_line_count
+        if self._fold_layout_dirty or line_count != self._editor_structure_line_count:
+            self._editor_structure_line_count = line_count
             self._fold_layout_dirty = False
             self._apply_heading_folds()
         self._redraw_line_numbers()
@@ -255,31 +295,67 @@ class EditorStructureMixin:
         return self._cached_active_heading_stack(top_line)
 
     def _sticky_heading_stack(self) -> list[dict[str, int | str]]:
-        sticky: list[dict[str, int | str]] = []
-        for heading in self._active_heading_stack():
+        headings = self._active_heading_stack()
+        if not headings:
+            self._sticky_heading_state.clear()
+            return []
+        line_y_by_line: dict[int, int | None] = {}
+        for heading in headings:
+            line = int(heading["line"])
             try:
-                info = self.text.dlineinfo(f"{int(heading['line'])}.0")
+                info = self.text.dlineinfo(f"{line}.0")
             except (ValueError, tk.TclError):
                 info = None
-            if info is None or int(info[1]) < 0:
-                sticky.append(heading)
-        return sticky
+            line_y_by_line[line] = None if info is None else int(info[1])
+        return sticky_heading_stack_from_headings(
+            headings,
+            line_y_by_line=line_y_by_line,
+            sticky_state=self._sticky_heading_state,
+        )
+
+    def _sticky_heading_signature_for(self, stack: list[dict[str, int | str]]) -> tuple[tuple[int, int, str, bool], ...]:
+        return tuple(
+            (
+                int(heading["line"]),
+                int(heading["level"]),
+                str(heading["title"]),
+                self._heading_key(heading) in self._folded_heading_keys,
+            )
+            for heading in stack
+        )
 
     def _refresh_sticky_headings(self) -> None:
+        stack = self._sticky_heading_stack()
+        signature = self._sticky_heading_signature_for(stack)
+        if not stack:
+            if self._sticky_heading_signature:
+                for row in self._sticky_heading_rows:
+                    row.destroy()
+                self._sticky_heading_rows.clear()
+                self._sticky_heading_signature = ()
+                self.sticky_heading_frame.place_forget()
+            return
+        gutter_width = self.line_number_canvas.winfo_width()
+        if signature == self._sticky_heading_signature and self._sticky_heading_rows:
+            self.sticky_heading_frame.place(
+                x=gutter_width,
+                y=0,
+                relwidth=1.0,
+                width=-gutter_width - 12,
+            )
+            self.sticky_heading_frame.lift()
+            return
         for row in self._sticky_heading_rows:
             row.destroy()
         self._sticky_heading_rows.clear()
-        stack = self._sticky_heading_stack()
-        if not stack:
-            self.sticky_heading_frame.place_forget()
-            return
+        self._sticky_heading_signature = signature
         g = globals()
         self.sticky_heading_frame.configure(bg=g["SURFACE_2"])
         self.sticky_heading_frame.place(
-            x=self.line_number_canvas.winfo_width(),
+            x=gutter_width,
             y=0,
             relwidth=1.0,
-            width=-self.line_number_canvas.winfo_width() - 12,
+            width=-gutter_width - 12,
         )
         for heading in stack:
             line = int(heading["line"])

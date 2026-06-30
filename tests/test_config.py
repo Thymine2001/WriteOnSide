@@ -65,6 +65,31 @@ class ConfigTests(unittest.TestCase):
                     config = load_config()
             self.assertEqual(nav_width, config.nav_width)
 
+    def test_load_config_normalizes_nav_bar_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir)
+            config_file = config_dir / "config.json"
+            config_file.write_text(
+                json.dumps({"nav_bar_visible": False, "nav_bar_anchor": "screen_edge"}),
+                encoding="utf-8",
+            )
+            with patch("writeonside_app.config.APP_DATA_DIR", config_dir), patch(
+                "writeonside_app.config.CONFIG_FILE", config_file
+            ):
+                config = load_config()
+            self.assertFalse(config.nav_bar_visible)
+            self.assertEqual("screen_edge", config.nav_bar_anchor)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir)
+            config_file = config_dir / "config.json"
+            config_file.write_text(json.dumps({"nav_bar_anchor": "invalid"}), encoding="utf-8")
+            with patch("writeonside_app.config.APP_DATA_DIR", config_dir), patch(
+                "writeonside_app.config.CONFIG_FILE", config_file
+            ):
+                config = load_config()
+            self.assertEqual("panel_edge", config.nav_bar_anchor)
+
     def test_load_config_normalizes_file_label_settings(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = Path(temp_dir)

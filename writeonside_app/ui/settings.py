@@ -47,6 +47,8 @@ class SettingsMixin:
             "width": self.config.width,
             "explorer_width": self.config.explorer_width,
             "nav_width": self.config.nav_width,
+            "nav_bar_visible": self.config.nav_bar_visible,
+            "nav_bar_anchor": self.config.nav_bar_anchor,
             "alpha": self.config.alpha,
             "auto_save": self.config.auto_save,
             "remember_last_note": self.config.remember_last_note,
@@ -282,6 +284,88 @@ class SettingsMixin:
             frame.bind("<Configure>", layout_row)
             frame.after_idle(layout_row)
             return entry
+
+        def add_dual_choice_row(
+            parent: tk.Widget,
+            label_text: str,
+            option_keys: tuple[object, ...],
+            option_labels: dict[object, str],
+            on_select: Callable[[object], None],
+        ) -> tuple[tk.Label, dict[object, tk.Label], tk.Frame]:
+            _g = globals()
+            frame = tk.Frame(parent, bg=_g["BG"])
+            frame.pack(fill="x", padx=18, pady=6)
+            label = tk.Label(
+                frame,
+                text=label_text,
+                bg=_g["BG"],
+                fg=_g["TEXT"],
+                font=FONT_CONTROL,
+                width=16,
+                anchor="w",
+                justify="left",
+            )
+            choices = tk.Frame(frame, bg=_g["SURFACE"])
+            choices.grid_columnconfigure(0, weight=1, uniform="choice_col")
+            choices.grid_columnconfigure(1, weight=1, uniform="choice_col")
+            buttons: dict[object, tk.Label] = {}
+            layout_state = {"compact": None}
+
+            def layout_row(_event=None) -> None:
+                compact = frame.winfo_width() < 430
+                if layout_state["compact"] == compact:
+                    if compact:
+                        label.configure(wraplength=max(220, frame.winfo_width() - 36))
+                    return
+                layout_state["compact"] = compact
+                label.grid_forget()
+                choices.grid_forget()
+                if compact:
+                    frame.grid_columnconfigure(0, weight=1)
+                    frame.grid_columnconfigure(1, weight=0)
+                    label.configure(width=0, wraplength=max(220, frame.winfo_width() - 36))
+                    label.grid(row=0, column=0, sticky="w", pady=(0, 4))
+                    choices.grid(row=1, column=0, sticky="ew")
+                else:
+                    frame.grid_columnconfigure(0, weight=0)
+                    frame.grid_columnconfigure(1, weight=1)
+                    label.configure(width=16, wraplength=0)
+                    label.grid(row=0, column=0, sticky="nw", pady=2)
+                    choices.grid(row=0, column=1, sticky="ew", padx=(4, 6))
+
+            for column, key in enumerate(option_keys):
+                button = tk.Label(
+                    choices,
+                    text=option_labels[key],
+                    bg=_g["SURFACE"],
+                    fg=_g["TEXT_SOFT"],
+                    font=FONT_CONTROL,
+                    cursor="hand2",
+                    pady=6,
+                    padx=8,
+                    anchor="center",
+                    highlightthickness=1,
+                    highlightbackground=_g["BORDER"],
+                )
+                padx = (0, 4) if column == 0 else (4, 0)
+                button.grid(row=0, column=column, sticky="nsew", padx=padx)
+                button.bind("<Button-1>", lambda _event, value=key: on_select(value))
+                buttons[key] = button
+
+            frame.bind("<Configure>", layout_row)
+            frame.after_idle(layout_row)
+            return label, buttons, choices
+
+        def style_dual_choice_button(button: tk.Label, selected: bool) -> None:
+            _g = globals()
+            button.config(
+                bg=_g["SIDEBAR_HOVER"] if selected else _g["SURFACE"],
+                fg=_g["TEXT"] if selected else _g["TEXT_SOFT"],
+                font=FONT_CONTROL,
+                highlightbackground=_g["ACCENT_2"] if selected else _g["BORDER"],
+                highlightcolor=_g["ACCENT_2"] if selected else _g["BORDER"],
+                highlightthickness=2 if selected else 1,
+            )
 
         settings_title_label = tk.Label(content, text=t("settings.title"), bg=g["BG"], fg=g["TEXT"], font=FONT_WINDOW_TITLE)
         settings_title_label.pack(pady=(18, 10))
@@ -1162,32 +1246,15 @@ class SettingsMixin:
         e_hotkey = row(general_page, t("settings.hotkey"), format_hotkey_display(self.config.hotkey), action_text=t("settings.record"), action=record_hotkey)
         record_btn_ref.append(getattr(e_hotkey, "_action_button"))
 
-        position_frame = tk.Frame(layout_page, bg=g["BG"])
-        position_frame.pack(fill="x", padx=18, pady=6)
-        position_label = tk.Label(position_frame, text=t("settings.app_position"), bg=g["BG"], fg=g["TEXT"], font=FONT_CONTROL, width=16, anchor="w")
-        position_label.pack(side="left")
         position_var = tk.StringVar(value=self.config.app_position)
-        position_choices = tk.Frame(position_frame, bg=g["SURFACE"])
-        position_choices.pack(side="left", fill="x", expand=True, padx=(4, 6))
-        position_buttons: dict[str, tk.Label] = {}
         position_labels = {"left": t("position.left"), "right": t("position.right")}
 
         def select_position(value: str, preview: bool = True) -> None:
             if value not in {"left", "right"}:
                 return
-            _g = globals()
             position_var.set(value)
             for key, button in position_buttons.items():
-                selected = key == value
-                button.config(
-                    text=position_labels[key],
-                    bg=_g["SIDEBAR_HOVER"] if selected else _g["SURFACE"],
-                    fg=_g["TEXT"] if selected else _g["TEXT_SOFT"],
-                    font=FONT_CONTROL,
-                    highlightbackground=_g["ACCENT_2"] if selected else _g["BORDER"],
-                    highlightcolor=_g["ACCENT_2"] if selected else _g["BORDER"],
-                    highlightthickness=2 if selected else 1,
-                )
+                style_dual_choice_button(button, key == value)
             if not preview or value == self.config.app_position:
                 return
 
@@ -1213,22 +1280,13 @@ class SettingsMixin:
                 self._place_layout(False)
                 finish_preview()
 
-        for key, label_text in (("left", t("position.left")), ("right", t("position.right"))):
-            _g = globals()
-            button = tk.Label(
-                position_choices,
-                text=label_text,
-                bg=_g["SURFACE"],
-                fg=_g["TEXT_SOFT"],
-                font=FONT_CONTROL,
-                cursor="hand2",
-                pady=5,
-                highlightthickness=1,
-                highlightbackground=_g["BORDER"],
-            )
-            button.pack(side="left", fill="x", expand=True)
-            button.bind("<Button-1>", lambda _e, value=key: select_position(value))
-            position_buttons[key] = button
+        position_label, position_buttons, _position_choices = add_dual_choice_row(
+            layout_page,
+            t("settings.app_position"),
+            ("left", "right"),
+            position_labels,
+            lambda value: select_position(str(value)),
+        )
         select_position(position_var.get(), preview=False)
 
         theme_frame = tk.Frame(appearance_page, bg=g["BG"])
@@ -1476,6 +1534,74 @@ class SettingsMixin:
 
         refresh_width_hint()
         e_nav = row(layout_page, t("settings.nav_width"), str(self.config.nav_width))
+        nav_visible_var = tk.BooleanVar(value=bool(getattr(self.config, "nav_bar_visible", True)))
+        nav_anchor_var = tk.StringVar(
+            value=str(getattr(self.config, "nav_bar_anchor", "panel_edge"))
+            if str(getattr(self.config, "nav_bar_anchor", "panel_edge")) in {"panel_edge", "screen_edge"}
+            else "panel_edge"
+        )
+
+        nav_visible_labels = {True: t("settings.nav_bar.show"), False: t("settings.nav_bar.hide")}
+
+        def refresh_nav_visible_switch() -> None:
+            _g = globals()
+            selected = nav_visible_var.get()
+            for key, button in nav_visible_buttons.items():
+                style_dual_choice_button(button, key == selected)
+            nav_visible_label.configure(fg=_g["TEXT"])
+            state = tk.NORMAL if selected else tk.DISABLED
+            for button in nav_anchor_buttons.values():
+                button.configure(state=state, cursor="hand2" if selected else "arrow")
+            nav_anchor_label.configure(fg=_g["TEXT"] if selected else _g["MUTED"])
+
+        def apply_nav_preview() -> None:
+            if not win.winfo_exists():
+                return
+            self.config.nav_bar_visible = nav_visible_var.get()
+            anchor = nav_anchor_var.get()
+            self.config.nav_bar_anchor = anchor if anchor in {"panel_edge", "screen_edge"} else "panel_edge"
+            self._place_layout(self.is_open)
+            self._raise_nav_bar()
+            self._refresh_nav_bar_visual()
+            if self.config.nav_bar_visible:
+                mode = nav_anchor_labels.get(self.config.nav_bar_anchor, self.config.nav_bar_anchor)
+                msg.config(text=t("settings.msg.nav_anchor_preview", mode=mode), fg=globals()["TEXT"])
+
+        def select_nav_anchor(value: str, preview: bool = True) -> None:
+            if value not in {"panel_edge", "screen_edge"} or not nav_visible_var.get():
+                return
+            nav_anchor_var.set(value)
+            for key, button in nav_anchor_buttons.items():
+                style_dual_choice_button(button, key == value)
+            if preview:
+                apply_nav_preview()
+
+        def select_nav_visible(value: bool, preview: bool = True) -> None:
+            nav_visible_var.set(bool(value))
+            refresh_nav_visible_switch()
+            if preview:
+                apply_nav_preview()
+
+        nav_visible_label, nav_visible_buttons, _nav_visible_choices = add_dual_choice_row(
+            layout_page,
+            t("settings.nav_bar.visible"),
+            (True, False),
+            nav_visible_labels,
+            lambda value: select_nav_visible(bool(value)),
+        )
+        nav_anchor_labels = {
+            "panel_edge": t("nav_anchor.panel_edge"),
+            "screen_edge": t("nav_anchor.screen_edge"),
+        }
+        nav_anchor_label, nav_anchor_buttons, _nav_anchor_choices = add_dual_choice_row(
+            layout_page,
+            t("settings.nav_bar.anchor"),
+            ("panel_edge", "screen_edge"),
+            nav_anchor_labels,
+            lambda value: select_nav_anchor(str(value)),
+        )
+        select_nav_anchor(nav_anchor_var.get(), preview=False)
+        select_nav_visible(nav_visible_var.get(), preview=False)
         width_preview_after: str | None = None
         syncing_width_entries = False
 
@@ -1782,7 +1908,24 @@ class SettingsMixin:
             update_entry_label(e_nav, "settings.nav_width")
             position_label.configure(text=t("settings.app_position"))
             position_labels.update({"left": t("position.left"), "right": t("position.right")})
+            for key, button in position_buttons.items():
+                button.configure(text=position_labels[key])
             select_position(position_var.get(), preview=False)
+            nav_visible_label.configure(text=t("settings.nav_bar.visible"))
+            nav_visible_labels.update({True: t("settings.nav_bar.show"), False: t("settings.nav_bar.hide")})
+            for key, button in nav_visible_buttons.items():
+                button.configure(text=nav_visible_labels[key])
+            nav_anchor_label.configure(text=t("settings.nav_bar.anchor"))
+            nav_anchor_labels.update(
+                {
+                    "panel_edge": t("nav_anchor.panel_edge"),
+                    "screen_edge": t("nav_anchor.screen_edge"),
+                }
+            )
+            for key, button in nav_anchor_buttons.items():
+                button.configure(text=nav_anchor_labels[key])
+            select_nav_visible(nav_visible_var.get(), preview=False)
+            select_nav_anchor(nav_anchor_var.get(), preview=False)
             theme_label.configure(text=t("settings.color_theme"))
             typography_label.configure(text=t("settings.typography"))
             opacity_label.configure(text=t("settings.opacity"))
@@ -1991,6 +2134,9 @@ class SettingsMixin:
             self.config.width = panel_width
             self.config.explorer_width = explorer_width
             self.config.nav_width = nav_width
+            self.config.nav_bar_visible = nav_visible_var.get()
+            anchor = nav_anchor_var.get()
+            self.config.nav_bar_anchor = anchor if anchor in {"panel_edge", "screen_edge"} else "panel_edge"
             self.config.alpha = alpha
             self._preview_alpha = None
             self.config.app_position = position_var.get() if position_var.get() in {"left", "right"} else "right"
@@ -2030,6 +2176,8 @@ class SettingsMixin:
             self.config.width = int(original["width"])
             self.config.explorer_width = int(original["explorer_width"])
             self.config.nav_width = int(original["nav_width"])
+            self.config.nav_bar_visible = bool(original["nav_bar_visible"])
+            self.config.nav_bar_anchor = str(original["nav_bar_anchor"])
             self.config.alpha = float(original["alpha"])
             self._preview_alpha = None
             self.config.app_position = str(original["app_position"])

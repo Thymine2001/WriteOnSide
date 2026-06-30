@@ -11,6 +11,24 @@ from .obsidian_md import CALLOUT_LINE, TAG_PATTERN
 from .syntax_highlight import code_token_spans
 from . import theme
 
+LINE_STRUCTURE_TAGS: frozenset[str] = frozenset(
+    {
+        "md_h1",
+        "md_h2",
+        "md_h3",
+        "md_h4",
+        "md_h5",
+        "md_h6",
+        "md_quote",
+        "md_list",
+        "md_task",
+        "md_task_done",
+        "md_table",
+        "md_code",
+        "md_hr",
+    }
+)
+
 MD_EDITOR_TAGS: tuple[str, ...] = (
     "md_h1",
     "md_h2",
@@ -594,6 +612,63 @@ def _clear_live_preview_replacements(text_widget) -> None:
         pass
 
 
+def _structure_tag_on_line(text_widget, line: int) -> str | None:
+    line_start = f"{line}.0"
+    line_end = f"{line}.end+1c"
+    for tag in LINE_STRUCTURE_TAGS:
+        try:
+            if text_widget.tag_nextrange(tag, line_start, line_end):
+                return tag
+        except Exception:
+            continue
+    return None
+
+
+def _sync_structure_line_tags(text_widget, line_tags: Iterable[LineTag], line_range: tuple[int, int] | None) -> None:
+    planned: dict[int, str] = {}
+    for line_tag in line_tags:
+        if line_tag.tag in LINE_STRUCTURE_TAGS:
+            planned[int(line_tag.line)] = line_tag.tag
+
+    if line_range is None:
+        try:
+            total_lines = int(text_widget.index("end-1c").split(".")[0])
+        except Exception:
+            total_lines = max(planned.keys(), default=1)
+        lines = range(1, total_lines + 1)
+    else:
+        start_line, end_line = line_range
+        lines = range(start_line, end_line + 1)
+
+    for line in lines:
+        new_tag = planned.get(line)
+        old_tag = _structure_tag_on_line(text_widget, line)
+        if old_tag == new_tag:
+            continue
+        line_start = f"{line}.0"
+        line_end = f"{line}.end"
+        if old_tag:
+            text_widget.tag_remove(old_tag, line_start, line_end)
+        if new_tag:
+            text_widget.tag_add(new_tag, line_start, line_end)
+
+
+def _sync_marker_elide_tags(text_widget, marker_spans: Iterable[MarkerSpan]) -> None:
+    import tkinter as tk
+
+    new_signature = tuple(sorted((int(span.line), int(span.start), int(span.end)) for span in marker_spans))
+    if new_signature == getattr(text_widget, "_live_marker_elide_sig", ()):
+        return
+    text_widget.tag_remove("md_live_marker_elide", "1.0", tk.END)
+    for marker_span in marker_spans:
+        text_widget.tag_add(
+            "md_live_marker_elide",
+            f"{marker_span.line}.{marker_span.start}",
+            f"{marker_span.line}.{marker_span.end}",
+        )
+    text_widget._live_marker_elide_sig = new_signature
+
+
 def apply_live_highlight_plan(
     text_widget,
     plan: LiveHighlightPlan,
@@ -614,8 +689,14 @@ def apply_live_highlight_plan(
         _restore_text_modified_state(text_widget, previous_modified)
         _restore_text_undo(text_widget, previous_undo)
 
+    inline_clear_tags = tuple(
+        tag
+        for tag in clear_tags
+        if tag not in LINE_STRUCTURE_TAGS and tag not in {"md_frontmatter", "md_live_marker_elide"}
+    )
+
     if clear_line_range is None:
-        for tag in clear_tags:
+        for tag in inline_clear_tags:
             text_widget.tag_remove(tag, "1.0", tk.END)
         for tag in list(editor_color_tags):
             text_widget.tag_remove(tag, "1.0", tk.END)
@@ -624,15 +705,19 @@ def apply_live_highlight_plan(
         start_line, end_line = clear_line_range
         line_start = f"{start_line}.0"
         line_end = f"{end_line}.end"
-        for tag in clear_tags:
+        for tag in inline_clear_tags:
             text_widget.tag_remove(tag, line_start, line_end)
         for tag in list(editor_color_tags):
             text_widget.tag_remove(tag, line_start, line_end)
+
+    _sync_structure_line_tags(text_widget, plan.line_tags, clear_line_range)
 
     if plan.frontmatter_end_line:
         text_widget.tag_add("md_frontmatter", "1.0", f"{plan.frontmatter_end_line + 1}.0")
 
     for line_tag in plan.line_tags:
+        if line_tag.tag in LINE_STRUCTURE_TAGS:
+            continue
         text_widget.tag_add(line_tag.tag, f"{line_tag.line}.0", f"{line_tag.line}.end")
 
     for span in plan.spans:
@@ -642,12 +727,7 @@ def apply_live_highlight_plan(
             f"{span.line}.{span.end}",
         )
 
-    for marker_span in plan.marker_spans:
-        text_widget.tag_add(
-            "md_live_marker_elide",
-            f"{marker_span.line}.{marker_span.start}",
-            f"{marker_span.line}.{marker_span.end}",
-        )
+    _sync_marker_elide_tags(text_widget, plan.marker_spans)
 
     replacements = []
     can_embed = hasattr(text_widget, "window_create")

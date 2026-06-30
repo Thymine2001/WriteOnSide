@@ -268,6 +268,11 @@ MESSAGES = {
     "settings.width_range_hint": "Allowed on this screen: panel {panel_min}–{panel_max} px, Files {explorer_min}–{explorer_max} px",
     "settings.explorer_width": "Explorer width",
     "settings.nav_width": "Nav strip width",
+    "settings.nav_bar.visible": "Edge navigation strip",
+    "settings.nav_bar.show": "Show",
+    "settings.nav_bar.hide": "Hide",
+    "settings.nav_bar.anchor": "Strip position",
+    "settings.msg.nav_anchor_preview": "Navigation strip: {mode}",
     "settings.opacity": "Opacity",
     "settings.toggle.auto_save": "Auto-save while typing",
     "settings.toggle.remember_note": "Reopen last note on start",
@@ -386,4 +391,6 @@ MESSAGES = {
     "pedigree.error.analysis_failed": "Analysis failed: {exc}",
     "position.left": "Left",
     "position.right": "Right",
+    "nav_anchor.panel_edge": "With panel",
+    "nav_anchor.screen_edge": "Screen edge",
 }

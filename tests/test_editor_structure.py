@@ -8,6 +8,8 @@ from writeonside_app.ui.editor_structure import (
     body_display_line_number,
     frontmatter_prefix_line_count,
     line_number_center_y,
+    should_stick_heading_line,
+    sticky_heading_stack_from_headings,
 )
 
 
@@ -77,6 +79,7 @@ class EditorStructureTests(unittest.TestCase):
         app.text.line_y = 0
         app._is_markdown_document = lambda: True
         app._cached_active_heading_stack = lambda _line: [{"level": 1, "title": "Title", "line": 1}]
+        app._sticky_heading_state = {}
 
         self.assertEqual([], app._sticky_heading_stack())
 
@@ -86,8 +89,55 @@ class EditorStructureTests(unittest.TestCase):
         app.text.line_y = -12
         app._is_markdown_document = lambda: True
         app._cached_active_heading_stack = lambda _line: [{"level": 1, "title": "Title", "line": 1}]
+        app._sticky_heading_state = {}
 
         self.assertEqual([{"level": 1, "title": "Title", "line": 1}], app._sticky_heading_stack())
+
+    def test_sticky_heading_uses_hysteresis_near_viewport_edge(self) -> None:
+        headings = [{"level": 1, "title": "Title", "line": 1}]
+        state: dict[int, bool] = {}
+
+        hidden = sticky_heading_stack_from_headings(
+            headings,
+            line_y_by_line={1: -4},
+            sticky_state=state,
+        )
+        self.assertEqual([], hidden)
+
+        still_hidden = sticky_heading_stack_from_headings(
+            headings,
+            line_y_by_line={1: -4},
+            sticky_state=state,
+        )
+        self.assertEqual([], still_hidden)
+
+        shown = sticky_heading_stack_from_headings(
+            headings,
+            line_y_by_line={1: -12},
+            sticky_state=state,
+        )
+        self.assertEqual(headings, shown)
+
+        still_shown = sticky_heading_stack_from_headings(
+            headings,
+            line_y_by_line={1: -2},
+            sticky_state=state,
+        )
+        self.assertEqual(headings, still_shown)
+
+        hidden_again = sticky_heading_stack_from_headings(
+            headings,
+            line_y_by_line={1: 6},
+            sticky_state=state,
+        )
+        self.assertEqual([], hidden_again)
+
+    def test_should_stick_heading_line_thresholds(self) -> None:
+        self.assertFalse(should_stick_heading_line(0, was_sticky=False))
+        self.assertFalse(should_stick_heading_line(-4, was_sticky=False))
+        self.assertTrue(should_stick_heading_line(-12, was_sticky=False))
+        self.assertTrue(should_stick_heading_line(-2, was_sticky=True))
+        self.assertFalse(should_stick_heading_line(6, was_sticky=True))
 
 
 if __name__ == "__main__":

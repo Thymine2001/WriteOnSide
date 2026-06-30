@@ -445,7 +445,7 @@ class EditorMixin:
                     self.text.tag_raise(tag)
                 except tk.TclError:
                     pass
-            self._schedule_editor_structure_refresh(reapply_folds=True)
+            self._schedule_editor_structure_refresh()
             return
         self._configure_editor_markdown_tags()
         if self._is_large_editor_document():
@@ -479,7 +479,7 @@ class EditorMixin:
             )
             self._clear_editor_image_previews()
             self._sync_frontmatter_visibility()
-            self._schedule_editor_structure_refresh(reapply_folds=True)
+            self._schedule_editor_structure_refresh()
             return
 
         self._large_highlight_range = None
@@ -507,7 +507,7 @@ class EditorMixin:
                 pass
         self._sync_frontmatter_visibility()
         self._apply_editor_image_previews(content)
-        self._schedule_editor_structure_refresh(reapply_folds=True)
+        self._schedule_editor_structure_refresh()
 
     def _schedule_editor_image_width_refresh(self) -> None:
         if self.view_mode != "edit" or self._editor_image_preview_busy:
@@ -969,7 +969,7 @@ class EditorMixin:
             self._rebuild_outline_cache(content)
         self._apply_live_render()
         self._sync_frontmatter_visibility()
-        self._schedule_editor_structure_refresh(reapply_folds=True)
+        self._schedule_editor_structure_refresh()
 
     def _on_text_modified(self, _event) -> None:
         if not self.text.edit_modified():

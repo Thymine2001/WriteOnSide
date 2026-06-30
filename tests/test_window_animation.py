@@ -256,6 +256,67 @@ class WindowAnimationTests(unittest.TestCase):
         self.assertEqual(panel_x + app.panel_w, explorer_x)
         self.assertEqual(explorer_x + explorer_width, nav_x)
 
+    def test_screen_edge_anchor_keeps_nav_at_monitor_edge_when_open(self) -> None:
+        app = WindowMixin()
+        app.config = SimpleNamespace(app_position="right", nav_bar_visible=True, nav_bar_anchor="screen_edge")
+        app.work_left = 0
+        app.work_top = 0
+        app.work_right = 1920
+        app.work_bottom = 1080
+        app.panel_w = 520
+        app.explorer_w = 210
+        app.nav_w = 16
+        app.explorer_visible = True
+
+        panel_x, explorer_x, nav_x, explorer_width = app._layout_positions(True)
+
+        self.assertEqual(1904, nav_x)
+        self.assertEqual(1384, panel_x)
+        self.assertEqual(1174, explorer_x)
+        self.assertEqual(210, explorer_width)
+
+    def test_hidden_nav_bar_does_not_reserve_strip_width(self) -> None:
+        app = WindowMixin()
+        app.config = SimpleNamespace(app_position="right", nav_bar_visible=False, nav_bar_anchor="panel_edge")
+        app.work_left = 0
+        app.work_top = 0
+        app.work_right = 1920
+        app.work_bottom = 1080
+        app.panel_w = 520
+        app.explorer_w = 210
+        app.nav_w = 16
+        app.explorer_visible = True
+
+        panel_x, explorer_x, nav_x, explorer_width = app._layout_positions(True)
+
+        self.assertEqual(1400, panel_x)
+        self.assertEqual(1190, explorer_x)
+        self.assertEqual(1190, nav_x)
+        self.assertEqual(210, explorer_width)
+
+    def test_screen_edge_animation_uses_layout_positions_directly(self) -> None:
+        app = WindowMixin()
+        app.config = SimpleNamespace(app_position="right", nav_bar_visible=True, nav_bar_anchor="screen_edge")
+        app.work_left = 0
+        app.work_top = 0
+        app.work_right = 1920
+        app.work_bottom = 1080
+        app.panel_w = 520
+        app.nav_w = 16
+
+        panel_x, explorer_x, nav_x, explorer_width, _panel_clip, _explorer_clip = app._safe_animation_layout(
+            1384,
+            1174,
+            1904,
+            210,
+            True,
+        )
+
+        self.assertEqual(1384, panel_x)
+        self.assertEqual(1174, explorer_x)
+        self.assertEqual(1904, nav_x)
+        self.assertEqual(210, explorer_width)
+
 
 if __name__ == "__main__":
     unittest.main()

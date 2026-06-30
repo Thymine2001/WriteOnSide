@@ -268,6 +268,11 @@ MESSAGES = {
     "settings.width_range_hint": "当前屏幕允许范围：面板 {panel_min}–{panel_max} px，文件栏 {explorer_min}–{explorer_max} px",
     "settings.explorer_width": "文件栏宽度",
     "settings.nav_width": "导航条宽度",
+    "settings.nav_bar.visible": "显示边缘导航条",
+    "settings.nav_bar.show": "显示",
+    "settings.nav_bar.hide": "隐藏",
+    "settings.nav_bar.anchor": "导航条位置",
+    "settings.msg.nav_anchor_preview": "导航条：{mode}",
     "settings.opacity": "不透明度",
     "settings.toggle.auto_save": "输入时自动保存",
     "settings.toggle.remember_note": "启动时打开上次的笔记",
@@ -386,4 +391,6 @@ MESSAGES = {
     "pedigree.error.analysis_failed": "分析失败：{exc}",
     "position.left": "左侧",
     "position.right": "右侧",
+    "nav_anchor.panel_edge": "随面板",
+    "nav_anchor.screen_edge": "屏幕边缘",
 }

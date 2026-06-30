@@ -261,28 +261,52 @@ class WindowMixin:
         panel_width = self.panel_w if width is None else max(1, int(width))
         return f"{panel_width}x{self.panel_h}+{x}+{self.panel_y}"
 
+    def _nav_bar_effective_width(self) -> int:
+        if not getattr(self.config, "nav_bar_visible", True):
+            return 0
+        return int(self.nav_w)
+
+    def _nav_bar_screen_edge_anchor(self) -> bool:
+        return getattr(self.config, "nav_bar_anchor", "panel_edge") == "screen_edge"
+
     def _layout_positions(self, opened: bool, position: str | None = None) -> tuple[int, int, int, int]:
         side = position or self.config.app_position
+        nav_w = self._nav_bar_effective_width()
+        screen_edge = self._nav_bar_screen_edge_anchor() and nav_w > 0
         if not opened:
             if side == "left":
                 return self.work_left - self.panel_w, self.work_left - self.explorer_w, self.work_left, self.explorer_w
-            return self.work_right, self.work_right, self.work_right - self.nav_w, self.explorer_w
+            nav_x = self.work_right - nav_w if nav_w else self.work_right
+            return self.work_right, self.work_right, nav_x, self.explorer_w
 
-        panel_x = self.work_left if side == "left" else self.work_right - self.panel_w
+        if screen_edge:
+            if side == "left":
+                panel_x = self.work_left + nav_w
+                nav_x = self.work_left
+            else:
+                panel_x = self.work_right - nav_w - self.panel_w
+                nav_x = self.work_right - nav_w
+        else:
+            panel_x = self.work_left if side == "left" else self.work_right - self.panel_w
+            nav_x = panel_x + self.panel_w if side == "left" else panel_x - nav_w
+
         if not self.explorer_visible:
-            nav_x = panel_x + self.panel_w if side == "left" else panel_x - self.nav_w
+            if not screen_edge:
+                nav_x = panel_x + self.panel_w if side == "left" else panel_x - nav_w
             return panel_x, panel_x, nav_x, 0
 
         if side == "left":
-            available = max(0, self.work_right - self.nav_w - (panel_x + self.panel_w))
+            available = max(0, self.work_right - (panel_x + self.panel_w) - (0 if screen_edge else nav_w))
             explorer_width = min(self.explorer_w, available)
             explorer_x = panel_x + self.panel_w
-            nav_x = explorer_x + explorer_width
+            if not screen_edge:
+                nav_x = explorer_x + explorer_width
         else:
-            available = max(0, panel_x - self.work_left - self.nav_w)
+            available = max(0, panel_x - self.work_left - (0 if screen_edge else nav_w))
             explorer_width = min(self.explorer_w, available)
             explorer_x = panel_x - explorer_width
-            nav_x = explorer_x - self.nav_w
+            if not screen_edge:
+                nav_x = explorer_x - nav_w
         return panel_x, explorer_x, nav_x, explorer_width
 
     def _cancel_layout_animation(self) -> None:
@@ -295,6 +319,12 @@ class WindowMixin:
 
     def _raise_nav_bar(self) -> None:
         if not hasattr(self, "nav"):
+            return
+        if not getattr(self.config, "nav_bar_visible", True):
+            try:
+                self.nav.withdraw()
+            except tk.TclError:
+                pass
             return
         try:
             self.nav.deiconify()
@@ -511,6 +541,15 @@ class WindowMixin:
     ) -> tuple[int, int, int, int, tuple[int, int, int, int], tuple[int, int, int, int]]:
         work_bounds = (self.work_left, self.work_top, self.work_right, self.work_bottom)
         explorer_move_width = max(1, explorer_width)
+        if self._nav_bar_screen_edge_anchor() and self._nav_bar_effective_width() > 0:
+            return (
+                panel_x,
+                explorer_x,
+                nav_x,
+                explorer_move_width,
+                work_bounds,
+                work_bounds,
+            )
         # The nav position is the single animation anchor. Derive both content
         # windows from it so every window receives the same translation delta;
         # independent interpolation to one screen edge creates a growing gap.

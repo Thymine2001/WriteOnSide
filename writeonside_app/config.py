@@ -39,6 +39,8 @@ class AppConfig:
     width: int = 520
     explorer_width: int = 210
     nav_width: int = 16
+    nav_bar_visible: bool = True
+    nav_bar_anchor: str = "panel_edge"
     alpha: float = 0.98
     explorer_open: bool = True
     auto_save: bool = True
@@ -171,6 +173,9 @@ def load_config() -> AppConfig:
         work_width,
     )
     merged["nav_width"] = clamp_int(merged["nav_width"], 4, 24, cfg.nav_width)
+    merged["nav_bar_visible"] = bool(merged.get("nav_bar_visible", True))
+    nav_bar_anchor = str(merged.get("nav_bar_anchor") or cfg.nav_bar_anchor).strip().lower()
+    merged["nav_bar_anchor"] = nav_bar_anchor if nav_bar_anchor in {"panel_edge", "screen_edge"} else cfg.nav_bar_anchor
     merged["auto_save_delay_ms"] = clamp_int(
         merged["auto_save_delay_ms"], 300, 5000, cfg.auto_save_delay_ms
     )
