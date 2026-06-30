@@ -37,6 +37,7 @@ from .ui.settings import SettingsMixin
 from .ui.plugins import PluginsMixin
 from .ui.i18n_ui import I18nMixin
 from .ui.vault_watcher import VaultWatcherMixin
+from .ui.attachment_index_ui import AttachmentIndexMixin
 
 
 class WriteOnSideApp(
@@ -55,6 +56,7 @@ class WriteOnSideApp(
     PluginsMixin,
     I18nMixin,
     VaultWatcherMixin,
+    AttachmentIndexMixin,
 ):
     def __init__(
         self,
@@ -235,9 +237,11 @@ class WriteOnSideApp(
             self._resume_panel_redraw()
 
     def _finish_startup_services(self) -> None:
+        self._setup_attachment_index()
         self._start_vault_watcher()
         self._setup_tray()
         self._poll_system_icon()
+        self.root.after(600, lambda: self._refresh_attachment_index(force=False))
 
     def _build_ui(self) -> None:
         g = globals()

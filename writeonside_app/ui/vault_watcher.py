@@ -178,6 +178,7 @@ class VaultWatcherMixin:
             self._schedule_explorer_refresh()
         self._schedule_tag_refresh()
         self._schedule_wiki_index_refresh()
+        self._schedule_attachment_index_refresh()
         self._reload_current_note_after_external_change(paths, moves, directories)
         self._reload_split_notes_after_external_change(paths, moves, directories)
 

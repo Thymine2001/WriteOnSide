@@ -331,6 +331,8 @@ class ThemeMixin:
             self._refresh_plugin_window_theme()
         if hasattr(self, "_refresh_pedigree_plugin_theme"):
             self._refresh_pedigree_plugin_theme()
+        if hasattr(self, "_refresh_attachment_organizer_theme"):
+            self._refresh_attachment_organizer_theme()
         try:
             from ..builtin_plugins.sticky_notes import refresh_sticky_notes_theme
 

@@ -2174,6 +2174,7 @@ class SettingsMixin:
             self.config.font_family = font_family_var.get().strip() or "Segoe UI"
             self.config.font_size = font_size
             self.config.attachments_folder = attachments_folder
+            attachments_changed = attachments_folder != str(original["attachments_folder"])
             self._apply_typography()
             self.config.auto_save = auto_save_var.get()
             self.config.remember_last_note = remember_var.get()
@@ -2187,6 +2188,9 @@ class SettingsMixin:
             self.config.auto_close_on_escape = False
             save_config(self.config)
             self._apply_language()
+            if workspace_changed or attachments_changed:
+                if hasattr(self, "_invalidate_attachment_index"):
+                    self._invalidate_attachment_index()
             apply_runtime_settings(workspace_changed, previous_position, previous_panel_width, previous_explorer_width)
             return True
 
