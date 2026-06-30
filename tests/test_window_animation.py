@@ -131,7 +131,7 @@ class WindowAnimationTests(unittest.TestCase):
             side_effect=lambda handle: events.append(("invalidate", handle)),
         ):
             app._move_animation_frame(1700, 1490, 1474, 210, True)
-            app._move_animation_frame(1700, 1490, 1474, 210, True)
+            app._move_animation_frame(1700, 1490, 1474, 210, True, repaint=False)
 
         self.assertEqual([("clip", False), ("clip", False)], events[:2])
         self.assertEqual(("move",), events[2])
@@ -258,7 +258,7 @@ class WindowAnimationTests(unittest.TestCase):
 
     def test_screen_edge_anchor_keeps_nav_at_monitor_edge_when_open(self) -> None:
         app = WindowMixin()
-        app.config = SimpleNamespace(app_position="right", nav_bar_visible=True, nav_bar_anchor="screen_edge")
+        app.config = SimpleNamespace(app_position="right", nav_bar_anchor="screen_edge")
         app.work_left = 0
         app.work_top = 0
         app.work_right = 1920
@@ -275,28 +275,9 @@ class WindowAnimationTests(unittest.TestCase):
         self.assertEqual(1174, explorer_x)
         self.assertEqual(210, explorer_width)
 
-    def test_hidden_nav_bar_does_not_reserve_strip_width(self) -> None:
-        app = WindowMixin()
-        app.config = SimpleNamespace(app_position="right", nav_bar_visible=False, nav_bar_anchor="panel_edge")
-        app.work_left = 0
-        app.work_top = 0
-        app.work_right = 1920
-        app.work_bottom = 1080
-        app.panel_w = 520
-        app.explorer_w = 210
-        app.nav_w = 16
-        app.explorer_visible = True
-
-        panel_x, explorer_x, nav_x, explorer_width = app._layout_positions(True)
-
-        self.assertEqual(1400, panel_x)
-        self.assertEqual(1190, explorer_x)
-        self.assertEqual(1190, nav_x)
-        self.assertEqual(210, explorer_width)
-
     def test_screen_edge_animation_uses_layout_positions_directly(self) -> None:
         app = WindowMixin()
-        app.config = SimpleNamespace(app_position="right", nav_bar_visible=True, nav_bar_anchor="screen_edge")
+        app.config = SimpleNamespace(app_position="right", nav_bar_anchor="screen_edge")
         app.work_left = 0
         app.work_top = 0
         app.work_right = 1920

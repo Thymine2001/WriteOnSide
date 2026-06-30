@@ -13,7 +13,7 @@ from ..config import APP_NAME, AppConfig, normalize_plugin_shortcuts, normalize_
 from ..i18n import SUPPORTED_LANGUAGES, command_label, normalize_language, set_language, t
 from ..hotkeys import format_hotkey_display, is_modifier_only_hotkey, normalize_hotkey, read_hotkey_clean, validate_hotkey
 from ..layout_metrics import explorer_width_limits, panel_width_limits
-from ..platform import is_startup_enabled, set_startup_enabled
+from ..platform import is_startup_enabled, redraw_window, set_startup_enabled, set_window_redraw
 from ..plugins import BUILTIN_PLUGINS, disable_plugin, enable_plugin, plugin_status, remove_plugin, restore_plugin
 from ..shortcuts import (
     COMMAND_SHORTCUTS,
@@ -47,7 +47,6 @@ class SettingsMixin:
             "width": self.config.width,
             "explorer_width": self.config.explorer_width,
             "nav_width": self.config.nav_width,
-            "nav_bar_visible": self.config.nav_bar_visible,
             "nav_bar_anchor": self.config.nav_bar_anchor,
             "alpha": self.config.alpha,
             "auto_save": self.config.auto_save,
@@ -391,6 +390,25 @@ class SettingsMixin:
         }
         page_buttons: dict[str, tk.Label] = {}
         active_page = tk.StringVar(value="general")
+        page_finalize: dict[str, Callable[[], None]] = {}
+
+        def _settings_win_handle() -> int | None:
+            try:
+                return self._window_handle(win)
+            except (AttributeError, tk.TclError, ValueError):
+                return None
+
+        def _with_settings_redraw_suspended(action: Callable[[], None]) -> None:
+            handle = _settings_win_handle()
+            if handle is not None:
+                set_window_redraw(handle, False)
+            try:
+                action()
+            finally:
+                if handle is not None:
+                    win.update_idletasks()
+                    set_window_redraw(handle, True)
+                    redraw_window(handle)
 
         def refresh_page_nav() -> None:
             _g = globals()
@@ -408,13 +426,21 @@ class SettingsMixin:
         def show_settings_page(name: str) -> None:
             if name not in pages:
                 return
-            active_page.set(name)
-            for page in pages.values():
-                page.pack_forget()
-            pages[name].pack(fill="both", expand=True)
-            refresh_page_nav()
-            canvas.yview_moveto(0)
-            win.after_idle(update_scroll_region)
+
+            def switch_page() -> None:
+                active_page.set(name)
+                for page in pages.values():
+                    page.pack_forget()
+                pages[name].pack(fill="both", expand=True)
+                refresh_page_nav()
+                canvas.yview_moveto(0)
+                win.update_idletasks()
+                finalize = page_finalize.get(name)
+                if finalize is not None:
+                    finalize()
+                update_scroll_region()
+
+            _with_settings_redraw_suspended(switch_page)
 
         for key, label_text in (
             ("general", t("settings.page.general")),
@@ -1534,41 +1560,25 @@ class SettingsMixin:
 
         refresh_width_hint()
         e_nav = row(layout_page, t("settings.nav_width"), str(self.config.nav_width))
-        nav_visible_var = tk.BooleanVar(value=bool(getattr(self.config, "nav_bar_visible", True)))
         nav_anchor_var = tk.StringVar(
             value=str(getattr(self.config, "nav_bar_anchor", "panel_edge"))
             if str(getattr(self.config, "nav_bar_anchor", "panel_edge")) in {"panel_edge", "screen_edge"}
             else "panel_edge"
         )
 
-        nav_visible_labels = {True: t("settings.nav_bar.show"), False: t("settings.nav_bar.hide")}
-
-        def refresh_nav_visible_switch() -> None:
-            _g = globals()
-            selected = nav_visible_var.get()
-            for key, button in nav_visible_buttons.items():
-                style_dual_choice_button(button, key == selected)
-            nav_visible_label.configure(fg=_g["TEXT"])
-            state = tk.NORMAL if selected else tk.DISABLED
-            for button in nav_anchor_buttons.values():
-                button.configure(state=state, cursor="hand2" if selected else "arrow")
-            nav_anchor_label.configure(fg=_g["TEXT"] if selected else _g["MUTED"])
-
         def apply_nav_preview() -> None:
             if not win.winfo_exists():
                 return
-            self.config.nav_bar_visible = nav_visible_var.get()
             anchor = nav_anchor_var.get()
             self.config.nav_bar_anchor = anchor if anchor in {"panel_edge", "screen_edge"} else "panel_edge"
             self._place_layout(self.is_open)
             self._raise_nav_bar()
             self._refresh_nav_bar_visual()
-            if self.config.nav_bar_visible:
-                mode = nav_anchor_labels.get(self.config.nav_bar_anchor, self.config.nav_bar_anchor)
-                msg.config(text=t("settings.msg.nav_anchor_preview", mode=mode), fg=globals()["TEXT"])
+            mode = nav_anchor_labels.get(self.config.nav_bar_anchor, self.config.nav_bar_anchor)
+            msg.config(text=t("settings.msg.nav_anchor_preview", mode=mode), fg=globals()["TEXT"])
 
         def select_nav_anchor(value: str, preview: bool = True) -> None:
-            if value not in {"panel_edge", "screen_edge"} or not nav_visible_var.get():
+            if value not in {"panel_edge", "screen_edge"}:
                 return
             nav_anchor_var.set(value)
             for key, button in nav_anchor_buttons.items():
@@ -1576,19 +1586,6 @@ class SettingsMixin:
             if preview:
                 apply_nav_preview()
 
-        def select_nav_visible(value: bool, preview: bool = True) -> None:
-            nav_visible_var.set(bool(value))
-            refresh_nav_visible_switch()
-            if preview:
-                apply_nav_preview()
-
-        nav_visible_label, nav_visible_buttons, _nav_visible_choices = add_dual_choice_row(
-            layout_page,
-            t("settings.nav_bar.visible"),
-            (True, False),
-            nav_visible_labels,
-            lambda value: select_nav_visible(bool(value)),
-        )
         nav_anchor_labels = {
             "panel_edge": t("nav_anchor.panel_edge"),
             "screen_edge": t("nav_anchor.screen_edge"),
@@ -1601,7 +1598,6 @@ class SettingsMixin:
             lambda value: select_nav_anchor(str(value)),
         )
         select_nav_anchor(nav_anchor_var.get(), preview=False)
-        select_nav_visible(nav_visible_var.get(), preview=False)
         width_preview_after: str | None = None
         syncing_width_entries = False
 
@@ -1709,10 +1705,22 @@ class SettingsMixin:
             takefocus=True,
         )
 
+        def _alpha_slider_draw_width() -> int:
+            width = alpha_scale.winfo_width()
+            if width > 1:
+                return max(40, width)
+            frame_w = opacity_frame.winfo_width()
+            if frame_w > 1:
+                return max(40, frame_w - 130)
+            pages_w = settings_pages.winfo_width()
+            if pages_w > 1:
+                return max(40, pages_w - 50)
+            return max(220, settings_w - 200)
+
         def draw_alpha_slider(_event=None) -> None:
             _g = globals()
             alpha_scale.delete("all")
-            width = max(40, alpha_scale.winfo_width())
+            width = _alpha_slider_draw_width()
             left, right, center_y = 11, width - 11, 15
             progress = (alpha_var.get() - 0.30) / 0.70
             progress = max(0.0, min(1.0, progress))
@@ -1741,7 +1749,7 @@ class SettingsMixin:
             )
 
         def set_alpha_from_x(x: int) -> None:
-            width = max(40, alpha_scale.winfo_width())
+            width = _alpha_slider_draw_width()
             progress = max(0.0, min(1.0, (x - 11) / max(1, width - 22)))
             alpha = round(0.30 + progress * 0.70, 3)
             alpha_var.set(alpha)
@@ -1764,6 +1772,14 @@ class SettingsMixin:
         alpha_scale.bind("<Shift-Right>", lambda _event: nudge_alpha(0.05))
         alpha_scale.pack(side="left", fill="x", expand=True, padx=(4, 4))
         alpha_value.pack(side="right", padx=(2, 6))
+
+        def finalize_appearance_page() -> None:
+            refresh_theme_tiles()
+            refresh_typography_preview_label()
+            font_dropdown["refresh"]()
+            draw_alpha_slider()
+
+        page_finalize["appearance"] = finalize_appearance_page
 
         bools = tk.Frame(
             general_page,
@@ -1911,10 +1927,6 @@ class SettingsMixin:
             for key, button in position_buttons.items():
                 button.configure(text=position_labels[key])
             select_position(position_var.get(), preview=False)
-            nav_visible_label.configure(text=t("settings.nav_bar.visible"))
-            nav_visible_labels.update({True: t("settings.nav_bar.show"), False: t("settings.nav_bar.hide")})
-            for key, button in nav_visible_buttons.items():
-                button.configure(text=nav_visible_labels[key])
             nav_anchor_label.configure(text=t("settings.nav_bar.anchor"))
             nav_anchor_labels.update(
                 {
@@ -1924,7 +1936,6 @@ class SettingsMixin:
             )
             for key, button in nav_anchor_buttons.items():
                 button.configure(text=nav_anchor_labels[key])
-            select_nav_visible(nav_visible_var.get(), preview=False)
             select_nav_anchor(nav_anchor_var.get(), preview=False)
             theme_label.configure(text=t("settings.color_theme"))
             typography_label.configure(text=t("settings.typography"))
@@ -2134,7 +2145,6 @@ class SettingsMixin:
             self.config.width = panel_width
             self.config.explorer_width = explorer_width
             self.config.nav_width = nav_width
-            self.config.nav_bar_visible = nav_visible_var.get()
             anchor = nav_anchor_var.get()
             self.config.nav_bar_anchor = anchor if anchor in {"panel_edge", "screen_edge"} else "panel_edge"
             self.config.alpha = alpha
@@ -2176,7 +2186,6 @@ class SettingsMixin:
             self.config.width = int(original["width"])
             self.config.explorer_width = int(original["explorer_width"])
             self.config.nav_width = int(original["nav_width"])
-            self.config.nav_bar_visible = bool(original["nav_bar_visible"])
             self.config.nav_bar_anchor = str(original["nav_bar_anchor"])
             self.config.alpha = float(original["alpha"])
             self._preview_alpha = None
@@ -2235,8 +2244,32 @@ class SettingsMixin:
             self.root.after_idle(self._update_width_resize_handles)
 
         win.protocol("WM_DELETE_WINDOW", close_settings)
-        update_scroll_region()
-        win.update_idletasks()
+
+        def prewarm_settings_pages() -> None:
+            saved = active_page.get()
+
+            def prewarm() -> None:
+                for page_key in pages:
+                    for page in pages.values():
+                        page.pack_forget()
+                    pages[page_key].pack(fill="both", expand=True)
+                    win.update_idletasks()
+                    finalize = page_finalize.get(page_key)
+                    if finalize is not None:
+                        finalize()
+                    update_scroll_region()
+                active_page.set(saved)
+                for page in pages.values():
+                    page.pack_forget()
+                pages[saved].pack(fill="both", expand=True)
+                refresh_page_nav()
+                canvas.yview_moveto(0)
+                win.update_idletasks()
+                update_scroll_region()
+
+            _with_settings_redraw_suspended(prewarm)
+
+        prewarm_settings_pages()
         win.deiconify()
         win.lift(self.root)
 

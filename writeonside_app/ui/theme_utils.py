@@ -347,14 +347,16 @@ class ThemeMixin:
             widget.pack_forget()
         if self.config.app_position == "left":
             self.app_title_label.config(anchor="e")
-            self.note_title.config(anchor="e")
+            if hasattr(self, "note_title"):
+                self.note_title.config(anchor="e")
             self.close_btn.pack(side="left", padx=(8, 2))
             self.plugins_btn.pack(side="left", padx=2)
             self.menu_btn.pack(side="right", padx=(4, 8))
             self.title_group.pack(side="left", fill="x", expand=True)
         else:
             self.app_title_label.config(anchor="w")
-            self.note_title.config(anchor="w")
+            if hasattr(self, "note_title"):
+                self.note_title.config(anchor="w")
             self.menu_btn.pack(side="left", padx=(8, 4))
             self.close_btn.pack(side="right", padx=(2, 8))
             self.plugins_btn.pack(side="right", padx=2)

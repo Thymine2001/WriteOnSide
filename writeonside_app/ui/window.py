@@ -11,13 +11,16 @@ from ..layout_metrics import (
     panel_width_limits,
 )
 from ..platform import (
+    animation_frame_interval_ms,
     clear_window_clip,
     clip_window_to_bounds,
     get_work_area,
     hide_window_from_taskbar,
     invalidate_window,
     move_windows_atomically,
+    redraw_window,
     set_timer_resolution,
+    set_window_redraw,
 )
 from ..i18n import t
 from ..theme import *  # noqa: F401,F403
@@ -25,6 +28,31 @@ from ..theme import *  # noqa: F401,F403
 
 class WindowMixin:
     _RESIZE_EDGE_HIT_PX = 7
+
+    def _suspend_panel_redraw(self) -> list[int]:
+        handles: list[int] = []
+        for window_name in ("root", "explorer"):
+            window = getattr(self, window_name, None)
+            if window is None:
+                continue
+            try:
+                handle = self._window_handle(window)
+            except (AttributeError, TypeError, ValueError, tk.TclError):
+                continue
+            if handle and set_window_redraw(handle, False):
+                handles.append(handle)
+        self._panel_redraw_handles = handles
+        return handles
+
+    def _resume_panel_redraw(self) -> None:
+        handles = getattr(self, "_panel_redraw_handles", None) or []
+        self._panel_redraw_handles = []
+        if not handles:
+            return
+        for handle in handles:
+            set_window_redraw(handle, True)
+        for handle in handles:
+            redraw_window(handle)
 
     def _setup_width_resize_handles(self) -> None:
         g = globals()
@@ -262,8 +290,6 @@ class WindowMixin:
         return f"{panel_width}x{self.panel_h}+{x}+{self.panel_y}"
 
     def _nav_bar_effective_width(self) -> int:
-        if not getattr(self.config, "nav_bar_visible", True):
-            return 0
         return int(self.nav_w)
 
     def _nav_bar_screen_edge_anchor(self) -> bool:
@@ -319,12 +345,6 @@ class WindowMixin:
 
     def _raise_nav_bar(self) -> None:
         if not hasattr(self, "nav"):
-            return
-        if not getattr(self.config, "nav_bar_visible", True):
-            try:
-                self.nav.withdraw()
-            except tk.TclError:
-                pass
             return
         try:
             self.nav.deiconify()
@@ -478,6 +498,8 @@ class WindowMixin:
         nav_x: int,
         explorer_width: int,
         include_explorer: bool,
+        *,
+        repaint: bool = True,
     ) -> None:
         panel_move_x, explorer_move_x, nav_move_x, explorer_move_width, panel_clip_bounds, explorer_clip_bounds = (
             self._safe_animation_layout(panel_x, explorer_x, nav_x, explorer_width, include_explorer)
@@ -523,12 +545,10 @@ class WindowMixin:
             self.nav.geometry(f"{self.nav_w}x{self.panel_h}+{int(nav_move_x)}+{self.panel_y}")
             if include_explorer:
                 self._set_explorer_geometry(explorer_move_x, explorer_move_width)
-        # Queue repaint after navigation reaches this frame, but do not force
-        # synchronous WM_PAINT. Windows can coalesce both content windows into
-        # the compositor frame instead of blocking Tk's 16 ms animation timer.
-        invalidate_window(root_handle)
-        if explorer_handle is not None:
-            invalidate_window(explorer_handle)
+        if repaint:
+            invalidate_window(root_handle)
+            if explorer_handle is not None:
+                invalidate_window(explorer_handle)
         self._last_animation_frame = frame_state
 
     def _safe_animation_layout(
@@ -618,7 +638,14 @@ class WindowMixin:
             except tk.TclError:
                 pass
 
-    def _animate_layout(self, opened: bool, callback: Callable[[], None] | None = None, duration_ms: int = 190) -> None:
+    def _animation_frame_interval_ms(self) -> int:
+        return animation_frame_interval_ms()
+
+    def _schedule_animation_step(self, frame_work_ms: float, step: Callable[[], None]) -> None:
+        delay_ms = max(1, round(self._animation_frame_interval_ms() - frame_work_ms))
+        self.root.after(delay_ms, step)
+
+    def _animate_layout(self, opened: bool, callback: Callable[[], None] | None = None, duration_ms: int = 200) -> None:
         self._layout_animation_id += 1
         animation_id = self._layout_animation_id
         self.animating = True
@@ -641,7 +668,6 @@ class WindowMixin:
             if animate_explorer:
                 self.explorer.deiconify()
                 self.explorer.lift()
-        frame_ms = 16
         started_at = time.perf_counter()
         if getattr(self, "_timer_res_active", False):
             set_timer_resolution(False)
@@ -667,10 +693,16 @@ class WindowMixin:
                 interpolate(nav_start, nav_target, eased),
                 interpolate(explorer_width_start, explorer_width_target, eased),
                 animate_explorer,
+                repaint=False,
             )
             if progress >= 1.0:
                 self._move_animation_frame(
-                    panel_target, explorer_target, nav_target, explorer_width_target, animate_explorer,
+                    panel_target,
+                    explorer_target,
+                    nav_target,
+                    explorer_width_target,
+                    animate_explorer,
+                    repaint=True,
                 )
                 self.animating = False
                 if self._timer_res_active:
@@ -686,7 +718,7 @@ class WindowMixin:
                 self._refresh_nav_bar_visual()
                 return
             frame_work_ms = (time.perf_counter() - frame_started_at) * 1000
-            self.root.after(max(1, round(frame_ms - frame_work_ms)), step_once)
+            self._schedule_animation_step(frame_work_ms, step_once)
 
         step_once()
 
@@ -759,10 +791,11 @@ class WindowMixin:
                 interpolate(nav_start, nav_target, eased),
                 interpolate(explorer_width_start, explorer_width_target, eased),
                 include_explorer,
+                repaint=False,
             )
             if progress < 1.0:
                 frame_work_ms = (time.perf_counter() - frame_started_at) * 1000
-                self.root.after(max(1, round(16 - frame_work_ms)), step_once)
+                self._schedule_animation_step(frame_work_ms, step_once)
                 return
             self._move_animation_frame(
                 panel_target,
@@ -770,6 +803,7 @@ class WindowMixin:
                 nav_target,
                 explorer_width_target,
                 include_explorer,
+                repaint=True,
             )
             self.animating = False
             if self._timer_res_active:
@@ -865,9 +899,9 @@ class WindowMixin:
         self.is_open = True
 
         def done() -> None:
-            self._refresh_main_layout()
+            self._update_width_resize_handles()
             if self.explorer_visible:
-                self._refresh_explorer()
+                self._highlight_current_note()
                 self.explorer.lift()
                 self.root.lift()
             else:
@@ -875,6 +909,10 @@ class WindowMixin:
             self._raise_nav_bar()
             self._refresh_nav_bar_visual()
             self.text.focus_set() if self.view_mode == "edit" else self.read_text.focus_set()
+            if getattr(self, "_explorer_refresh_pending", False):
+                self._explorer_refresh_pending = False
+                self.root.after_idle(lambda: self._refresh_explorer(rebuild_index=False))
+            self.root.after_idle(self._refresh_main_layout)
 
         self._animate_layout(True, callback=done)
 

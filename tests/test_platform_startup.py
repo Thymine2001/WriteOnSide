@@ -99,5 +99,27 @@ class PlatformStartupTests(unittest.TestCase):
                 platform.set_startup_enabled(True)
 
 
+class DisplayRefreshTests(unittest.TestCase):
+    def setUp(self) -> None:
+        platform._CACHED_DISPLAY_REFRESH_HZ = None
+
+    def tearDown(self) -> None:
+        platform._CACHED_DISPLAY_REFRESH_HZ = None
+
+    def test_animation_frame_interval_matches_refresh_rate(self) -> None:
+        self.assertEqual(8, platform.animation_frame_interval_ms(120))
+        self.assertEqual(16, platform.animation_frame_interval_ms(60))
+        self.assertEqual(4, platform.animation_frame_interval_ms(240))
+
+    def test_get_display_refresh_rate_falls_back_to_sixty(self) -> None:
+        fake_user32 = MagicMock()
+        fake_user32.GetDC.return_value = 1
+        fake_gdi32 = MagicMock()
+        fake_gdi32.GetDeviceCaps.return_value = 0
+        fake_windll = SimpleNamespace(user32=fake_user32, gdi32=fake_gdi32)
+        with patch.object(platform.ctypes, "windll", fake_windll):
+            self.assertEqual(60, platform.get_display_refresh_rate_hz())
+
+
 if __name__ == "__main__":
     unittest.main()

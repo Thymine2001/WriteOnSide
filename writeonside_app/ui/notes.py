@@ -1368,27 +1368,23 @@ class NotesMixin:
 
     # ── Status bar ───────────────────────────────────────────────────────────
 
-    def _title_context_for_path(self, path: Path) -> str:
-        try:
-            root = self._workspace_dir().resolve()
-            resolved = path.resolve()
-            relative = resolved.relative_to(root)
-            parent = relative.parent
-            return root.name if str(parent) == "." else str(parent)
-        except (OSError, ValueError):
-            return str(path.parent)
-
-    def _active_title_parts(self) -> tuple[str, str]:
+    def _active_title_parts(self) -> str:
         active_path = self.preview_path or self.current_note_path
         if active_path is None:
-            return APP_NAME, t("note.no_note")
-        return active_path.name, self._title_context_for_path(active_path)
+            return APP_NAME
+        return active_path.name
 
     def _update_note_title(self) -> None:
-        primary, secondary = self._active_title_parts()
+        primary = self._active_title_parts()
         if hasattr(self, "app_title_label"):
             self.app_title_label.config(text=primary)
-        self.note_title.config(text=secondary)
+        if hasattr(self, "note_title"):
+            self.note_title.config(text="")
+            try:
+                if self.note_title.winfo_ismapped():
+                    self.note_title.pack_forget()
+            except (AttributeError, tk.TclError):
+                pass
         try:
             self.root.title(f"{primary} - {APP_NAME}" if primary != APP_NAME else APP_NAME)
         except tk.TclError:

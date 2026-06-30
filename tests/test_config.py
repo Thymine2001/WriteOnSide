@@ -70,14 +70,13 @@ class ConfigTests(unittest.TestCase):
             config_dir = Path(temp_dir)
             config_file = config_dir / "config.json"
             config_file.write_text(
-                json.dumps({"nav_bar_visible": False, "nav_bar_anchor": "screen_edge"}),
+                json.dumps({"nav_bar_anchor": "screen_edge"}),
                 encoding="utf-8",
             )
             with patch("writeonside_app.config.APP_DATA_DIR", config_dir), patch(
                 "writeonside_app.config.CONFIG_FILE", config_file
             ):
                 config = load_config()
-            self.assertFalse(config.nav_bar_visible)
             self.assertEqual("screen_edge", config.nav_bar_anchor)
 
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -34,7 +34,7 @@ class AppLifecycleTests(unittest.TestCase):
 
         self.assertEqual([1, 35, 55, 70, 120], [delay for delay, _callback in scheduled])
 
-    def test_startup_content_defers_full_explorer_index(self) -> None:
+    def test_startup_content_prepares_explorer_before_first_visible_frame(self) -> None:
         calls: list[object] = []
 
         class Root:
@@ -45,17 +45,20 @@ class AppLifecycleTests(unittest.TestCase):
         app = object.__new__(WriteOnSideApp)
         app.root = Root()
         app._initial_file = None
+        app.explorer_visible = True
         app._apply_typography = lambda: calls.append("typography")
         app._load_initial_note = lambda **kwargs: calls.append(("note", kwargs))
         app._show_initial_panel = lambda: calls.append("show")
-        app._refresh_explorer = lambda: None
+        app._refresh_explorer = lambda: calls.append("explorer")
+        app._suspend_panel_redraw = lambda: calls.append("suspend")
+        app._resume_panel_redraw = lambda: calls.append("resume")
 
         app._finish_startup_content()
 
-        self.assertEqual("typography", calls[0])
-        self.assertEqual(("note", {"refresh_explorer": False}), calls[1])
-        self.assertEqual("show", calls[2])
-        self.assertEqual(80, calls[3][0])
+        self.assertEqual(
+            ["typography", ("note", {"refresh_explorer": False}), "suspend", "explorer", "show", "resume"],
+            calls,
+        )
 
     def test_keyboard_interrupt_uses_normal_quit_path(self) -> None:
         app = object.__new__(WriteOnSideApp)

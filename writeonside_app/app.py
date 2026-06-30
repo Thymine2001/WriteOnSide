@@ -112,6 +112,8 @@ class WriteOnSideApp(
         self._note_index_scope: Path | None = None
         self._tag_refresh_after: str | None = None
         self._explorer_refresh_after: str | None = None
+        self._explorer_refresh_pending = False
+        self._panel_redraw_handles: list[int] = []
         self._tree_resize_after: str | None = None
         self._sash_indicator: tk.Frame | None = None
         self._pending_explorer_sash_y: int | None = None
@@ -224,10 +226,13 @@ class WriteOnSideApp(
             )
         else:
             self._load_initial_note(refresh_explorer=False)
-        self._show_initial_panel()
-        # Build the complete tag index/file tree after the editor has usable
-        # content. Large workspaces no longer block the first visible frame.
-        self.root.after(80, self._refresh_explorer)
+        self._suspend_panel_redraw()
+        try:
+            if self.explorer_visible:
+                self._refresh_explorer()
+            self._show_initial_panel()
+        finally:
+            self._resume_panel_redraw()
 
     def _finish_startup_services(self) -> None:
         self._start_vault_watcher()
@@ -260,11 +265,10 @@ class WriteOnSideApp(
             anchor="w",
             width=1,
         )
-        self.app_title_label.pack(fill="x")
+        self.app_title_label.pack(fill="both", expand=True)
         self.note_title = tk.Label(
             title_group, text="", bg=g["SURFACE"], fg=g["MUTED"], font=("Segoe UI", 8), anchor="w", width=1
         )
-        self.note_title.pack(fill="x")
         self._apply_header_alignment()
 
         self.toolbar = tk.Frame(self.root, bg=g["SURFACE_2"])

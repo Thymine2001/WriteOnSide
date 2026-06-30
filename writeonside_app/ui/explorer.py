@@ -629,6 +629,9 @@ class ExplorerMixin:
     # ── Schedule refresh ─────────────────────────────────────────────────────
 
     def _schedule_explorer_refresh(self) -> None:
+        if not getattr(self, "is_open", True):
+            self._explorer_refresh_pending = True
+            return
         if self._explorer_refresh_after is not None:
             try:
                 self.root.after_cancel(self._explorer_refresh_after)

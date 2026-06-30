@@ -32,6 +32,8 @@ RDW_INVALIDATE = 0x0001
 RDW_ERASE = 0x0004
 RDW_ALLCHILDREN = 0x0080
 RDW_UPDATENOW = 0x0100
+VREFRESH = 116
+_CACHED_DISPLAY_REFRESH_HZ: int | None = None
 
 
 class _RECT(ctypes.Structure):
@@ -422,6 +424,34 @@ def set_timer_resolution(enabled: bool) -> None:
             winmm.timeEndPeriod(1)
     except Exception:
         pass
+
+
+def get_display_refresh_rate_hz() -> int:
+    """Return the primary display refresh rate, clamped to a sane animation range."""
+    global _CACHED_DISPLAY_REFRESH_HZ
+    if _CACHED_DISPLAY_REFRESH_HZ is not None:
+        return _CACHED_DISPLAY_REFRESH_HZ
+    refresh = 0
+    try:
+        user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
+        hdc = user32.GetDC(0)
+        if hdc:
+            refresh = int(gdi32.GetDeviceCaps(hdc, VREFRESH))
+            user32.ReleaseDC(0, hdc)
+    except Exception:
+        refresh = 0
+    if refresh <= 1:
+        refresh = 60
+    _CACHED_DISPLAY_REFRESH_HZ = max(60, min(240, refresh))
+    return _CACHED_DISPLAY_REFRESH_HZ
+
+
+def animation_frame_interval_ms(refresh_hz: int | None = None) -> int:
+    """Schedule animation frames to match the display refresh rate."""
+    hz = refresh_hz if refresh_hz is not None else get_display_refresh_rate_hz()
+    hz = max(60, min(240, int(hz)))
+    return max(4, int(1000 / hz))
 
 
 def move_windows_atomically(layouts: list[tuple[int, int, int, int, int]]) -> bool:

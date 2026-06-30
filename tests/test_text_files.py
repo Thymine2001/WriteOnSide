@@ -234,7 +234,7 @@ class TextFileTests(unittest.TestCase):
             app._update_note_title()
 
             self.assertEqual("example.py", app.app_title_label.text)
-            self.assertEqual(str(external_dir), app.note_title.text)
+            self.assertEqual("", app.note_title.text)
             self.assertEqual("example.py - WriteOnSide", app.root.title_text)
 
     def test_workspace_file_title_uses_relative_parent_context(self):
@@ -253,7 +253,7 @@ class TextFileTests(unittest.TestCase):
                     return root
 
             app = TitleHarness()
-            self.assertEqual(("example.md", "Folder"), app._active_title_parts())
+            self.assertEqual("example.md", app._active_title_parts())
 
     def test_closing_preview_without_restore_resyncs_visible_frame(self):
         class FrameSpy:
