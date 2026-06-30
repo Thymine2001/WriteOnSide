@@ -4,7 +4,7 @@ import importlib
 import tkinter as tk
 
 from ..i18n import t
-from ..platform import show_window_in_taskbar
+from ..platform import redraw_window, set_window_redraw, show_window_in_taskbar
 from ..plugins import BUILTIN_PLUGINS, enabled_plugins, plugin_status
 from ..theme import *  # noqa: F401,F403
 from .typography import FONT_CARD_TITLE, FONT_PLUGIN_ICON, FONT_UI, FONT_UI_SMALL, FONT_WINDOW_TITLE
@@ -51,6 +51,16 @@ class PluginsMixin:
         win.configure(bg=g["BG"])
         win.transient(self.root)
         win.resizable(True, True)
+
+        def _plugins_win_handle() -> int | None:
+            try:
+                return self._window_handle(win)
+            except (AttributeError, tk.TclError, ValueError):
+                return None
+
+        redraw_handle = _plugins_win_handle()
+        if redraw_handle is not None:
+            set_window_redraw(redraw_handle, False)
 
         content_shell = tk.Frame(win, bg=g["BG"])
         content_shell.pack(fill="both", expand=True)
@@ -219,7 +229,6 @@ class PluginsMixin:
 
         for index, plugin in enumerate(plugins):
             card = tk.Frame(grid, bg=g["SURFACE"], highlightthickness=1, highlightbackground=g["BORDER"])
-            card.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
             card.grid_propagate(False)
             icon_label = tk.Label(card, text=plugin.icon, bg=g["SURFACE"], fg=g["TEXT"], font=FONT_PLUGIN_ICON)
             icon_label.pack(pady=(14, 4))
@@ -260,7 +269,14 @@ class PluginsMixin:
                     )
 
         grid.bind("<Configure>", on_grid_configure)
-        layout_plugin_cards(max(1, min(6, plugins_w // 128)))
+
+        def finalize_plugins_window() -> None:
+            win.update_idletasks()
+            grid_width = max(grid.winfo_width(), plugins_w - 60)
+            layout_plugin_cards(max(1, min(6, grid_width // 128)))
+            update_scroll_region()
+            footer_msg.configure(wraplength=max(220, win.winfo_width() - 44))
+            subtitle.configure(wraplength=max(220, win.winfo_width() - 64))
 
         plugin_theme_widgets = {
             "window": win,
@@ -310,7 +326,10 @@ class PluginsMixin:
         win.protocol("WM_DELETE_WINDOW", close)
         win.bind("<Escape>", lambda _event: close())
         self._refresh_plugin_window_theme()
-        win.update_idletasks()
+        finalize_plugins_window()
+        if redraw_handle is not None:
+            set_window_redraw(redraw_handle, True)
+            redraw_window(redraw_handle)
         win.deiconify()
         show_taskbar_entry()
         win.lift()

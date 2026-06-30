@@ -1781,6 +1781,24 @@ class SettingsMixin:
 
         page_finalize["appearance"] = finalize_appearance_page
 
+        def _plugins_description_wraplength() -> int:
+            width = plugins_list.winfo_width()
+            if width > 1:
+                return max(180, width - 160)
+            page_w = plugins_page.winfo_width()
+            if page_w > 1:
+                return max(180, page_w - 196)
+            return max(180, settings_w - 240)
+
+        def finalize_plugins_page() -> None:
+            refresh_plugin_rows()
+            wraplength = _plugins_description_wraplength()
+            plugins_hint_label.configure(wraplength=max(220, wraplength + 36))
+            for row_state in plugin_rows:
+                row_state["description"].configure(wraplength=wraplength)
+
+        page_finalize["plugins"] = finalize_plugins_page
+
         bools = tk.Frame(
             general_page,
             bg=g["SURFACE"],
@@ -1959,7 +1977,7 @@ class SettingsMixin:
                 if str(button.cget("state")) != tk.DISABLED:
                     button.configure(text=t("settings.record"))
             restore_shortcuts_button.configure(text=t("settings.restore_defaults"))
-            refresh_plugin_rows()
+            finalize_plugins_page()
             refresh_setting_toggles()
             refresh_page_nav()
             win.after_idle(update_scroll_region)
