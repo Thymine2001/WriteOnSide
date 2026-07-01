@@ -37,6 +37,9 @@ class _WatcherHarness(VaultWatcherMixin):
     def _schedule_wiki_index_refresh(self) -> None:
         self.wiki_refreshes += 1
 
+    def _schedule_attachment_index_refresh(self) -> None:
+        self.attachment_refreshes = getattr(self, "attachment_refreshes", 0) + 1
+
     def _reload_main_editor_from_disk(self, path: Path) -> None:
         self.reloaded.append(path)
 

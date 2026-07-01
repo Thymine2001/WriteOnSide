@@ -727,6 +727,33 @@ def apply_live_highlight_plan(
             f"{span.line}.{span.end}",
         )
 
+    # Apply picked-color spans here, BEFORE any embedded replacement widgets
+    # (e.g. the "•"/"☐" list bullets created via window_create below) are
+    # inserted. window_create occupies a character slot and shifts the text
+    # after it, and Tk tags added beforehand move along with their characters.
+    # Adding color spans afterwards would leave them anchored one column early
+    # (landing on the elided "<span …>" instead of the visible content), which
+    # is why colors only rendered on the actively-edited line before.
+    for color_span in plan.color_spans:
+        if not validate_color(color_span.color):
+            continue
+        tag = color_tag_name(color_span.color)
+        configure_color_tag(tag, color_span.color)
+        editor_color_tags.add(tag)
+        text_widget.tag_add(
+            tag,
+            f"{color_span.line}.{color_span.start}",
+            f"{color_span.line}.{color_span.end}",
+        )
+        for line_tag in LINE_STRUCTURE_TAGS:
+            try:
+                text_widget.tag_raise(tag, line_tag)
+            except tk.TclError:
+                # Structure tag not defined on this widget yet; the final
+                # unconditional raise below still guarantees top priority.
+                pass
+        text_widget.tag_raise(tag)
+
     _sync_marker_elide_tags(text_widget, plan.marker_spans)
 
     replacements = []
@@ -825,16 +852,3 @@ def apply_live_highlight_plan(
         text_widget._live_preview_replacements = replacements
     except Exception:
         pass
-
-    for color_span in plan.color_spans:
-        if not validate_color(color_span.color):
-            continue
-        tag = color_tag_name(color_span.color)
-        configure_color_tag(tag, color_span.color)
-        editor_color_tags.add(tag)
-        text_widget.tag_add(
-            tag,
-            f"{color_span.line}.{color_span.start}",
-            f"{color_span.line}.{color_span.end}",
-        )
-        text_widget.tag_raise(tag)

@@ -68,6 +68,7 @@ class AppConfig:
     sticky_notes_double_ctrl: bool = True
     sticky_notes_default_tag: str = "sticky"
     sticky_notes_pinned: bool = False
+    custom_themes: list[dict[str, object]] = field(default_factory=list)
 
 
 def clamp_int(value, low: int, high: int, default: int) -> int:
@@ -220,6 +221,12 @@ def load_config() -> AppConfig:
         merged["theme"] = cfg.theme
     elif raw_theme == "tokyo_night":
         merged["theme"] = "mid_night"
+    from .theme import apply_custom_themes, DEFAULT_THEME, THEMES, normalize_custom_themes
+
+    merged["custom_themes"] = normalize_custom_themes(merged.get("custom_themes"))
+    apply_custom_themes(merged["custom_themes"])
+    if merged["theme"] not in THEMES:
+        merged["theme"] = DEFAULT_THEME
     return AppConfig(**merged)
 
 

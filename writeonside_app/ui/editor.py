@@ -505,6 +505,13 @@ class EditorMixin:
                 self.text.tag_raise(tag)
             except tk.TclError:
                 pass
+        # Keep picked-color spans on top of everything else so the inline
+        # <span style="color:…"> swatches always render in their real color.
+        for tag in getattr(self, "_editor_color_tags", ()):
+            try:
+                self.text.tag_raise(tag)
+            except tk.TclError:
+                pass
         self._sync_frontmatter_visibility()
         self._apply_editor_image_previews(content)
         self._schedule_editor_structure_refresh()
@@ -850,6 +857,12 @@ class EditorMixin:
 
     def _configure_editor_color_tag(self, tag: str, color: str) -> None:
         self.text.tag_configure(tag, foreground=color)
+        for line_tag in ("md_list", "md_task", "md_task_done", "md_quote"):
+            try:
+                self.text.tag_raise(tag, line_tag)
+            except tk.TclError:
+                pass
+        self.text.tag_raise(tag)
 
     # ── Autosave & save ─────────────────────────────────────────────────────
 

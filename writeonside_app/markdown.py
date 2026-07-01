@@ -180,6 +180,7 @@ def configure_html_color_tag(widget: tk.Text, color: str) -> str | None:
     widget._html_color_tag_counter = counter
     tag = f"html_color_{counter}"
     widget.tag_configure(tag, foreground=color)
+    widget.tag_raise(tag)
     return tag
 
 
@@ -292,6 +293,8 @@ def insert_inline_md(
                 color_tag = configure_html_color_tag(widget, color)
                 tags: str | tuple[str, ...] = (base_tag, color_tag) if color_tag else base_tag
                 widget.insert(tk.END, inner, tags)
+                if color_tag:
+                    widget.tag_raise(color_tag, base_tag)
             else:
                 widget.insert(tk.END, chunk, base_tag)
         pos = match.end()

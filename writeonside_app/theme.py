@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 import sys
 
 DEFAULT_THEME = "graphite"
+MAX_CUSTOM_THEMES = 2
+CUSTOM_THEME_IDS: tuple[str, ...] = ("custom_1", "custom_2")
+CUSTOM_THEME_PREFIX = "custom_"
+PREVIEW_THEME_ID = "__theme_editor_preview__"
 
 THEMES: dict[str, dict[str, str]] = {
     "graphite": {
@@ -397,6 +402,31 @@ THEMES: dict[str, dict[str, str]] = {
 }
 
 PALETTE_KEYS = tuple(key for key in THEMES[DEFAULT_THEME] if key != "NAME")
+_BUILTIN_THEMES: dict[str, dict[str, str]] = {key: dict(value) for key, value in THEMES.items()}
+
+COLOR_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("theme_editor.group.main", ("BG", "SURFACE", "SURFACE_2", "BORDER", "TEXT", "TEXT_SOFT", "MUTED")),
+    (
+        "theme_editor.group.sidebar",
+        ("SIDEBAR", "SIDEBAR_SURFACE", "SIDEBAR_BORDER", "SIDEBAR_TEXT", "SIDEBAR_MUTED", "SIDEBAR_HOVER"),
+    ),
+    ("theme_editor.group.accent", ("ACCENT", "ACCENT_2", "DANGER")),
+    (
+        "theme_editor.group.editor",
+        (
+            "CODE_BG",
+            "CODE_TEXT",
+            "LINK",
+            "IMAGE_LINK",
+            "QUOTE",
+            "FIND_MATCH",
+            "OUTLINE_CURRENT",
+            "DISABLED",
+            "HIGHLIGHT_BG",
+            "HIGHLIGHT_FG",
+        ),
+    ),
+)
 
 _THEME_MODULE_PREFIX = "writeonside_app"
 _THEME_SYNC_MODULES = (
@@ -413,6 +443,7 @@ _THEME_SYNC_MODULES = (
     f"{_THEME_MODULE_PREFIX}.ui.plugins",
     f"{_THEME_MODULE_PREFIX}.builtin_plugins.pedigree_analysis",
     f"{_THEME_MODULE_PREFIX}.builtin_plugins.sticky_notes",
+    f"{_THEME_MODULE_PREFIX}.builtin_plugins.theme_editor",
     f"{_THEME_MODULE_PREFIX}.ui.theme_utils",
     f"{_THEME_MODULE_PREFIX}.ui.dialogs",
 )
@@ -486,6 +517,98 @@ def sync_palette_to_modules(palette: ThemePalette) -> dict[str, str]:
         if module is not None:
             module.__dict__.update(values)
     return values
+
+
+def normalize_hex_color(value: object) -> str:
+    text = str(value or "").strip()
+    if re.fullmatch(r"#[0-9A-Fa-f]{6}", text):
+        return text.upper()
+    if re.fullmatch(r"#[0-9A-Fa-f]{3}", text):
+        return ("#" + "".join(ch * 2 for ch in text[1:])).upper()
+    return ""
+
+
+def normalize_palette(value: object, *, fallback: dict[str, str] | None = None) -> dict[str, str]:
+    base = dict(fallback or THEMES[DEFAULT_THEME])
+    if not isinstance(value, dict):
+        return {key: base[key] for key in PALETTE_KEYS}
+    normalized: dict[str, str] = {}
+    for key in PALETTE_KEYS:
+        color = normalize_hex_color(value.get(key, base.get(key, "")))
+        normalized[key] = color or base[key]
+    return normalized
+
+
+def normalize_custom_theme_entry(value: object) -> dict[str, str | dict[str, str]] | None:
+    if not isinstance(value, dict):
+        return None
+    theme_id = str(value.get("id") or "").strip()
+    if theme_id not in CUSTOM_THEME_IDS:
+        return None
+    name = str(value.get("name") or "").strip()
+    if not name:
+        slot = theme_id.rsplit("_", 1)[-1]
+        name = f"Custom {slot}"
+    palette = normalize_palette(value.get("palette"))
+    return {"id": theme_id, "name": name, "palette": palette}
+
+
+def normalize_custom_themes(value: object) -> list[dict[str, str | dict[str, str]]]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict[str, str | dict[str, str]]] = []
+    seen: set[str] = set()
+    for item in value:
+        entry = normalize_custom_theme_entry(item)
+        if entry is None:
+            continue
+        theme_id = str(entry["id"])
+        if theme_id in seen:
+            continue
+        seen.add(theme_id)
+        normalized.append(entry)
+        if len(normalized) >= MAX_CUSTOM_THEMES:
+            break
+    return normalized
+
+
+def clear_custom_themes() -> None:
+    for key in list(THEMES.keys()):
+        if key.startswith(CUSTOM_THEME_PREFIX):
+            del THEMES[key]
+
+
+def apply_custom_themes(custom_themes: object) -> list[dict[str, str | dict[str, str]]]:
+    clear_custom_themes()
+    entries = normalize_custom_themes(custom_themes)
+    for entry in entries:
+        theme_id = str(entry["id"])
+        palette = dict(entry["palette"])  # type: ignore[arg-type]
+        THEMES[theme_id] = {"NAME": str(entry["name"]), **palette}
+    return entries
+
+
+def list_builtin_theme_names() -> tuple[str, ...]:
+    return tuple(_BUILTIN_THEMES.keys())
+
+
+def is_builtin_theme(name: str) -> bool:
+    return name in _BUILTIN_THEMES
+
+
+def is_custom_theme(name: str) -> bool:
+    return name.startswith(CUSTOM_THEME_PREFIX)
+
+
+def custom_theme_entry(config_themes: object, theme_id: str) -> dict[str, str | dict[str, str]] | None:
+    for entry in normalize_custom_themes(config_themes):
+        if str(entry["id"]) == theme_id:
+            return entry
+    return None
+
+
+def build_theme_palette(name: str, palette: dict[str, str], *, display_name: str) -> dict[str, str]:
+    return {"NAME": display_name, **normalize_palette(palette, fallback=get_theme(name))}
 
 
 def get_theme(name: str) -> dict[str, str]:

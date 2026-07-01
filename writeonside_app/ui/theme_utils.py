@@ -127,6 +127,8 @@ class ThemeMixin:
         new_palette: dict[str, str],
         sidebar: bool = False,
     ) -> None:
+        if self._widget_in_theme_editor(widget):
+            return
         sidebar = sidebar or (hasattr(self, "explorer") and widget is self.explorer)
         is_swatch = bool(getattr(widget, "_theme_swatch", False))
         general_order = (
@@ -223,6 +225,18 @@ class ThemeMixin:
         if update_frontmatter is not None:
             update_frontmatter()
 
+    @staticmethod
+    def _widget_in_theme_editor(widget: tk.Misc) -> bool:
+        current: tk.Misc | None = widget
+        while current is not None:
+            if getattr(current, "_skip_theme_recolor", False):
+                return True
+            try:
+                current = current.master
+            except tk.TclError:
+                break
+        return False
+
     def _suspend_theme_redraw(self, roots: list[tk.Misc]) -> list[int]:
         window_handle = getattr(self, "_window_handle", None)
         if window_handle is None:
@@ -234,7 +248,9 @@ class ThemeMixin:
             except (TypeError, ValueError, tk.TclError):
                 continue
             if handle and set_window_redraw(handle, False):
-                handles.append(handle)
+                # Theme editor manages its own redraw while rebuilding chrome.
+                if not getattr(window, "_skip_theme_recolor", False):
+                    handles.append(handle)
         return handles
 
     @staticmethod
@@ -333,6 +349,10 @@ class ThemeMixin:
             self._refresh_pedigree_plugin_theme()
         if hasattr(self, "_refresh_attachment_organizer_theme"):
             self._refresh_attachment_organizer_theme()
+        if hasattr(self, "_refresh_theme_editor_theme"):
+            self._refresh_theme_editor_theme()
+        if hasattr(self, "_refresh_color_picker_theme"):
+            self._refresh_color_picker_theme()
         try:
             from ..builtin_plugins.sticky_notes import refresh_sticky_notes_theme
 

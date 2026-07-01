@@ -122,7 +122,7 @@ class LiveHighlightTests(unittest.TestCase):
             def tag_add(self, tag: str, start: str, end: str) -> None:
                 self.added.append((tag, start, end))
 
-            def tag_raise(self, tag: str) -> None:
+            def tag_raise(self, tag: str, above: str | None = None) -> None:
                 self.raised.append(tag)
 
         first = plan_live_highlight('<span style="color: red">red</span>')
@@ -159,6 +159,9 @@ class LiveHighlightTests(unittest.TestCase):
 
             def tag_configure(self, tag: str, **options) -> None:
                 self.configured = {"tag": tag, **options}
+
+            def tag_raise(self, tag: str, above: str | None = None) -> None:
+                pass
 
         class Harness(EditorMixin):
             text = FakeText()

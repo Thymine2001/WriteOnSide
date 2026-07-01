@@ -861,6 +861,12 @@ class NotesMixin:
 
     def _configure_split_color_tag(self, widget: tk.Text, tag: str, color: str) -> None:
         widget.tag_configure(tag, foreground=color)
+        for line_tag in ("md_list", "md_task", "md_task_done", "md_quote"):
+            try:
+                widget.tag_raise(tag, line_tag)
+            except tk.TclError:
+                pass
+        widget.tag_raise(tag)
 
     def _remove_split_image_preview(self, note: dict[str, object], key: str) -> None:
         text = note.get("text")
