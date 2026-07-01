@@ -65,6 +65,25 @@ BUILTIN_PLUGINS: tuple[PluginManifest, ...] = (
 BUILTIN_PLUGIN_IDS = frozenset(plugin.id for plugin in BUILTIN_PLUGINS)
 
 
+def unsupported_plugin_ids() -> frozenset[str]:
+    return frozenset(plugin.id for plugin in BUILTIN_PLUGINS if not plugin.entrypoint)
+
+
+def default_disabled_plugins() -> list[str]:
+    return sorted(unsupported_plugin_ids())
+
+
+def apply_default_disabled_plugins(config: AppConfig) -> None:
+    disabled = set(normalize_plugin_ids(config.disabled_plugins))
+    enabled_explicit = set(normalize_plugin_ids(config.enabled_plugins))
+    removed = set(normalize_plugin_ids(config.removed_plugins))
+    for plugin_id in unsupported_plugin_ids():
+        if plugin_id in removed or plugin_id in enabled_explicit:
+            continue
+        disabled.add(plugin_id)
+    config.disabled_plugins = normalize_plugin_ids(list(disabled))
+
+
 def plugin_by_id(plugin_id: str) -> PluginManifest | None:
     normalized = normalize_plugin_ids([plugin_id])
     if not normalized:

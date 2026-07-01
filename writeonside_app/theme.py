@@ -443,7 +443,9 @@ _THEME_SYNC_MODULES = (
     f"{_THEME_MODULE_PREFIX}.ui.plugins",
     f"{_THEME_MODULE_PREFIX}.builtin_plugins.pedigree_analysis",
     f"{_THEME_MODULE_PREFIX}.builtin_plugins.sticky_notes",
+    f"{_THEME_MODULE_PREFIX}.builtin_plugins.attachment_organizer",
     f"{_THEME_MODULE_PREFIX}.builtin_plugins.theme_editor",
+    f"{_THEME_MODULE_PREFIX}.builtin_plugins.color_picker",
     f"{_THEME_MODULE_PREFIX}.ui.theme_utils",
     f"{_THEME_MODULE_PREFIX}.ui.dialogs",
 )

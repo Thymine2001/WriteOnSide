@@ -227,7 +227,11 @@ def load_config() -> AppConfig:
     apply_custom_themes(merged["custom_themes"])
     if merged["theme"] not in THEMES:
         merged["theme"] = DEFAULT_THEME
-    return AppConfig(**merged)
+    config = AppConfig(**merged)
+    from .plugins import apply_default_disabled_plugins
+
+    apply_default_disabled_plugins(config)
+    return config
 
 
 def save_config(config: AppConfig) -> None:

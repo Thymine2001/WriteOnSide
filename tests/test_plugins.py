@@ -5,6 +5,7 @@ from pathlib import Path
 from writeonside_app.config import AppConfig, load_config
 from writeonside_app.plugins import (
     BUILTIN_PLUGINS,
+    apply_default_disabled_plugins,
     available_plugins,
     disable_plugin,
     enable_plugin,
@@ -18,12 +19,16 @@ from writeonside_app.plugins import (
 class PluginTests(unittest.TestCase):
     def test_builtin_plugins_are_enabled_by_default(self) -> None:
         config = AppConfig()
+        apply_default_disabled_plugins(config)
 
-        self.assertEqual(BUILTIN_PLUGINS, enabled_plugins(config))
-        self.assertEqual("enabled", plugin_status(config, BUILTIN_PLUGINS[0].id))
-        self.assertEqual("pedigree_analysis", BUILTIN_PLUGINS[0].id)
-        self.assertTrue(BUILTIN_PLUGINS[0].entrypoint)
-        self.assertIn("sticky_notes", [plugin.id for plugin in BUILTIN_PLUGINS])
+        enabled_ids = {plugin.id for plugin in enabled_plugins(config)}
+        for plugin in BUILTIN_PLUGINS:
+            if plugin.entrypoint:
+                self.assertIn(plugin.id, enabled_ids, plugin.id)
+            else:
+                self.assertNotIn(plugin.id, enabled_ids, plugin.id)
+        self.assertEqual("enabled", plugin_status(config, "pedigree_analysis"))
+        self.assertEqual("disabled", plugin_status(config, "calendar"))
 
     def test_plugin_can_be_disabled_removed_and_restored(self) -> None:
         config = AppConfig()
@@ -52,6 +57,23 @@ class PluginTests(unittest.TestCase):
 
         self.assertEqual([], config.disabled_plugins)
         self.assertEqual([], config.removed_plugins)
+
+    def test_load_config_disables_unsupported_plugins_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            from writeonside_app import config as config_module
+
+            original_dir = config_module.APP_DATA_DIR
+            original_file = config_module.CONFIG_FILE
+            config_module.APP_DATA_DIR = Path(temp_dir)
+            config_module.CONFIG_FILE = Path(temp_dir) / "config.json"
+            try:
+                config = load_config()
+            finally:
+                config_module.APP_DATA_DIR = original_dir
+                config_module.CONFIG_FILE = original_file
+
+        self.assertEqual("disabled", plugin_status(config, "calendar"))
+        self.assertEqual("enabled", plugin_status(config, "color_picker"))
 
     def test_plugin_shortcuts_are_loaded_and_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

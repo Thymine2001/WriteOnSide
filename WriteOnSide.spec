@@ -19,7 +19,11 @@ hiddenimports = [
     'watchdog.observers.read_directory_changes',
     'watchdog.observers.winapi',
     'writeonside_app.builtin_plugins',
+    'writeonside_app.builtin_plugins.attachment_organizer',
+    'writeonside_app.builtin_plugins.color_picker',
     'writeonside_app.builtin_plugins.pedigree_analysis',
+    'writeonside_app.builtin_plugins.sticky_notes',
+    'writeonside_app.builtin_plugins.theme_editor',
     'writeonside_pedigree',
 ]
 excludes = [
