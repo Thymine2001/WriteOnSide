@@ -20,3 +20,4 @@ Backup/
 # Rust build outputs
 target/
 **/target/
+*.a
